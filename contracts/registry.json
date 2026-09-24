@@ -67,6 +67,14 @@
       "package": "mycelium.random_seeded.v1",
       "status": "reference",
       "firstConsumer": "somnium"
+    },
+    {
+      "id": "chunk.hold@1",
+      "path": "chunk-hold",
+      "package": "mycelium.chunk_hold.v1",
+      "status": "reference",
+      "firstConsumer": "somnium",
+      "promotedFrom": "somnium kernel/hold/Holds (E163)"
     }
   ]
 }
