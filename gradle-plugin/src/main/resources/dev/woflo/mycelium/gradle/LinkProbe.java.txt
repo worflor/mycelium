@@ -1,0 +1,151 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.FileInputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * Mycelium's link probe (docs/eras.md, law P2). Runs inside an era's own JVM and answers, for every class, method and
+ * field the pure layer reaches outside itself, whether that JVM has it. Written for Java 8 so every era can run it.
+ * Input lines: "C owner", "M owner name desc", "F owner name desc" (internal names), each followed by a tab and where it
+ * was used. Prints each unresolved reference; the exit code is how many there were.
+ */
+public final class LinkProbe {
+    public static void main(String[] args) throws Exception {
+        int missing = 0;
+        int checked = 0;
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(args[0]), "UTF-8"))) {
+            String line;
+            while ((line = in.readLine()) != null) {
+                if (line.isEmpty()) {
+                    continue;
+                }
+                int tab = line.indexOf('\t');
+                String ref = tab < 0 ? line : line.substring(0, tab);
+                String where = tab < 0 ? "" : line.substring(tab + 1);
+                String[] p = ref.split(" ");
+                checked++;
+                String problem;
+                try {
+                    Class<?> owner = load(p[1]);
+                    if (p[0].equals("C")) {
+                        problem = null;
+                    } else if (p[0].equals("M")) {
+                        problem = hasMethod(owner, p[2], p[3]) ? null : "no method";
+                    } else {
+                        problem = hasField(owner, p[2], p[3]) ? null : "no field";
+                    }
+                } catch (ClassNotFoundException | LinkageError e) {
+                    problem = "no class";
+                }
+                if (problem != null) {
+                    missing++;
+                    System.out.println("UNRESOLVED " + problem + ": " + ref + "  (used in " + where + ")");
+                }
+            }
+        }
+        System.out.println("LinkProbe: " + checked + " references checked on Java " + System.getProperty("java.version")
+                + ", " + missing + " unresolved");
+        System.exit(Math.min(missing, 100));
+    }
+
+    static Class<?> load(String internal) throws ClassNotFoundException {
+        return Class.forName(internal.replace('/', '.'), false, ClassLoader.getSystemClassLoader());
+    }
+
+    /** JVM method resolution: the class, its superclasses, then every superinterface. */
+    static boolean hasMethod(Class<?> owner, String name, String desc) {
+        if (owner.getName().equals("java.lang.invoke.MethodHandle") || owner.getName().equals("java.lang.invoke.VarHandle")) {
+            for (Method m : owner.getDeclaredMethods()) {
+                if (m.getName().equals(name)) {
+                    return true; // signature-polymorphic: the call site's descriptor is its own
+                }
+            }
+        }
+        if (name.equals("<init>")) {
+            for (Constructor<?> c : owner.getDeclaredConstructors()) {
+                if (desc.equals(descriptor(c.getParameterTypes(), void.class))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        Deque<Class<?>> todo = new ArrayDeque<Class<?>>();
+        Set<Class<?>> seen = new HashSet<Class<?>>();
+        todo.add(owner);
+        todo.add(Object.class);
+        while (!todo.isEmpty()) {
+            Class<?> c = todo.poll();
+            if (c == null || !seen.add(c)) {
+                continue;
+            }
+            for (Method m : c.getDeclaredMethods()) {
+                if (m.getName().equals(name) && desc.equals(descriptor(m.getParameterTypes(), m.getReturnType()))) {
+                    return true;
+                }
+            }
+            if (c.getSuperclass() != null) {
+                todo.add(c.getSuperclass());
+            }
+            for (Class<?> i : c.getInterfaces()) {
+                todo.add(i);
+            }
+        }
+        return false;
+    }
+
+    static boolean hasField(Class<?> owner, String name, String desc) {
+        Deque<Class<?>> todo = new ArrayDeque<Class<?>>();
+        Set<Class<?>> seen = new HashSet<Class<?>>();
+        todo.add(owner);
+        while (!todo.isEmpty()) {
+            Class<?> c = todo.poll();
+            if (c == null || !seen.add(c)) {
+                continue;
+            }
+            for (Field f : c.getDeclaredFields()) {
+                if (f.getName().equals(name) && desc.equals(type(f.getType()))) {
+                    return true;
+                }
+            }
+            if (c.getSuperclass() != null) {
+                todo.add(c.getSuperclass());
+            }
+            for (Class<?> i : c.getInterfaces()) {
+                todo.add(i);
+            }
+        }
+        return false;
+    }
+
+    static String descriptor(Class<?>[] params, Class<?> ret) {
+        StringBuilder sb = new StringBuilder("(");
+        for (Class<?> p : params) {
+            sb.append(type(p));
+        }
+        return sb.append(')').append(type(ret)).toString();
+    }
+
+    static String type(Class<?> c) {
+        if (c.isArray()) {
+            return c.getName().replace('.', '/');
+        }
+        if (c.isPrimitive()) {
+            if (c == int.class) return "I";
+            if (c == void.class) return "V";
+            if (c == boolean.class) return "Z";
+            if (c == byte.class) return "B";
+            if (c == char.class) return "C";
+            if (c == short.class) return "S";
+            if (c == long.class) return "J";
+            if (c == float.class) return "F";
+            return "D";
+        }
+        return "L" + c.getName().replace('.', '/') + ";";
+    }
+}

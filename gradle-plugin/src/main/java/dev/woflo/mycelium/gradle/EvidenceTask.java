@@ -56,6 +56,15 @@ public abstract class EvidenceTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getVerifyReportDir();
 
+    /** The Minecraft version this artifact targets; its era is recorded (eras/minecraft.json). */
+    @Input
+    @Optional
+    public abstract Property<String> getMinecraft();
+
+    /** Where the era gates left {@code java<N>/era.json}. */
+    @Internal
+    public abstract DirectoryProperty getErasReportDir();
+
     /** The usage task's report dir, if it ran: whether the artifact's sources reference each contract. */
     @Internal
     public abstract DirectoryProperty getUsageReportDir();
@@ -78,6 +87,47 @@ public abstract class EvidenceTask extends DefaultTask {
         artifact.addProperty("targetProfile", getTargetProfile().get());
         evidence.add("artifact", artifact);
         evidence.addProperty("namespace", getNamespace().get());
+        if (getMinecraft().isPresent()) {
+            Eras.Era era = Eras.load(root.toFile()).of(getMinecraft().get());
+            JsonObject e = new JsonObject();
+            e.addProperty("minecraft", getMinecraft().get());
+            e.addProperty("id", era.id());
+            e.addProperty("java", era.java());
+            e.addProperty("names", era.names());
+            JsonArray loaders = new JsonArray();
+            era.loaders().forEach(loaders::add);
+            e.add("loaders", loaders);
+            evidence.add("era", e);
+        }
+        Path erasDir = getErasReportDir().isPresent() ? getErasReportDir().get().getAsFile().toPath() : null;
+        if (erasDir != null && Files.isDirectory(erasDir)) {
+            JsonArray gates = new JsonArray();
+            try (var dirs = Files.list(erasDir)) {
+                for (Path d : (Iterable<Path>) dirs.sorted(java.util.Comparator.comparingInt(EvidenceTask::eraNumber))::iterator) {
+                    Path f = d.resolve("era.json");
+                    if (!Files.isRegularFile(f)) {
+                        continue;
+                    }
+                    JsonObject era = JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
+                    JsonObject g = new JsonObject();
+                    g.addProperty("java", era.get("java").getAsInt());
+                    JsonArray bundles = new JsonArray();
+                    for (var r : era.getAsJsonArray("results")) {
+                        JsonObject ro = r.getAsJsonObject();
+                        JsonObject b = new JsonObject();
+                        b.addProperty("bundle", ro.get("bundle").getAsString());
+                        b.addProperty("status", ro.has("status") ? ro.get("status").getAsString() : "unknown");
+                        if (ro.has("bytecode")) {
+                            b.addProperty("bytecode", ro.get("bytecode").getAsString());
+                        }
+                        bundles.add(b);
+                    }
+                    g.add("bundles", bundles);
+                    gates.add(g);
+                }
+            }
+            evidence.add("eraGates", gates);
+        }
 
         JsonObject harness = null;
         Path results = getVerifyReportDir().isPresent()
@@ -145,5 +195,11 @@ public abstract class EvidenceTask extends DefaultTask {
         Files.writeString(out.resolve("evidence.json"),
                 new GsonBuilder().setPrettyPrinting().create().toJson(evidence), StandardCharsets.UTF_8);
         getLogger().lifecycle("Mycelium: evidence manifest written for {} contract(s) ({})", ids.size(), getTargetProfile().get());
+    }
+
+    /** {@code java8} → 8, so gates list in era order. */
+    private static int eraNumber(Path dir) {
+        String n = dir.getFileName().toString().replaceAll("\\D", "");
+        return n.isEmpty() ? Integer.MAX_VALUE : Integer.parseInt(n);
     }
 }

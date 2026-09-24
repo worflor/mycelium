@@ -16,8 +16,11 @@ foreach ($slug in $Slugs) {
     $out = Join-Path $pkg "out"
     if (Test-Path $out) { Remove-Item -Recurse -Force $out }
     New-Item -ItemType Directory -Force $out | Out-Null
-    $files = @(Get-ChildItem -Recurse -Filter *.java "harness\src" | ForEach-Object FullName)
+    # the shared harness, as harness/sources.txt defines it, then the package; each file once
+    $dirs = Get-Content "harness\sources.txt" | Where-Object { $_.Trim() -and -not $_.Trim().StartsWith("#") }
+    $files = @($dirs | ForEach-Object { Get-ChildItem -Recurse -Filter *.java $_.Trim() } | ForEach-Object FullName)
     $files += @(Get-ChildItem -Recurse -Filter *.java (Join-Path $pkg "src") | ForEach-Object FullName)
+    $files = @($files | Sort-Object -Unique)
     & $javac --release 17 -d $out $files
     if ($LASTEXITCODE -ne 0) { Write-Host "[$slug] COMPILE FAILED"; $total += 1; continue }
     $mainFile = Get-ChildItem -Recurse -Filter Run.java (Join-Path $pkg "src") | Select-Object -First 1

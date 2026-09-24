@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "note": "Every Minecraft version, by era: the Java it runs on, the loaders a mod can target, how its code is named, and the walls a port crosses. Read by the Gradle plugin (mycelium { minecraft = ... }): a target's era sets its Java, its era gate and its evidence. Ranges are inclusive and ordered newest first. Compiled 2026-09-24; each rung is re-verified against the loaders' own mavens when a consumer first ports to it (docs/eras.md).",
+  "eras": [
+    {
+      "id": "unobfuscated",
+      "from": "26.1",
+      "to": "26.99",
+      "java": 25,
+      "loaders": ["fabric", "neoforge"],
+      "names": "unobfuscated",
+      "walls": ["26.1: the game ships unobfuscated; mappings are gone"]
+    },
+    {
+      "id": "components",
+      "from": "1.20.5",
+      "to": "1.21.99",
+      "java": 21,
+      "loaders": ["fabric", "neoforge", "forge"],
+      "names": "mojang",
+      "walls": ["1.20.5: data components replace item NBT", "1.21.2: item and registry holder reworks", "1.21.4: item model definitions"]
+    },
+    {
+      "id": "configuration",
+      "from": "1.20.2",
+      "to": "1.20.4",
+      "java": 17,
+      "loaders": ["fabric", "neoforge", "forge"],
+      "names": "mojang",
+      "walls": ["1.20.2: the configuration network phase; NeoForge splits from Forge"]
+    },
+    {
+      "id": "caves",
+      "from": "1.18",
+      "to": "1.20.1",
+      "java": 17,
+      "loaders": ["fabric", "forge", "quilt"],
+      "names": "mojang",
+      "walls": ["1.18: the world spans -64..320", "1.19: chat signing, the Deep Dark", "1.20.1: NeoForge's first fork (loader 'neoforge' on 1.20.1 is Forge-shaped)"]
+    },
+    {
+      "id": "java16",
+      "from": "1.17",
+      "to": "1.17.1",
+      "java": 16,
+      "loaders": ["fabric", "forge"],
+      "names": "mojang",
+      "walls": ["1.17: Java 16; world-height groundwork"]
+    },
+    {
+      "id": "fabric",
+      "from": "1.14",
+      "to": "1.16.5",
+      "java": 8,
+      "loaders": ["fabric", "forge"],
+      "names": "mojang-from-1.14.4",
+      "walls": ["1.14: Fabric exists", "1.14.4: official Mojang mappings", "1.16: data-driven dimensions"]
+    },
+    {
+      "id": "flattening",
+      "from": "1.13",
+      "to": "1.13.2",
+      "java": 8,
+      "loaders": ["forge", "legacy-fabric", "ornithe"],
+      "names": "mcp",
+      "walls": ["1.13: the Flattening: numeric ids and metadata become named blocks and states; data packs begin"]
+    },
+    {
+      "id": "modpacks",
+      "from": "1.8",
+      "to": "1.12.2",
+      "java": 8,
+      "loaders": ["forge", "legacy-fabric", "ornithe"],
+      "names": "mcp",
+      "walls": ["1.8: block states and JSON models", "no data packs: content comes from code"]
+    },
+    {
+      "id": "release",
+      "from": "1.0",
+      "to": "1.7.10",
+      "java": 8,
+      "loaders": ["forge", "legacy-fabric", "ornithe"],
+      "names": "mcp",
+      "walls": ["numeric block ids and metadata", "the mycelium block has existed since Beta 1.9 / 1.0"]
+    },
+    {
+      "id": "beta",
+      "from": "b1.0",
+      "to": "b1.9",
+      "java": 8,
+      "loaders": ["babric", "ornithe"],
+      "names": "feather",
+      "walls": ["no registries, no events: everything is hand-rolled", "b1.7.3: Babric and StationAPI"]
+    },
+    {
+      "id": "alpha",
+      "from": "a1.0",
+      "to": "a1.2.6",
+      "java": 8,
+      "loaders": ["ornithe"],
+      "names": "feather",
+      "walls": ["no registries, no events"]
+    },
+    {
+      "id": "classic",
+      "from": "c0.0.11",
+      "to": "c0.30",
+      "java": 8,
+      "loaders": ["ornithe"],
+      "names": "feather",
+      "walls": ["a block-building toy: no survival mechanics a dream mod leans on"]
+    }
+  ]
+}

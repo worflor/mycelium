@@ -1,8 +1,12 @@
 package dev.woflo.mycelium.gradle;
 
+import org.gradle.api.Action;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Nested;
+
+import java.util.List;
 
 /**
  * {@code mycelium { ... }} in a consumer build script.
@@ -52,6 +56,45 @@ public abstract class MyceliumExtension {
 
     public void eras(Integer... javaVersions) {
         getEras().addAll(javaVersions);
+    }
+
+    /** Every Java some Minecraft era runs on ({@code eras/minecraft.json}): what a framework proves itself on. */
+    public void allEras() {
+        getEras().set(getRoot().map(dir -> Eras.load(dir.getAsFile()).allJavas()));
+    }
+
+    /**
+     * The Minecraft version this project targets ({@code 26.3}, {@code 1.21.1}, {@code b1.7.3}). Its era
+     * ({@code eras/minecraft.json}) sets the era gate when no {@code eras(...)} are declared, and is recorded in the
+     * evidence manifest.
+     */
+    public abstract Property<String> getMinecraft();
+
+    /** The Java a Minecraft version runs on, from the era table: for a target's toolchain. Needs {@code root} set. */
+    public int javaFor(String minecraft) {
+        return Eras.load(getRoot().get().getAsFile()).of(minecraft).java();
+    }
+
+    /** The Java versions the era gates run: {@code eras(...)} if declared, else the target Minecraft's own era. */
+    public List<Integer> resolvedEras() {
+        if (!getEras().get().isEmpty()) {
+            return getEras().get();
+        }
+        if (getMinecraft().isPresent()) {
+            return List.of(javaFor(getMinecraft().get()));
+        }
+        return List.of();
+    }
+
+    /** Package prefix for the downgrader's shaded Java API backports; unique per artifact so two mods never collide. */
+    public abstract Property<String> getShadePrefix();
+
+    /** The artifact's pure layer: the code the same on every version and loader (docs/eras.md). */
+    @Nested
+    public abstract PureSpec getPure();
+
+    public void pure(Action<? super PureSpec> action) {
+        action.execute(getPure());
     }
 
     public void contracts(String... ids) {

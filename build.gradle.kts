@@ -10,6 +10,10 @@ mycelium {
     targetProfile = "design-time"
     artifactId = "mycelium"
     artifactVersion = "0.4"
-    // every Java a Minecraft era runs on: 8 (up to 1.16), 16 (1.17), 17 (1.18-1.20.4), 21 (1.20.5-1.21), 25 (26.x)
-    eras(8, 16, 17, 21, 25)
+    // every Java some Minecraft era runs on (eras/minecraft.json): 8, 16, 17, 21, 25
+    allEras()
+    // the contract models are a pure layer too: no platform (P1), no clock or unseeded chance (P3)
+    pure {
+        sources.from(fileTree("contracts") { include("**/model/**/*.java") })
+    }
 }

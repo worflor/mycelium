@@ -22,7 +22,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * Compiles the shared harness plus each selected contract package and runs its {@code harness.Run}.
@@ -31,6 +30,9 @@ import java.util.stream.Stream;
  * never game-target behavior.
  */
 public abstract class VerifyContractsTask extends DefaultTask {
+    /** The release contracts and the harness are written in; older eras get downgraded bytecode (docs/eras.md). */
+    static final int RELEASE = 17;
+
     @Internal
     public abstract DirectoryProperty getRoot();
 
@@ -71,11 +73,14 @@ public abstract class VerifyContractsTask extends DefaultTask {
                 failed.add(entry.id() + " (package missing at " + pkgSrc + ")");
                 continue;
             }
-            Path classes = reportDir.resolve(entry.slug()).resolve("classes");
+            Path bundle = reportDir.resolve(entry.slug());
+            Harness.deleteRecursively(bundle);
+            Path classes = bundle.resolve("classes");
             Files.createDirectories(classes);
-            List<String> args = new ArrayList<>(List.of("--release", "17", "-d", classes.toString()));
-            args.addAll(javaFiles(root.resolve("harness/src")));
-            args.addAll(javaFiles(pkgSrc));
+            List<String> args = new ArrayList<>(List.of("--release", String.valueOf(RELEASE), "-d", classes.toString()));
+            for (Path p : sources(root, pkgSrc)) {
+                args.add(p.toString());
+            }
             Path compileLog = reportDir.resolve(entry.slug() + ".javac.log");
             int compileExit;
             try (var err = Files.newOutputStream(compileLog)) {
@@ -91,6 +96,7 @@ public abstract class VerifyContractsTask extends DefaultTask {
                 failed.add(entry.id() + " (compile failed, see " + compileLog + ")");
                 continue;
             }
+            Harness.Bundle.write(bundle, entry.id(), RELEASE, List.of(entry.runMain()));
             Path runLog = reportDir.resolve(entry.slug() + ".log");
             Process process = new ProcessBuilder(javaBin.getPath(), "-cp", classes.toString(), entry.runMain())
                     .redirectErrorStream(true)
@@ -119,13 +125,12 @@ public abstract class VerifyContractsTask extends DefaultTask {
         }
     }
 
-    private static List<String> javaFiles(Path dir) throws IOException {
-        List<String> out = new ArrayList<>();
-        try (Stream<Path> walk = Files.walk(dir)) {
-            for (Path p : (Iterable<Path>) walk::iterator) {
-                if (Files.isRegularFile(p) && p.toString().endsWith(".java")) {
-                    out.add(p.toString());
-                }
+    /** The shared harness (harness/sources.txt) and the package, each file once. */
+    private static List<Path> sources(Path root, Path pkgSrc) throws IOException {
+        List<Path> out = new ArrayList<>(Harness.sources(root));
+        for (Path p : Harness.javaFiles(List.of(pkgSrc))) {
+            if (!out.contains(p)) {
+                out.add(p);
             }
         }
         return out;

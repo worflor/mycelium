@@ -3,7 +3,7 @@ package mycelium.harness;
 import java.util.SplittableRandom;
 
 /**
- * Seeded is SplitMix64 written out; this proves it draws exactly what {@code java.util.SplittableRandom} draws, so every
+ * Seeded (random.seeded@1's SeededRandom) draws exactly what {@code java.util.SplittableRandom} draws, live, so every
  * seed recorded before Seeded owned its algorithm still reproduces. Runs on a modern JDK (it needs the JDK's class to
  * compare against); Seeded itself runs anywhere. {@code run-contracts.sh} runs it first.
  */

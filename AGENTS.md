@@ -83,7 +83,8 @@ mycelium/
 │   ├── Check.java             labeled failures; a label is part of a contract's public surface
 │   ├── Suite.java             named fixtures → report → exit code
 │   ├── ContractRun.java       reference must be CLEAN; every rejection-matrix entry must be CAUGHT
-│   └── Seeded.java            deterministic variety for property-style fixtures
+│   └── Seeded.java            deterministic variety for property-style fixtures (wraps random.seeded@1;
+│                              the harness's sources are listed in harness/sources.txt)
 ├── contracts/
 │   ├── registry.json          id → path, package, status, firstConsumer — the plugin reads this
 │   └── <slug>/                one per contract; see §3.3 and CONTRACT-PACKAGE.md

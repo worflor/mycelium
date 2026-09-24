@@ -1,0 +1,5 @@
+# What the shared harness is compiled from, relative to the Mycelium root. Every runner reads this file
+# (run-contracts.sh, myceliumVerify, myceliumPure), so the harness has one definition.
+harness/src
+# Seeded draws from the random.seeded@1 model: one implementation of the algorithm, not two (docs/eras.md).
+contracts/random-seeded/src/mycelium/random_seeded/v1/model

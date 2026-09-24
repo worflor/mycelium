@@ -11,6 +11,8 @@ repositories {
 
 dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
+    // era gates: reads a bundle's outside references for the linkage law (docs/eras.md)
+    implementation("org.ow2.asm:asm:9.10.1")
 }
 
 java {

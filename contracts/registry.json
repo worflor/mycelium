@@ -60,6 +60,13 @@
       "status": "reference",
       "firstConsumer": "somnium",
       "promotedFrom": "somnium RuleData/LexiconData/StrataData (three loaders, one law)"
+    },
+    {
+      "id": "random.seeded@1",
+      "path": "random-seeded",
+      "package": "mycelium.random_seeded.v1",
+      "status": "reference",
+      "firstConsumer": "somnium"
     }
   ]
 }
