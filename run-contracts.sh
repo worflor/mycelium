@@ -14,6 +14,10 @@ if [ ${#slugs[@]} -eq 0 ]; then
 fi
 
 total=0
+# Seeded must draw exactly what java.util.SplittableRandom draws (docs/eras.md); checked once, on this JDK.
+sid="harness/out-identity"; rm -rf "$sid"; mkdir -p "$sid"
+if "$JAVAC" --release 17 -d "$sid" $(find harness/src harness/test -name '*.java') && "$JAVA" -cp "$sid" mycelium.harness.SeededIdentity; then :; else total=$((total+1)); fi
+rm -rf "$sid"
 for slug in "${slugs[@]}"; do
   pkg="contracts/$slug"
   out="$pkg/out"

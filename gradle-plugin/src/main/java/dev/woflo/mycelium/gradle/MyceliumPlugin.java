@@ -3,12 +3,17 @@ package dev.woflo.mycelium.gradle;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.file.Directory;
+import org.gradle.api.Task;
+import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.plugins.JvmToolchainsPlugin;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.bundling.Jar;
+import org.gradle.jvm.toolchain.JavaLanguageVersion;
+import org.gradle.jvm.toolchain.JavaToolchainService;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,6 +26,7 @@ import java.util.List;
  *       {@code build/generated/sources/mycelium/java} under the consumer's namespace and adds them to {@code main}.</li>
  *   <li>{@code myceliumVerify}: compiles and runs each selected contract harness; wired into {@code check}.</li>
  *   <li>{@code myceliumEvidence}: writes {@code META-INF/mycelium/evidence.json} into every jar.</li>
+ *   <li>{@code myceliumEras}: runs every verified harness on every declared era's Java.</li>
  * </ul>
  * No shared Mycelium runtime is introduced; imported code is private to the artifact.
  */
@@ -37,6 +43,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         ext.getTargetProfile().convention(project.getName());
         ext.getArtifactId().convention(project.getName());
         ext.getArtifactVersion().convention(project.provider(() -> String.valueOf(project.getVersion())));
+        ext.getDowngraderVersion().convention("2.0.1");
 
         // `-Pmycelium.contracts=a@1,b@1` overrides the selection for one invocation (useful while packages land).
         Object override = project.findProperty("mycelium.contracts");
@@ -104,6 +111,50 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.dependsOn(verifyTask);
         });
 
+        // Eras (docs/eras.md): JvmDowngrader, resolved only when eras are declared, and a toolchain per era.
+        project.getPluginManager().apply(JvmToolchainsPlugin.class);
+        Configuration downgrader = project.getConfigurations().create("myceliumDowngrader", c -> {
+            c.setCanBeConsumed(false);
+            c.setTransitive(false);
+            c.defaultDependencies(d -> d.add(project.getDependencies().create(
+                    "xyz.wagyourtail.jvmdowngrader:jvmdowngrader:" + ext.getDowngraderVersion().get() + ":all")));
+        });
+        project.afterEvaluate(p -> {
+            if (!ext.getEras().get().isEmpty()) {
+                p.getRepositories().exclusiveContent(ec -> {
+                    ec.forRepositories(p.getRepositories().maven(m -> {
+                        m.setName("JvmDowngrader (Mycelium eras)");
+                        m.setUrl("https://maven.wagyourtail.xyz/releases");
+                    }));
+                    ec.filter(f -> f.includeGroup("xyz.wagyourtail.jvmdowngrader"));
+                });
+            }
+        });
+        JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);
+        TaskProvider<Task> erasTask = project.getTasks().register("myceliumEras", t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Runs every verified contract harness on every era's Java, downgraded where the era is older.");
+        });
+        project.afterEvaluate(p -> {
+            for (Integer era : ext.getEras().get()) {
+                TaskProvider<ErasTask> one = p.getTasks().register("myceliumEraJava" + era, ErasTask.class, t -> {
+                    t.setGroup("mycelium");
+                    t.setDescription("Runs every verified contract harness on Java " + era + ".");
+                    t.getRoot().set(ext.getRoot());
+                    t.getContracts().set(ext.getContracts());
+                    t.getFloor().set(era);
+                    t.getSourceFingerprint().set(fingerprint);
+                    t.getVerifyReportDir().set(reportDir);
+                    t.getDowngrader().from(downgrader);
+                    t.getLauncher().set(toolchains.launcherFor(spec -> spec.getLanguageVersion().set(JavaLanguageVersion.of(era))));
+                    t.getReportDir().set(p.getLayout().getBuildDirectory().dir("mycelium/eras/java" + era));
+                    t.dependsOn(verifyTask);
+                    t.onlyIf(spec -> ext.getVerify().get());
+                });
+                erasTask.configure(t -> t.dependsOn(one));
+            }
+        });
+
         project.getPlugins().withType(JavaPlugin.class, javaPlugin -> {
             SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
             sourceSets.getByName("main").getJava().srcDir(importTask.flatMap(ImportContractsTask::getOutputDir));
@@ -127,7 +178,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/isolation"));
             });
             project.getTasks().named("compileJava", c -> c.dependsOn(isolationTask));
-            project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask));
+            project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, erasTask));
             evidenceTask.configure(t -> t.dependsOn(usageTask));
             project.getTasks().withType(Jar.class).configureEach(jar ->
                     jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium")));

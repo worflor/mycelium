@@ -41,6 +41,19 @@ public abstract class MyceliumExtension {
     /** Fail the build when an imported contract is never referenced by the artifact's own sources. Default false (warn). */
     public abstract Property<Boolean> getFailOnUnused();
 
+    /**
+     * Every Java the pure layer (contract models, harnesses) must run on, checked by {@code myceliumEras}: one JVM per
+     * Minecraft era (docs/eras.md), e.g. {@code eras(8, 16, 17, 21, 25)} for every version there is. Empty means no check.
+     */
+    public abstract ListProperty<Integer> getEras();
+
+    /** The JvmDowngrader release {@code myceliumEras} uses. */
+    public abstract Property<String> getDowngraderVersion();
+
+    public void eras(Integer... javaVersions) {
+        getEras().addAll(javaVersions);
+    }
+
     public void contracts(String... ids) {
         getContracts().addAll(ids);
     }
