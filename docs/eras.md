@@ -122,6 +122,11 @@ What a mod must change between versions. The same table drives the gates (`eras/
 The loader columns were compiled on 2026-09-24. Each rung is re-verified against the loaders' own mavens when a
 consumer first ports to it.
 
+## Found in practice (running whole suites on old versions)
+
+
+The rule that follows: a rung is not ported until its whole suite runs there, not only its build.
+
 ## Not yet built (in order)
 
 1. **Shipping downgraded jars.** A target whose Java is older than the source's release needs its jar downgraded and
