@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "note": "Design-time registry of contract packages. Status 'reference' means: pure reference implementation and rejection matrix exist; no game-target evidence is implied (DESIGN §11).",
+  "contracts": [
+    {
+      "id": "inventory.transfer@1",
+      "path": "flow",
+      "package": "mycelium.flow.v1",
+      "status": "reference",
+      "firstConsumer": "osmosis"
+    },
+    {
+      "id": "world.copy@1",
+      "path": "world-copy",
+      "package": "mycelium.world_copy.v1",
+      "status": "reference",
+      "firstConsumer": "somnium"
+    },
+    {
+      "id": "dimension.travel@1",
+      "path": "dimension-travel",
+      "package": "mycelium.dimension_travel.v1",
+      "status": "reference",
+      "firstConsumer": "somnium"
+    },
+    {
+      "id": "rule.effects@1",
+      "path": "rule-effects",
+      "package": "mycelium.rule_effects.v1",
+      "status": "reference",
+      "firstConsumer": "somnium"
+    },
+    {
+      "id": "persistence.player-state@1",
+      "path": "player-state",
+      "package": "mycelium.player_state.v1",
+      "status": "reference",
+      "firstConsumer": "somnium"
+    },
+    {
+      "id": "presentation.particle-cue@1",
+      "path": "cue",
+      "package": "mycelium.cue.v1",
+      "status": "reference",
+      "firstConsumer": "somnium"
+    }
+  ]
+}
