@@ -119,7 +119,15 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getReportDir().set(usageDir);
                 t.dependsOn(importTask);
             });
-            project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask));
+            TaskProvider<IsolationTask> isolationTask = project.getTasks().register("myceliumIsolation", IsolationTask.class, t -> {
+                t.setGroup("mycelium");
+                t.setDescription("Checks that optional integrations never leak another mod's classes into the rest of the artifact.");
+                t.getIntegrations().set(ext.getIntegrations());
+                t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories());
+                t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/isolation"));
+            });
+            project.getTasks().named("compileJava", c -> c.dependsOn(isolationTask));
+            project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask));
             evidenceTask.configure(t -> t.dependsOn(usageTask));
             project.getTasks().withType(Jar.class).configureEach(jar ->
                     jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium")));

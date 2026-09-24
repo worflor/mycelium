@@ -44,4 +44,21 @@ public abstract class MyceliumExtension {
     public void contracts(String... ids) {
         getContracts().addAll(ids);
     }
+
+    /** Declared optional integrations (encoded), checked by {@code myceliumIsolation}. */
+    public abstract ListProperty<String> getIntegrations();
+
+    /**
+     * An optional integration with another mod: only {@code homePackage} may mention {@code apiPackages}, and nothing
+     * outside it may mention {@code homePackage}. Use {@link #integration(String, String, String, String)} to name the
+     * one gate file (relative to a source root) that checks the mod is loaded and calls in.
+     */
+    public void integration(String name, String homePackage, String apiPackages) {
+        integration(name, homePackage, apiPackages, "");
+    }
+
+    /** As above, with {@code gates}: comma-separated source paths allowed to reach into the home package. */
+    public void integration(String name, String homePackage, String apiPackages, String gates) {
+        getIntegrations().add(name + "|" + homePackage + "|" + apiPackages + "|" + gates);
+    }
 }
