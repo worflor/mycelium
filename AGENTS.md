@@ -19,7 +19,7 @@ place so the same intent ships on multiple loaders across multiple versions.
 
 ### 2.1 State of the project
 
-As of 2026-09-23 (evening): eleven contract packages exist, all PASS with full reference-and-rejection-matrix coverage
+As of 2026-09-23 (evening): twelve contract packages exist (`dimension.travel@2` promoted from Somnium), all PASS with full reference-and-rejection-matrix coverage
 (two laws added from Somnium's red teams, `docs/decisions/0002-what-somnium-taught.md`; `CHANGELOG.md` has the rest)
 (`bash run-contracts.sh` or `./gradlew myceliumVerify`). The Gradle plugin (`gradle-plugin/`) works and is
 applied in both of Somnium's loader buildscripts. Gate A (Osmosis characterization) has not been run. Gate B

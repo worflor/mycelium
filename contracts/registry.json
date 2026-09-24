@@ -24,6 +24,15 @@
       "firstConsumer": "somnium"
     },
     {
+      "id": "dimension.travel@2",
+      "path": "dimension-travel-2",
+      "package": "mycelium.dimension_travel.v2",
+      "status": "reference",
+      "firstConsumer": "somnium",
+      "supersedes": "dimension.travel@1",
+      "promotedFrom": "somnium Rescue (docs/decisions/0002)"
+    },
+    {
       "id": "rule.effects@1",
       "path": "rule-effects",
       "package": "mycelium.rule_effects.v1",

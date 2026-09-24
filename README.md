@@ -70,7 +70,7 @@ A consumer's red team will find bugs that any provider could have made, because 
 Those belong here, not only in the consumer: add the law, a test label and a rejection fixture that makes the
 mistake, and check that the harness catches it. Additive changes (new labels, `default` methods) stay in `@1`;
 anything that renames a label or changes a required method waits for `@2`. `docs/decisions/0002-what-somnium-taught.md`
-is the first round: two laws landed, four proposals queued.
+is the first round: two laws landed, one new major (`dimension.travel@2`) promoted from Somnium's own code, three proposals queued.
 
 ## Adding a contract
 
