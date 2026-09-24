@@ -28,6 +28,25 @@ public final class WorldCopy {
         return new CopyPlan(writes, toClear);
     }
 
+    /**
+     * L8, a sealed copy: exits are forgotten after the transform, whatever the transform did (so no mutation, drift or
+     * generation pass can open a door out of the copy either). Otherwise exactly {@link #execute}.
+     */
+    public static CopyOutcome executeSealed(SourceView source, TargetPort target, Region region, Transform transform,
+                                            ExitPolicy exits, SanitizePolicy sanitize, Budget budget, CopyTx tx, Feedback feedback) {
+        java.util.Objects.requireNonNull(exits, "exits");
+        java.util.Objects.requireNonNull(transform, "transform");
+        return execute(source, target, region, sealing(transform, exits), sanitize, budget, tx, feedback);
+    }
+
+    /** The transform, then the exit policy: the order is the law. */
+    public static Transform sealing(Transform transform, ExitPolicy exits) {
+        return (pos, sourceToken) -> {
+            BlockToken t = transform.apply(pos, sourceToken);
+            return exits.isExit(t) ? exits.replacement(t) : t;
+        };
+    }
+
     public static CopyOutcome execute(SourceView source, TargetPort target, Region region, Transform transform,
                                       SanitizePolicy sanitize, Budget budget, CopyTx tx, Feedback feedback) {
         Objects.requireNonNull(source, "source");

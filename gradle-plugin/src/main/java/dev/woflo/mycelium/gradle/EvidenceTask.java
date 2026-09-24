@@ -56,6 +56,10 @@ public abstract class EvidenceTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getVerifyReportDir();
 
+    /** The usage task's report dir, if it ran: whether the artifact's sources reference each contract. */
+    @Internal
+    public abstract DirectoryProperty getUsageReportDir();
+
     @OutputDirectory
     public abstract DirectoryProperty getOutputDir();
 
@@ -82,6 +86,13 @@ public abstract class EvidenceTask extends DefaultTask {
             harness = JsonParser.parseString(Files.readString(results, StandardCharsets.UTF_8)).getAsJsonObject();
         }
 
+        JsonObject usage = null;
+        Path usageFile = getUsageReportDir().isPresent()
+                ? getUsageReportDir().get().getAsFile().toPath().resolve("usage.json") : null;
+        if (usageFile != null && Files.isRegularFile(usageFile)) {
+            usage = JsonParser.parseString(Files.readString(usageFile, StandardCharsets.UTF_8)).getAsJsonObject();
+        }
+
         JsonArray contracts = new JsonArray();
         for (String id : ids) {
             ContractRegistry.Entry entry = registry.require(id);
@@ -103,6 +114,14 @@ public abstract class EvidenceTask extends DefaultTask {
                             h.addProperty("exit", r.get("exit").getAsInt());
                         }
                         c.add("harness", h);
+                    }
+                }
+            }
+            if (usage != null) {
+                for (var element : usage.getAsJsonArray("results")) {
+                    JsonObject u = element.getAsJsonObject();
+                    if (id.equals(u.get("id").getAsString())) {
+                        c.addProperty("referencedBySources", u.get("referencingFiles").getAsInt() > 0);
                     }
                 }
             }

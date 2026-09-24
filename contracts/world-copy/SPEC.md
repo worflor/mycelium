@@ -82,6 +82,10 @@
 - **L7 Zero writes is a rejection** — an empty region (`size() == 0`) is `Rejected(EMPTY_REGION)`, never a
   `Committed` receipt with `writes == 0` (the `CopyReceipt` constructor itself refuses `writes < 1`).
 
+- **L8 (a sealed copy has no way out)** — `ExitPolicy` names the tokens that are exits (portals, gateways) and what
+  replaces them; `WorldCopy.executeSealed` forgets them **after** the transform, so neither the source's exits nor
+  one a transform makes survive into the copy (`T13`). Added 2026-09-23 from Somnium (a copied exit bypassed a region boundary). Additive: `execute` is unchanged; the sealed overload is new.
+
 ## 5. Positive obligations
 
 - **P1** — Under the stated fixture assumptions (stable source, a target declaring the required traits, budget
@@ -144,6 +148,8 @@ intended reason:
 | `OutOfRegionTarget` (writes one extra position outside every fixture region on every `set`) | L4 | `T4:no-write-outside-region` |
 | `OverrunExecutor` (ignores the budget, writes and reports success regardless) | L5 | `T5:budget-rejected` |
 | `PrematureReceiptExecutor` (emits feedback at execution time instead of at the outermost commit) | L6 | `T6:no-feedback-after-abort` |
+| `UnsealedExecutor` (ignores the exit policy) | L8 | `T13:no-exit-copied` |
+| `SealFirstExecutor` (seals before the transform) | L8 | `T13:transform-cannot-open-an-exit` |
 
 `UnqualifiedTarget` exercises the `Unsupported` edge (T10) but is not a rejection-matrix entry: it is not
 "deliberately incorrect" under an admissible request, it is honestly inadmissible.

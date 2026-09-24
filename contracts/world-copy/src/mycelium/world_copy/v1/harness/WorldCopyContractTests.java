@@ -30,12 +30,60 @@ public final class WorldCopyContractTests {
     private static final BlockToken OUTSIDE = new BlockToken("outside");
     private static final Budget GENEROUS = new Budget(10_000);
 
+    private static final BlockToken PORTAL = new BlockToken("nether_portal");
+
     private final CopyExecutor executor;
     private final Supplier<TargetPort> targetFactory;
+    private final mycelium.world_copy.v1.model.SealedCopyExecutor sealed;
 
     public WorldCopyContractTests(CopyExecutor executor, Supplier<TargetPort> targetFactory) {
+        this(executor, targetFactory, mycelium.world_copy.v1.model.WorldCopy::executeSealed);
+    }
+
+    public WorldCopyContractTests(CopyExecutor executor, Supplier<TargetPort> targetFactory,
+                                  mycelium.world_copy.v1.model.SealedCopyExecutor sealed) {
         this.executor = executor;
         this.targetFactory = targetFactory;
+        this.sealed = sealed;
+    }
+
+    /** Exits in these fixtures: the portal token; they are forgotten as air. */
+    static final mycelium.world_copy.v1.model.ExitPolicy PORTALS = new mycelium.world_copy.v1.model.ExitPolicy() {
+        @Override
+        public boolean isExit(BlockToken token) {
+            return token.equals(PORTAL);
+        }
+
+        @Override
+        public BlockToken replacement(BlockToken exit) {
+            return AIR;
+        }
+    };
+
+    /** L8: a sealed copy carries no exit, neither the source's nor one a transform makes. */
+    private void t13SealedCopy(Check c) {
+        Region region = Region.cube(new Pos(0, 64, 0), 3, 2, 3);
+        MemorySource source = new MemorySource(STONE);
+        source.fill(region, STONE);
+        Pos door = new Pos(1, 64, 1);
+        source.put(door, PORTAL, false);
+        TargetPort target = targetFactory.get();
+        CopyTx tx = CopyTx.open();
+        CopyOutcome o = sealed.execute(source, target, region, Transform.IDENTITY, PORTALS, SanitizePolicy.ALL, GENEROUS, tx, new FeedbackSink());
+        tx.commit();
+        c.that(o instanceof CopyOutcome.Committed, "T13:committed");
+        c.that(!target.token(door).equals(PORTAL), "T13:no-exit-copied");
+        c.equal(AIR, target.token(door), "T13:exit-replaced");
+        c.equal(STONE, target.token(new Pos(0, 64, 0)), "T13:the-rest-copied");
+        // a transform that turns tuff into a portal (a mutation pass could): still sealed
+        MemorySource tuff = new MemorySource(TUFF);
+        tuff.fill(region, TUFF);
+        TargetPort target2 = targetFactory.get();
+        CopyTx tx2 = CopyTx.open();
+        sealed.execute(tuff, target2, region, (pos, t) -> t.equals(TUFF) && pos.equals(door) ? PORTAL : t, PORTALS,
+                SanitizePolicy.ALL, GENEROUS, tx2, new FeedbackSink());
+        tx2.commit();
+        c.that(!target2.token(door).equals(PORTAL), "T13:transform-cannot-open-an-exit");
     }
 
     public Check run() {
@@ -52,6 +100,7 @@ public final class WorldCopyContractTests {
         t10UnsupportedTrait(check);
         t11AntiEvasion(check);
         t12EmptyRegion(check);
+        t13SealedCopy(check);
         return check;
     }
 

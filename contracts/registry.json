@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "Design-time registry of contract packages. Status 'reference' means: pure reference implementation and rejection matrix exist; no game-target evidence is implied (DESIGN §11).",
+  "note": "Design-time registry of contract packages. liveConsumers lists artifacts whose own sources reference the contract (checked by myceliumUsage), not who it was written for. Status 'reference' means: pure reference implementation and rejection matrix exist; no game-target evidence is implied (DESIGN §11).",
   "contracts": [
     {
       "id": "inventory.transfer@1",

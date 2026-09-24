@@ -33,6 +33,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             return group.isBlank() ? "mycelium.imported" : group + ".mycelium";
         }));
         ext.getVerify().convention(true);
+        ext.getFailOnUnused().convention(false);
         ext.getTargetProfile().convention(project.getName());
         ext.getArtifactId().convention(project.getName());
         ext.getArtifactVersion().convention(project.provider(() -> String.valueOf(project.getVersion())));
@@ -64,6 +65,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         Provider<Directory> generated = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java");
         Provider<Directory> reportDir = project.getLayout().getBuildDirectory().dir("mycelium/verify");
         Provider<Directory> evidenceDir = project.getLayout().getBuildDirectory().dir("mycelium/evidence");
+        Provider<Directory> usageDir = project.getLayout().getBuildDirectory().dir("mycelium/usage");
 
         TaskProvider<ImportContractsTask> importTask = project.getTasks().register("myceliumImport", ImportContractsTask.class, t -> {
             t.setGroup("mycelium");
@@ -97,6 +99,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getVerifyEnabled().set(ext.getVerify());
             t.getSourceFingerprint().set(fingerprint);
             t.getVerifyReportDir().set(reportDir);
+            t.getUsageReportDir().set(usageDir);
             t.getOutputDir().set(evidenceDir);
             t.dependsOn(verifyTask);
         });
@@ -104,7 +107,20 @@ public final class MyceliumPlugin implements Plugin<Project> {
         project.getPlugins().withType(JavaPlugin.class, javaPlugin -> {
             SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
             sourceSets.getByName("main").getJava().srcDir(importTask.flatMap(ImportContractsTask::getOutputDir));
-            project.getTasks().named("check", check -> check.dependsOn(verifyTask));
+            TaskProvider<UsageTask> usageTask = project.getTasks().register("myceliumUsage", UsageTask.class, t -> {
+                t.setGroup("mycelium");
+                t.setDescription("Reports imported Mycelium contracts that this artifact's own sources never reference.");
+                t.getRoot().set(ext.getRoot());
+                t.getContracts().set(ext.getContracts());
+                t.getNamespace().set(ext.getNamespace());
+                t.getFailOnUnused().set(ext.getFailOnUnused());
+                t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories());
+                t.getImportedDir().set(generated);
+                t.getReportDir().set(usageDir);
+                t.dependsOn(importTask);
+            });
+            project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask));
+            evidenceTask.configure(t -> t.dependsOn(usageTask));
             project.getTasks().withType(Jar.class).configureEach(jar ->
                     jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium")));
         });

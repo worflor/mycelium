@@ -59,7 +59,8 @@ What happens:
 |---|---|
 | `myceliumImport` | Copies each contract's `model` package into `build/generated/sources/mycelium/java`, rewriting `mycelium.<pkg>.v1` to `<namespace>.<pkg>.v1`, and adds it to `main`. Models that touch the harness are rejected. |
 | `myceliumVerify` | Compiles harness + each selected package with the Gradle JVM's compiler and runs `…harness.Run`. Wired into `check`. Fails the build on any MISSED rejection or reference failure. `-Pmycelium.contracts=a@1,b@1` overrides the selection for one run. |
-| `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into every jar: artifact id/version/target profile, each contract's model SHA-256 and harness status, and a claims block that says this is design-time evidence only. |
+| `myceliumUsage` | Scans the artifact's own sources (never the imported copies) for each contract's package and reports imports nothing references. Warns by default; `failOnUnused = true` fails the build. Wired into `check`. |
+| `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into every jar: artifact id/version/target profile, each contract's model SHA-256, harness status and whether the artifact's sources reference it, and a claims block that says this is design-time evidence only. |
 
 No shared Mycelium runtime is introduced. Two mods pinning different contract majors carry different private
 code and cannot conflict.

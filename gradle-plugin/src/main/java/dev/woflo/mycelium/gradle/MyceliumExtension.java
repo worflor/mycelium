@@ -38,6 +38,9 @@ public abstract class MyceliumExtension {
     /** Artifact version recorded in the evidence manifest (defaults to the project version). */
     public abstract Property<String> getArtifactVersion();
 
+    /** Fail the build when an imported contract is never referenced by the artifact's own sources. Default false (warn). */
+    public abstract Property<Boolean> getFailOnUnused();
+
     public void contracts(String... ids) {
         getContracts().addAll(ids);
     }
