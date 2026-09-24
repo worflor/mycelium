@@ -52,6 +52,14 @@
       "package": "mycelium.cue.v1",
       "status": "reference",
       "firstConsumer": "somnium"
+    },
+    {
+      "id": "data.catalog@1",
+      "path": "data-catalog",
+      "package": "mycelium.data_catalog.v1",
+      "status": "reference",
+      "firstConsumer": "somnium",
+      "promotedFrom": "somnium RuleData/LexiconData/StrataData (three loaders, one law)"
     }
   ]
 }
