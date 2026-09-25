@@ -9,7 +9,8 @@
    "java": 25,
    "loaders": [
     "fabric",
-    "neoforge"
+    "neoforge",
+    "forge"
    ],
    "names": "unobfuscated",
    "walls": [

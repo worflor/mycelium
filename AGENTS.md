@@ -23,7 +23,7 @@ As of 2026-09-23 (evening): twelve contract packages exist (`dimension.travel@2`
 (three laws added from Somnium's red teams, `docs/decisions/0002-what-somnium-taught.md`; `myceliumUsage` checks imports are real;
 `contracts/registry.json` `liveConsumers` says who actually uses what; `CHANGELOG.md` has the rest)
 (`bash run-contracts.sh` or `./gradlew myceliumVerify`). The Gradle plugin (`gradle-plugin/`) works and is
-applied in both of Somnium's loader buildscripts. Gate A (Osmosis characterization) has not been run. Gate B
+applied in all three of Somnium's loader buildscripts (Fabric, NeoForge, Forge; `docs/decisions/0003-forge.md`). Gate A (Osmosis characterization) has not been run. Gate B
 (substrate choice) is decided and evidenced — see `docs/decisions/0001-substrate.md`. Gates C onward (one
 vertical slice inside Osmosis, independent reuse proven by a second consumer) are partially met by Somnium's
 existence as a second, unrelated consumer, but no contract has yet been reused *back* into Osmosis. Read
@@ -134,7 +134,7 @@ contracts/<slug>/
 5. Labels (`"T3:some-label"`) are part of a contract's public surface. Don't rename one without bumping the
    contract's version — other code (a consumer's tests, this repo's own CI expectations) may reference it.
 6. The Gradle plugin (`gradle-plugin/`) never gains Minecraft-specific logic. It knows about `.java` files,
-   packages and Gradle tasks — nothing loader-specific. If a task needs to know about Fabric or NeoForge,
+   packages and Gradle tasks — nothing loader-specific. If a task needs to know about Fabric, NeoForge or Forge,
    that's the consumer's build script's job, not the plugin's.
 7. `registry.json` is the only place a contract's id, path and package are declared together. Add a row here
    in the same change that adds the package; nothing should hardcode the mapping elsewhere.

@@ -7,7 +7,7 @@ not ship a runtime. It gives a mod three things: **contracts** (typed, versioned
 safety laws, positive obligations and a rejection matrix that must be caught before any provider exists),
 a **Gradle plugin** that imports contract models under the mod's own namespace, runs every harness as a build
 gate and writes an evidence manifest into the jar, and a **layered convention** (the tower, `DESIGN.md` §5)
-that keeps platform access in one place so the same intent ships on Fabric and NeoForge across versions.
+that keeps platform access in one place so the same intent ships on Fabric, NeoForge and Forge across versions.
 
 The founding design is `DESIGN.md` (v0.4, frozen for implementation). Read it once. This file is the map.
 

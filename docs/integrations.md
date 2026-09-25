@@ -40,7 +40,10 @@ The integration is written once. It builds for every loader of every version the
 proves each of those builds loads nothing it shouldn't.
 
 First consumer: Somnium (2026-09-24).
-- Simple Voice Chat on four targets: a plugin API, discovered by the other mod.
-- Cobblemon on two (1.21.1, Fabric and NeoForge): gated by the Stonecutter constant and a runtime check.
+- Simple Voice Chat on six targets (Fabric, NeoForge and Forge on 26.3 and 1.21.1): a plugin API, discovered by the
+  other mod (on NeoForge and Forge through the same annotation).
+- Cobblemon on two (1.21.1, Fabric and NeoForge; Cobblemon 1.8 has no Forge build): gated by the Stonecutter constant
+  and a runtime check. Declared per loader and version (`[fabric."1.21.1"]`, `[neoforge."1.21.1"]`), so a loader the
+  other mod does not ship for never compiles the integration.
 
 A leak planted in Somnium's core failed the build naming the file and the package.

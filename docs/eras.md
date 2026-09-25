@@ -106,7 +106,7 @@ What a mod must change between versions. The same table drives the gates (`eras/
 
 | Minecraft | Java | Loaders | Names in the code | What changes for a mod |
 |---|---|---|---|---|
-| 26.x | 25 | Fabric, NeoForge | unobfuscated | Where Somnium lives now. |
+| 26.x | 25 | Fabric, NeoForge, Forge | unobfuscated | Where Somnium lives now. Forge from 26.1.2 (Forge 64), on EventBus 7. |
 | 1.20.5 – 1.21.x | 21 | Fabric, NeoForge, Forge | Mojang | **Data components replace item NBT** (1.20.5); holder and item-model reworks (1.21.2, 1.21.4). Somnium's second target. |
 | 1.20.2 – 1.20.4 | 17 | Fabric, NeoForge, Forge | Mojang | The configuration network phase; NeoForge splits from Forge. |
 | 1.18 – 1.20.1 | 17 | Fabric, Forge, Quilt | Mojang | World height −64..320 (1.18). 1.20.1 is the largest modded population of its time. |
@@ -119,8 +119,9 @@ What a mod must change between versions. The same table drives the gates (`eras/
 
 \* These shipped for Java 6, but they run on Java 8 today, as does every modern loader for them.
 
-The loader columns were compiled on 2026-09-24. Each rung is re-verified against the loaders' own mavens when a
-consumer first ports to it.
+The loader columns were compiled on 2026-09-24 (Forge on 26.x read from `maven.minecraftforge.net` the same day: 64.x
+for 26.1.2, 65.x for 26.2, 66.x for 26.3). Each rung is re-verified against the loaders' own mavens when a consumer
+first ports to it.
 
 ## Found in practice (running whole suites on old versions)
 
