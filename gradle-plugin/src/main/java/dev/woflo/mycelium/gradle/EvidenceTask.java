@@ -69,6 +69,10 @@ public abstract class EvidenceTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getUsageReportDir();
 
+    /** {@code myceliumPureShip}'s report dir, if it ran: {@code ship.json} (docs/decisions/0006). */
+    @Internal
+    public abstract DirectoryProperty getPureShipReportDir();
+
     @OutputDirectory
     public abstract DirectoryProperty getOutputDir();
 
@@ -143,6 +147,21 @@ public abstract class EvidenceTask extends DefaultTask {
         }
         eraGates.add("gates", gates);
         evidence.add("eraGates", eraGates);
+
+        // Shipping downgraded jars (docs/decisions/0006): source release, target Java, the downgrader version, what
+        // was shaded, and that the era gate's stubs/linkage/behaviour checks ran on exactly these bytes — or, honestly,
+        // that shipping did not run, or ran and found nothing to downgrade.
+        JsonObject pureShip;
+        Path shipFile = getPureShipReportDir().isPresent()
+                ? getPureShipReportDir().get().getAsFile().toPath().resolve("ship.json") : null;
+        if (shipFile != null && Files.isRegularFile(shipFile)) {
+            pureShip = JsonParser.parseString(Files.readString(shipFile, StandardCharsets.UTF_8)).getAsJsonObject();
+            pureShip.addProperty("checked", true);
+        } else {
+            pureShip = notChecked("myceliumPureShip did not run in this build (no pure layer declared, or no "
+                    + "mycelium.minecraft target set)");
+        }
+        evidence.add("pureShip", pureShip);
 
         JsonObject harness = null;
         Path results = getVerifyReportDir().isPresent()

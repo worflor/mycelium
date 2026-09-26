@@ -34,6 +34,8 @@ public final class SelfTest {
         integrations();
         evidence();
         loaders(root);
+        shipping();
+        surface();
         repository(root);
         System.out.println();
         System.out.println("Mycelium plugin self-test: " + (FAILURES.isEmpty() ? "PASS" : "FAIL") + " (" + assertions
@@ -167,6 +169,67 @@ public final class SelfTest {
                 "org.spongepowered", "net.legacyfabric", "net.ornithemc", "net.modificationstation", "org.quiltmc")) {
             that(packages.contains(p), "loaders:the pure layer keeps " + p + " out");
         }
+    }
+
+    // --- shipping downgraded jars (docs/decisions/0006) ---------------------------------------------------------------
+
+    static void shipping() throws IOException {
+        Set<String> pure = Set.of("fixture.ship.kernel");
+        that(PureShipTask.inShippablePackage("fixture/ship/kernel/Greeting.class", pure, "fixture_ship_mycelium_jvmdg"),
+                "shipping:a class in a declared pure package ships");
+        that(!PureShipTask.inShippablePackage("fixture/ship/kernelstuff/Other.class", pure, "fixture_ship_mycelium_jvmdg"),
+                "shipping:a package that merely starts with a pure package's name does not ship (directory-boundary safe)");
+        that(!PureShipTask.inShippablePackage("mycelium/harness/Check.class", pure, "fixture_ship_mycelium_jvmdg"),
+                "shipping:the shared harness never ships (Hard rule 2), even though it is part of the same bundle");
+        that(PureShipTask.inShippablePackage("fixture_ship_mycelium_jvmdg/xyz/wagyourtail/jvmdg/j9/stub/java_base/J_U_List.class",
+                pure, "fixture_ship_mycelium_jvmdg"), "shipping:JvmDowngrader's own shaded backport support classes ship too"
+                + " (the downgraded bytecode calls them directly)");
+        that(!PureShipTask.inShippablePackage("fixture_ship_mycelium_jvmdgsomethingelse/Foo.class", pure, "fixture_ship_mycelium_jvmdg"),
+                "shipping:a package that merely starts with the shade prefix's name is not the shade prefix (directory-boundary safe)");
+
+        Path era = Files.createTempDirectory("mycelium-selftest-ship");
+        try {
+            JsonObject none = PureShipTask.eraGateEvidence(era, "ship-fixture pure layer", 8);
+            that(!none.get("checked").getAsBoolean() && none.has("why"), "shipping:no era.json says so, with why");
+
+            String eraJson = "{\"schema\":3,\"java\":8,\"results\":[{\"bundle\":\"ship-fixture pure layer\",\"status\":\"pass\","
+                    + "\"bytecode\":\"downgraded to class version 52\",\"outsideReferences\":106,\"unresolved\":0,\"suites\":[]}]}";
+            Files.writeString(era.resolve("era.json"), eraJson, StandardCharsets.UTF_8);
+            JsonObject found = PureShipTask.eraGateEvidence(era, "ship-fixture pure layer", 8);
+            that(found.get("checked").getAsBoolean() && "pass".equals(found.get("status").getAsString())
+                    && "downgraded to class version 52".equals(found.get("bytecode").getAsString()),
+                    "shipping:the shipped bytes point at the era gate's own result for that exact bundle");
+
+            JsonObject missing = PureShipTask.eraGateEvidence(era, "some other bundle", 8);
+            that(!missing.get("checked").getAsBoolean() && missing.get("why").getAsString().contains("some other bundle"),
+                    "shipping:a bundle name the era gate never reported on says so, naming it");
+        } finally {
+            delete(era);
+        }
+    }
+
+    // --- the portability surface (docs/decisions/0006) ----------------------------------------------------------------
+
+    static void surface() {
+        that(SurfaceTask.count("net.minecraft.World w;", "net.minecraft") == 1, "surface:one reference counts once");
+        that(SurfaceTask.count("net.minecraft.World a; net.minecraft.World b;", "net.minecraft") == 2,
+                "surface:the same reference twice counts twice (a textual count, not a distinct-type count)");
+        that(SurfaceTask.count("net.minecraftforge.Something s;", "net.minecraft") == 0,
+                "surface:a package that merely starts with the platform root's name is not a reference to it");
+        // count() itself takes already-stripped code, exactly as SurfaceTask.run() strips it: comments out
+        // (IsolationTask.code()), then string literal contents out too (PurityTask.STRING) — once, not by count() on
+        // every call.
+        that(SurfaceTask.count(strip("// net.minecraft.World w;\n/* net.minecraft.World */"), "net.minecraft") == 0,
+                "surface:a mention only in a comment is not a reference");
+        that(SurfaceTask.count(strip("String s = \"net.minecraft.World\";"), "net.minecraft") == 0,
+                "surface:a mention only in a string literal is not a reference");
+        that("com.example.mymod.core".equals(SurfaceTask.packageOf("package com.example.mymod.core;\nclass X {}")),
+                "surface:the package a file declares is read the same way everywhere else in the plugin reads it");
+    }
+
+    /** Exactly how {@link SurfaceTask#run()} strips a file before counting: comments, then string literal contents. */
+    static String strip(String text) {
+        return PurityTask.STRING.matcher(IsolationTask.code(text)).replaceAll("\"\"");
     }
 
     // --- the repository check, on broken copies -----------------------------------------------------------------------

@@ -97,6 +97,11 @@ final class Harness {
         }
     }
 
+    /** A bundle's name, filesystem-safe: the same mapping every place a bundle's work directory is named by it. */
+    static String slug(String name) {
+        return name.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
     static void deleteRecursively(Path path) throws IOException {
         if (!Files.exists(path)) {
             return;

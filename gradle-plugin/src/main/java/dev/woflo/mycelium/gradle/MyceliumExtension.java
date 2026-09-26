@@ -2,6 +2,7 @@ package dev.woflo.mycelium.gradle;
 
 import org.gradle.api.Action;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Nested;
@@ -119,4 +120,23 @@ public abstract class MyceliumExtension {
         getIntegrations().add(new IsolationTask.Integration(name, homePackage, IsolationTask.Integration.split(apiPackages),
                 IsolationTask.Integration.split(gates)).encode());
     }
+
+    /**
+     * Packages of this artifact's own sources that are its ports (L4, DESIGN §5): expected to touch the platform.
+     * {@code myceliumSurface} reports every other package's platform references separately, as the surface the next
+     * rung would have to eat. Not validated against the platform packages or against what exists on disk: a port that
+     * turns out to reference nothing yet is not a mistake, and one misspelled just reads as "not a port" rather than
+     * failing the build (docs/admission.md: a new option cannot break a build that did not ask for it).
+     */
+    public abstract ListProperty<String> getPorts();
+
+    public void ports(String... packages) {
+        getPorts().addAll(packages);
+    }
+
+    /** Fail {@code myceliumSurface} when the non-port surface grows past {@link #getSurfaceBaseline()}. Default false. */
+    public abstract Property<Boolean> getSurfaceFailOnGrowth();
+
+    /** A checked-in {@code surface.json} (schema in {@link SurfaceTask}) to compare against. Optional. */
+    public abstract RegularFileProperty getSurfaceBaseline();
 }

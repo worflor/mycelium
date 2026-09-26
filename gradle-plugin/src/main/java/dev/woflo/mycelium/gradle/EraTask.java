@@ -90,7 +90,7 @@ public abstract class EraTask extends DefaultTask {
                 continue;
             }
             Harness.Bundle bundle = Harness.Bundle.read(dir.toPath());
-            String slug = bundle.name().replaceAll("[^A-Za-z0-9._-]", "_");
+            String slug = Harness.slug(bundle.name());
             Path work = out.resolve(slug);
             Files.createDirectories(work);
             JsonObject r = new JsonObject();

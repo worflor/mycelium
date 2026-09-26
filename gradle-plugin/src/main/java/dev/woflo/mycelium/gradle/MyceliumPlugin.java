@@ -52,6 +52,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         ext.getShadePrefix().convention(ext.getNamespace().map(n -> n.replace('.', '_') + "_jvmdg"));
         ext.getPure().getRelease().convention(VerifyContractsTask.RELEASE);
         ext.getPure().getSuiteMain().convention("Run");
+        ext.getSurfaceFailOnGrowth().convention(false);
 
         // `-Pmycelium.contracts=a@1,b@1` overrides the selection for one invocation (useful while packages land).
         List<String> contractOverride = listProperty(project, "mycelium.contracts");
@@ -86,6 +87,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
         Provider<Directory> evidenceDir = project.getLayout().getBuildDirectory().dir("mycelium/evidence");
         Provider<Directory> usageDir = project.getLayout().getBuildDirectory().dir("mycelium/usage");
         Provider<Directory> pureBundle = project.getLayout().getBuildDirectory().dir("mycelium/pure/bundle");
+        Provider<Directory> pureShipClasses = project.getLayout().getBuildDirectory().dir("mycelium/pure/ship/classes");
+        Provider<Directory> pureShipReport = project.getLayout().getBuildDirectory().dir("mycelium/pure/ship/report");
 
         TaskProvider<ImportContractsTask> importTask = project.getTasks().register("myceliumImport", ImportContractsTask.class, t -> {
             t.setGroup("mycelium");
@@ -120,6 +123,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getSourceFingerprint().set(fingerprint);
             t.getVerifyReportDir().set(reportDir);
             t.getUsageReportDir().set(usageDir);
+            t.getPureShipReportDir().set(pureShipReport);
             t.getMinecraft().set(ext.getMinecraft());
             t.getErasReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/eras"));
             t.getOutputDir().set(evidenceDir);
@@ -161,6 +165,28 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.onlyIf(spec -> !ext.getPure().getSources().isEmpty());
         });
 
+        // Shipping downgraded jars (docs/eras.md, "Not yet built" 1): puts the pure layer's classes into this target's
+        // jar, downgraded and shaded when the era needs it, or unmodified when it does not (docs/decisions/0006).
+        TaskProvider<PureShipTask> pureShip = project.getTasks().register("myceliumPureShip", PureShipTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Puts the pure layer's classes (downgraded and shaded if this target's era needs it) into the jar.");
+            t.getPureSources().from(ext.getPure().getSources());
+            t.getImportedSources().from(importTask.flatMap(ImportContractsTask::getOutputDir));
+            t.getSourceRelease().set(ext.getPure().getRelease());
+            t.getTargetJava().set(ext.getMinecraft().map(ext::javaFor).orElse(Integer.MAX_VALUE));
+            t.getShadePrefix().set(ext.getShadePrefix());
+            t.getDowngraderVersion().set(ext.getDowngraderVersion());
+            t.getBundleName().set(ext.getArtifactId().map(a -> a + " pure layer"));
+            t.getEraReportDir().set(project.getLayout().getBuildDirectory()
+                    .dir(ext.getMinecraft().map(mc -> "mycelium/eras/java" + ext.javaFor(mc)).orElse("mycelium/eras/none")));
+            t.getClassesDir().set(pureShipClasses);
+            t.getReportDir().set(pureShipReport);
+            t.dependsOn(pureCompile);
+            // Nothing to ship without a pure layer, and nothing to ship it *for* without a target era; either absent,
+            // this is not a check with nothing to check (docs/admission.md) so much as a feature that does not apply.
+            t.onlyIf(spec -> !ext.getPure().getSources().isEmpty() && ext.getMinecraft().isPresent());
+        });
+
         // The era gates: JvmDowngrader (resolved only when a gate runs older bytecode) and a toolchain per era.
         project.getPluginManager().apply(JvmToolchainsPlugin.class);
         Configuration downgrader = project.getConfigurations().create("myceliumDowngrader", c -> {
@@ -175,7 +201,16 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.setDescription("Runs every era gate: the contracts and the pure layer on each era's Java (docs/eras.md).");
         });
         project.afterEvaluate(p -> {
-            List<Integer> eras = ext.resolvedEras();
+            // Shipping needs its target's own era gate to have run, even when a consumer's `eras(...)` (readiness,
+            // proving every era) omits it: the union guarantees myceliumEraJava<N> exists whenever myceliumPureShip
+            // needs it, without a second, parallel mechanism for running the same gate.
+            Integer targetJava = ext.getMinecraft().isPresent() ? ext.javaFor(ext.getMinecraft().get()) : null;
+            boolean shipDowngrades = targetJava != null && !ext.getPure().getSources().isEmpty()
+                    && targetJava < ext.getPure().getRelease().get();
+            java.util.LinkedHashSet<Integer> eras = new java.util.LinkedHashSet<>(ext.resolvedEras());
+            if (shipDowngrades) {
+                eras.add(targetJava);
+            }
             if (eras.isEmpty()) {
                 return;
             }
@@ -202,6 +237,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.dependsOn(verifyTask, pureCompile);
                 });
                 erasTask.configure(t -> t.dependsOn(one));
+            }
+            if (shipDowngrades) {
+                pureShip.configure(t -> t.dependsOn("myceliumEraJava" + targetJava));
             }
         });
         evidenceTask.configure(t -> t.mustRunAfter(erasTask));
@@ -231,11 +269,64 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories());
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/isolation"));
             });
+            // The portability surface (docs/eras.md, "Not yet built" 2): never the generated imports, which are
+            // proven pure already and would only report as zero-reference noise.
+            TaskProvider<SurfaceTask> surfaceTask = project.getTasks().register("myceliumSurface", SurfaceTask.class, t -> {
+                t.setGroup("mycelium");
+                t.setDescription("Reports how much of this artifact's own sources touch platform packages outside its declared ports.");
+                t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories()
+                        .filter(dir -> !dir.equals(generated.get().getAsFile())));
+                t.getPlatformPackages().set(ext.getRoot().map(dir -> Loaders.load(dir.getAsFile()).platformPackages()));
+                t.getPorts().set(ext.getPorts());
+                t.getFailOnGrowth().set(ext.getSurfaceFailOnGrowth());
+                t.getBaselineFile().set(ext.getSurfaceBaseline());
+                t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
+            });
             project.getTasks().named("compileJava", c -> c.dependsOn(isolationTask, purityTask));
-            project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask));
-            evidenceTask.configure(t -> t.dependsOn(usageTask));
+            project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
+                    pureShip, surfaceTask));
+            evidenceTask.configure(t -> t.dependsOn(usageTask, pureShip));
             project.getTasks().withType(Jar.class).configureEach(jar ->
                     jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium")));
+
+            // Shipping downgraded jars: the ship task's classes are the *only* path a pure package reaches this jar.
+            // A consumer whose own main sourceSet also compiles the pure sources directly (as the substrate decision,
+            // a downgrade — never the other way around, and never when no downgrade is needed (there, ship contributes
+            // nothing, so nothing is excluded either; docs/decisions/0006).
+            project.getTasks().withType(Jar.class).configureEach(jar -> {
+                jar.dependsOn(pureShip);
+                jar.from(pureShip.flatMap(PureShipTask::getClassesDir));
+                Provider<java.util.Set<String>> shippablePackages = project.provider(() -> {
+                    try {
+                        return PureShipTask.scanPackages(ext.getPure().getSources(),
+                                project.files(importTask.flatMap(ImportContractsTask::getOutputDir)));
+                    } catch (java.io.IOException e) {
+                        throw new org.gradle.api.GradleException("Mycelium: could not scan the pure layer's packages", e);
+                    }
+                });
+                Provider<java.io.File> shipClassesDir = pureShip.flatMap(t -> t.getClassesDir().getAsFile());
+                // Read once per jar execution, not once per file: exclude(Spec) runs per copied file.
+                java.util.concurrent.atomic.AtomicReference<java.util.Set<String>> cached = new java.util.concurrent.atomic.AtomicReference<>();
+                jar.exclude(element -> {
+                    if (!ext.getMinecraft().isPresent() || ext.getPure().getSources().isEmpty()) {
+                        return false;
+                    }
+                    int targetJava = ext.javaFor(ext.getMinecraft().get());
+                    if (targetJava >= ext.getPure().getRelease().get()) {
+                        return false; // no downgrade needed: ship contributed nothing, so nothing to make way for
+                    }
+                    if (element.getFile().toPath().startsWith(shipClassesDir.get().toPath())) {
+                        return false; // never exclude the classes ship itself just added
+                    }
+                    String path = element.getRelativePath().getPathString().replace('\\', '/');
+                    if (!path.endsWith(".class")) {
+                        return false;
+                    }
+                    int slash = path.lastIndexOf('/');
+                    String pkg = (slash < 0 ? "" : path.substring(0, slash)).replace('/', '.');
+                    return cached.updateAndGet(s -> s != null ? s : shippablePackages.get()).contains(pkg);
+                });
+            });
         });
     }
 
