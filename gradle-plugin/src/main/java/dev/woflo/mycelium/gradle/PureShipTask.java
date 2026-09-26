@@ -74,13 +74,19 @@ public abstract class PureShipTask extends DefaultTask {
     public abstract Property<String> getBundleName();
 
     /**
-     * {@code build/mycelium/eras/java<N>}: where the era gate for this target's Java left its jar and report.
-     * {@code @Internal}, like {@link EvidenceTask#getErasReportDir()}: it may not exist (no era gate has run, or this
-     * target needs no downgrade), and this task reads it by hand rather than through Gradle's file-input snapshotting.
-     * Ordering (not staleness) is what matters here, and {@code dependsOn} the specific era task gives it that.
+     * {@code build/mycelium/eras/java<N>}: where the era gate for this target's Java left its jar and report, as the
+     * path this task reads from. Its contents are tracked by {@link #getEraOutputs()}.
      */
     @Internal
     public abstract DirectoryProperty getEraReportDir();
+
+    /**
+     * The same folder's files, as an input: what ships is copied from the era gate's jar, so a change in that jar
+     * must re-run this task, not only the gate running first. A folder that does not exist yet is an empty input.
+     */
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract ConfigurableFileCollection getEraOutputs();
 
     /** Class files only: what a consumer's {@code jar} task adds, nothing else. */
     @OutputDirectory

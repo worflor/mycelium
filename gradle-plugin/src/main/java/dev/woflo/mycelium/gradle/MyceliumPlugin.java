@@ -179,6 +179,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getBundleName().set(ext.getArtifactId().map(a -> a + " pure layer"));
             t.getEraReportDir().set(project.getLayout().getBuildDirectory()
                     .dir(ext.getMinecraft().map(mc -> "mycelium/eras/java" + ext.javaFor(mc)).orElse("mycelium/eras/none")));
+            t.getEraOutputs().from(t.getEraReportDir());
             t.getClassesDir().set(pureShipClasses);
             t.getReportDir().set(pureShipReport);
             t.dependsOn(pureCompile);
