@@ -83,6 +83,11 @@ a frame into a `Request`, `receive` it, and write the `Reply`. Call `dropped()` 
 with `Backoff`, resetting the attempt count after a successful `hello`. Run world-touching handlers on the server thread
 from inside `handle`; `receive` may be called from the connection's thread.
 
+Ids must be unique across the caller's restarts, not only within one of its processes. The session remembers answers
+for the mod's lifetime (L2), so an agent whose id counter starts over when it restarts gets its new requests answered
+with old replies, and they don't run. Give ids a per-boot prefix (a random boot id, or the start time). Learned in
+Recon's first live deployment (2026-09-26), where the session replayed exactly as L1 says it must.
+
 ## Versioning
 
 New `Refusal` values and new methods on `Link` with defaults stay in `@1`. Changing what is remembered, or when, is `@2`.
