@@ -79,7 +79,7 @@ public abstract class EvidenceTask extends DefaultTask {
         List<String> ids = getContracts().get();
 
         JsonObject evidence = new JsonObject();
-        evidence.addProperty("schema", 1);
+        evidence.addProperty("schema", 2);
         evidence.addProperty("generatedAt", Instant.now().toString());
         JsonObject artifact = new JsonObject();
         artifact.addProperty("id", getArtifactId().get());
@@ -99,9 +99,12 @@ public abstract class EvidenceTask extends DefaultTask {
             e.add("loaders", loaders);
             evidence.add("era", e);
         }
+        // Every check below says whether it ran: {"checked": true, ...} or {"checked": false, "why": ...}. A check that is
+        // absent, or silent, would read the same as one that ran and held (docs/decisions/0004).
         Path erasDir = getErasReportDir().isPresent() ? getErasReportDir().get().getAsFile().toPath() : null;
+        JsonObject eraGates = new JsonObject();
+        JsonArray gates = new JsonArray();
         if (erasDir != null && Files.isDirectory(erasDir)) {
-            JsonArray gates = new JsonArray();
             try (var dirs = Files.list(erasDir)) {
                 for (Path d : (Iterable<Path>) dirs.sorted(java.util.Comparator.comparingInt(EvidenceTask::eraNumber))::iterator) {
                     Path f = d.resolve("era.json");
@@ -122,12 +125,24 @@ public abstract class EvidenceTask extends DefaultTask {
                         }
                         bundles.add(b);
                     }
+                    g.addProperty("checked", bundles.size());
+                    if (era.has("expected")) {
+                        g.addProperty("expected", era.get("expected").getAsInt());
+                    }
+                    if (era.has("skipped")) {
+                        g.add("skipped", era.getAsJsonArray("skipped"));
+                    }
                     g.add("bundles", bundles);
                     gates.add(g);
                 }
             }
-            evidence.add("eraGates", gates);
         }
+        eraGates.addProperty("checked", !gates.isEmpty());
+        if (gates.isEmpty()) {
+            eraGates.addProperty("why", "no era gate ran in this build (none declared, or myceliumEras was not run)");
+        }
+        eraGates.add("gates", gates);
+        evidence.add("eraGates", eraGates);
 
         JsonObject harness = null;
         Path results = getVerifyReportDir().isPresent()
@@ -158,28 +173,26 @@ public abstract class EvidenceTask extends DefaultTask {
                     JsonObject r = element.getAsJsonObject();
                     if (id.equals(r.get("id").getAsString())) {
                         JsonObject h = new JsonObject();
-                        h.addProperty("ran", true);
+                        h.addProperty("checked", true);
                         h.addProperty("status", r.get("status").getAsString());
                         if (r.has("exit")) {
                             h.addProperty("exit", r.get("exit").getAsInt());
+                        }
+                        if (r.has("harness")) {
+                            // what ran, as the harness itself reported it
+                            JsonObject ran = r.getAsJsonObject("harness");
+                            h.addProperty("assertions", ran.getAsJsonObject("reference").get("assertions").getAsInt());
+                            h.addProperty("matrix", ran.getAsJsonArray("matrix").size());
                         }
                         c.add("harness", h);
                     }
                 }
             }
-            if (usage != null) {
-                for (var element : usage.getAsJsonArray("results")) {
-                    JsonObject u = element.getAsJsonObject();
-                    if (id.equals(u.get("id").getAsString())) {
-                        c.addProperty("referencedBySources", u.get("referencingFiles").getAsInt() > 0);
-                    }
-                }
-            }
             if (!c.has("harness")) {
-                JsonObject h = new JsonObject();
-                h.addProperty("ran", false);
-                c.add("harness", h);
+                c.add("harness", notChecked(getVerifyEnabled().get()
+                        ? "its harness did not run in this build" : "verification is off (mycelium { verify = false })"));
             }
+            c.add("usage", usageOf(usage, id));
             contracts.add(c);
         }
         evidence.add("contracts", contracts);
@@ -195,6 +208,34 @@ public abstract class EvidenceTask extends DefaultTask {
         Files.writeString(out.resolve("evidence.json"),
                 new GsonBuilder().setPrettyPrinting().create().toJson(evidence), StandardCharsets.UTF_8);
         getLogger().lifecycle("Mycelium: evidence manifest written for {} contract(s) ({})", ids.size(), getTargetProfile().get());
+    }
+
+    static JsonObject notChecked(String why) {
+        JsonObject o = new JsonObject();
+        o.addProperty("checked", false);
+        o.addProperty("why", why);
+        return o;
+    }
+
+    /** Whether the artifact's own sources reference a contract, or why that was not checked. */
+    static JsonObject usageOf(JsonObject usage, String id) {
+        if (usage == null) {
+            return notChecked("myceliumUsage did not run in this build");
+        }
+        if (usage.has("checked") && !usage.get("checked").getAsBoolean()) {
+            return notChecked(usage.has("why") ? usage.get("why").getAsString() : "usage was not checked");
+        }
+        for (var element : usage.getAsJsonArray("results")) {
+            JsonObject u = element.getAsJsonObject();
+            if (id.equals(u.get("id").getAsString())) {
+                JsonObject o = new JsonObject();
+                o.addProperty("checked", true);
+                o.addProperty("referenced", u.get("referencingFiles").getAsInt() > 0);
+                o.addProperty("referencingFiles", u.get("referencingFiles").getAsInt());
+                return o;
+            }
+        }
+        return notChecked("this contract was not among the contracts myceliumUsage checked");
     }
 
     /** {@code java8} → 8, so gates list in era order. */

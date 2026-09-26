@@ -90,21 +90,12 @@ Reference fixture set executed by `CueContractTests`:
 
 ## 10. Running the harness
 
-From `contracts/cue`:
-
-```powershell
-$h = Get-ChildItem -Recurse -Filter *.java ..\..\harness\src | % FullName
-$s = Get-ChildItem -Recurse -Filter *.java src | % FullName
-& "$env:JAVA_HOME\bin\javac.exe" --release 17 -d out ($h + $s)
-& "$env:JAVA_HOME\bin\java.exe" -cp out mycelium.cue.v1.harness.Run
-```
-
-Or, from the Mycelium root: `./run-contracts.sh cue`.
+From the Mycelium root: `bash run-contracts.sh cue` (or `.\run-contracts.ps1 cue`), or `./gradlew myceliumVerify -Pmycelium.contracts=presentation.particle-cue@1`.
 
 Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT`; exit code 0.
 
 ## 11. Explicit non-claims
 
-- No Minecraft, Fabric, NeoForge, or Osmosis code was executed to produce this package.
+- No Minecraft or mod loader code was executed to produce this package.
 - No real particle, sound, or render backend was exercised; `MemorySink` is an in-memory stand-in for "the cue reached its destination," not evidence about any specific presentation channel.
 - Batching, cross-operation ordering, and cue cancellation are out of scope for v1 and named here rather than silently omitted.

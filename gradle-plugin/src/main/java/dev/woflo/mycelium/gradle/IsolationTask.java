@@ -56,10 +56,51 @@ public abstract class IsolationTask extends DefaultTask {
     @OutputDirectory
     public abstract DirectoryProperty getReportDir();
 
+    /**
+     * One declared integration. Validated where it is declared ({@link MyceliumExtension#integration}) and again where it
+     * is read, so a malformed one (no API packages, a blank home, a stray separator) is an error, never an integration
+     * that constrains nothing and passes.
+     */
     record Integration(String name, String home, List<String> apis, List<String> gates) {
+        static final Pattern JAVA_PACKAGE = Pattern.compile("[A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)*");
+
+        Integration {
+            String what = "Mycelium integration '" + name + "'";
+            if (name == null || name.isBlank() || name.contains("|")) {
+                throw new IllegalArgumentException("Mycelium integration: a name is required (and may not contain '|')");
+            }
+            if (home == null || !JAVA_PACKAGE.matcher(home).matches()) {
+                throw new IllegalArgumentException(what + ": home package '" + home + "' is not a Java package");
+            }
+            if (apis.isEmpty()) {
+                throw new IllegalArgumentException(what + ": names no API packages, so it would keep nothing out;"
+                        + " name the other mod's packages (comma-separated)");
+            }
+            for (String api : apis) {
+                if (!JAVA_PACKAGE.matcher(api).matches()) {
+                    throw new IllegalArgumentException(what + ": '" + api + "' is not a Java package");
+                }
+            }
+            for (String gate : gates) {
+                if (gate.contains("|")) {
+                    throw new IllegalArgumentException(what + ": gate '" + gate + "' may not contain '|'");
+                }
+            }
+            apis = List.copyOf(apis);
+            gates = List.copyOf(gates);
+        }
+
         static Integration decode(String s) {
             String[] p = s.split("\\|", -1);
+            if (p.length < 3 || p.length > 4) {
+                throw new IllegalArgumentException("Mycelium integration: malformed declaration '" + s
+                        + "' (name|homePackage|apis|gates)");
+            }
             return new Integration(p[0], p[1], split(p[2]), p.length > 3 ? split(p[3]) : List.of());
+        }
+
+        String encode() {
+            return name + "|" + home + "|" + String.join(",", apis) + "|" + String.join(",", gates);
         }
 
         static List<String> split(String s) {

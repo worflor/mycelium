@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "note": "Every Minecraft version, by era: the Java it runs on, the loaders a mod can target, how its code is named, and the walls a port crosses. Read by the Gradle plugin (mycelium { minecraft = ... }): a target's era sets its Java, its era gate and its evidence. Ranges are inclusive and ordered newest first. Compiled 2026-09-24; each rung is re-verified against the loaders' own mavens when a consumer first ports to it (docs/eras.md).",
+ "note": "Every Minecraft version, by era: the Java it runs on, the loaders a mod can target (eras/loaders.json names each loader's packages), how its code is named, and the walls a port crosses. Read by the Gradle plugin (mycelium { minecraft = ... }): a target's era sets its Java, its era gate and its evidence. Ordered newest first; from and to are inclusive, and each is a version as Mojang's launcher manifest names it (eras/versions.json) or a whole line, '<line>.x' (every version of that line, those still to come included). The repository check proves every real version falls in exactly one era. Each row's facts are re-verified against the loaders' own mavens when a consumer first ports to it (docs/eras.md).",
  "eras": [
   {
    "id": "unobfuscated",
    "from": "26.1",
-   "to": "26.99",
+   "to": "26.x",
    "java": 25,
    "loaders": [
     "fabric",
@@ -20,7 +20,7 @@
   {
    "id": "components",
    "from": "1.20.5",
-   "to": "1.21.99",
+   "to": "1.21.x",
    "java": 21,
    "loaders": [
     "fabric",
@@ -147,7 +147,7 @@
   {
    "id": "beta",
    "from": "b1.0",
-   "to": "b1.9",
+   "to": "b1.x",
    "java": 8,
    "loaders": [
     "babric",
@@ -161,7 +161,7 @@
   },
   {
    "id": "alpha",
-   "from": "a1.0",
+   "from": "a1.x",
    "to": "a1.2.6",
    "java": 8,
    "loaders": [
@@ -174,8 +174,8 @@
   },
   {
    "id": "classic",
-   "from": "c0.0.11",
-   "to": "c0.30",
+   "from": "c0.0.11a",
+   "to": "c0.30_01c",
    "java": 8,
    "loaders": [
     "ornithe"

@@ -66,6 +66,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
             List<Path> dirs = new ArrayList<>();
             dirs.add(root.resolve("contracts/registry.json"));
             dirs.add(root.resolve("harness"));
+            // the era and loader tables: a task whose output reads them (the manifest's era block, the Java a target
+            // runs on, what the pure layer keeps out) re-runs when they change
+            dirs.add(root.resolve("eras"));
             for (String line : Files.readAllLines(root.resolve("harness/sources.txt"), StandardCharsets.UTF_8)) {
                 if (!line.isBlank() && !line.strip().startsWith("#")) {
                     dirs.add(root.resolve(line.strip()));
@@ -128,6 +131,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.setGroup("mycelium");
             t.setDescription("Checks the pure layer mentions no platform (P1) and reads no clock or unseeded chance (P3).");
             t.getPureSources().from(ext.getPure().getSources());
+            t.getPlatformPackages().set(ext.getRoot().map(dir -> Loaders.load(dir.getAsFile()).platformPackages()));
             t.getForbidden().addAll(ext.getPure().getForbidden());
             t.getForbidden().addAll(ext.getIntegrations().map(list -> {
                 List<String> apis = new ArrayList<>();
@@ -152,7 +156,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getBundleName().set(ext.getArtifactId().map(a -> a + " pure layer"));
             t.getBundleDir().set(pureBundle);
             t.dependsOn(purityTask, importTask);
-            t.onlyIf(spec -> !ext.getPure().getSources().isEmpty() && !ext.getPure().getTests().isEmpty());
+            // Suites are not required: compiling alone proves purity in fact, and each era gate still checks the
+            // bundle's stubs and linkage (P2). Requiring suites left a pure layer without them silently unchecked.
+            t.onlyIf(spec -> !ext.getPure().getSources().isEmpty());
         });
 
         // The era gates: JvmDowngrader (resolved only when a gate runs older bytecode) and a toolchain per era.

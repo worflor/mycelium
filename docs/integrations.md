@@ -17,17 +17,24 @@ violation fails the build with the file and the package.
 
 ```kotlin
 mycelium {
-    integration("voicechat", "com.example.mymod.voice", "de.maxhenkel.voicechat")
-    integration("cobblemon", "com.example.mymod.compat.cobblemon", "com.cobblemon", "woflo/oneiric/compat/Integrations.java")
+    //          name        home package                     the other mod's API packages
+    integration("voicechat", "com.example.mymod.voice",      "de.maxhenkel.voicechat")
+    integration("cobblemon", "com.example.mymod.compat.cobblemon", "com.cobblemon",
+                "com/example/mymod/compat/Integrations.java")   // a gate: the one file that calls in
 }
 ```
+
+A declaration is validated where it is written and again where the task reads it. It needs a name, the home package
+and every API package must be Java package names, and it must name at least one API package. An integration that
+could keep nothing out is refused rather than passed.
 
 ## Written once, built for every version that has the mod
 
 With Stonecutter, an integration is declared per version and compiled only where its mod exists:
 
 1. **Declare it per version.** `stonecutter.properties.toml` gets `deps.<mod> = "<version>"` under each Minecraft
-   version the mod supports.
+   version the mod supports. Declare it per loader and version (`[fabric."1.21.1"]`) where the other mod does not
+   ship for every loader, so a loader it lacks never compiles the integration.
 2. **One constant per integration.** `stonecutter.gradle.kts` sets `constants[mod] = properties.getOrNull("deps.$mod")
    != null`.
 3. **Guard the code.** The integration's code sits under `//? if <mod> {`, so on other versions it does not exist at
@@ -37,13 +44,6 @@ With Stonecutter, an integration is declared per version and compiled only where
 5. **The gate.** The gate calls in under the same guard, after the loader says the mod is loaded.
 
 The integration is written once. It builds for every loader of every version the other mod supports, and isolation
-proves each of those builds loads nothing it shouldn't.
-
-First consumer: Somnium (2026-09-24).
-- Simple Voice Chat on six targets (Fabric, NeoForge and Forge on 26.3 and 1.21.1): a plugin API, discovered by the
-  other mod (on NeoForge and Forge through the same annotation).
-- Cobblemon on two (1.21.1, Fabric and NeoForge; Cobblemon 1.8 has no Forge build): gated by the Stonecutter constant
-  and a runtime check. Declared per loader and version (`[fabric."1.21.1"]`, `[neoforge."1.21.1"]`), so a loader the
-  other mod does not ship for never compiles the integration.
-
-A leak planted in Somnium's core failed the build naming the file and the package.
+proves each of those builds loads nothing it shouldn't. Two shapes cover most integrations: a plugin API the other
+mod discovers (it calls you; the loader's entrypoint or annotation finds the home package), and a runtime check behind
+a gate (you call it, only after the loader says it is present). `CHANGELOG.md` records where these were first proven.

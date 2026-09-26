@@ -1,6 +1,10 @@
 package mycelium.flow.v1.harness;
 
+import mycelium.flow.v1.fixtures.OneWaySourceBackend;
+import mycelium.flow.v1.fixtures.OverpromisingBackend;
+import mycelium.flow.v1.fixtures.StuckSourceBackend;
 import mycelium.flow.v1.fixtures.UnqualifiedBackend;
+import mycelium.harness.Check;
 import mycelium.flow.v1.model.FlowBackend;
 import mycelium.flow.v1.model.FlowTransaction;
 import mycelium.flow.v1.model.Reason;
@@ -37,6 +41,9 @@ public final class FlowContractTests {
         t8IdentityPreservation(check);
         t9UnsupportedTrait(check);
         t10AntiEvasion(check);
+        t11AdmitsLessThanPromised(check);
+        t12UnrestorableRemainder(check);
+        t13SourceRefuses(check);
         return check;
     }
 
@@ -185,5 +192,65 @@ public final class FlowContractTests {
         c.that(!(outcome instanceof TransferOutcome.Rejected), "T10:no-evasion-rejected");
         c.that(outcome instanceof TransferOutcome.Committed, "T10:committed-expected");
         tx.commit();
+    }
+
+    /**
+     * SPEC §6: a destination admits less than it promised, so the executor restores the remainder to the source, and the
+     * receipt says what the destination accepted. Admitting nothing at all is a rejection with everything restored.
+     */
+    private void t11AdmitsLessThanPromised(Check c) {
+        FlowBackend source = sourceFactory.apply(64);
+        source.seed(IRON, 20);
+        FlowBackend destination = new OverpromisingBackend(4, 7);
+        FeedbackSink feedback = new FeedbackSink();
+        FlowTransaction tx = FlowTransaction.open();
+        TransferOutcome outcome = executor.execute(source, destination, IRON, 12, tx, feedback);
+        c.that(outcome instanceof TransferOutcome.Committed committed && committed.receipt().committed() == 4,
+                "T11:committed-accepted");
+        tx.commit();
+        c.that(source.available(IRON) == 16, "T11:source-restored");
+        c.that(destination.available(IRON) == 4, "T11:destination-accepted");
+        c.that(feedback.events().size() == 1 && feedback.events().get(0).committed() == 4, "T11:feedback-accepted");
+
+        FlowBackend source2 = sourceFactory.apply(64);
+        source2.seed(IRON, 20);
+        FlowBackend nothing = new OverpromisingBackend(0, 7);
+        FeedbackSink feedback2 = new FeedbackSink();
+        FlowTransaction tx2 = FlowTransaction.open();
+        TransferOutcome outcome2 = executor.execute(source2, nothing, IRON, 12, tx2, feedback2);
+        c.that(outcome2 instanceof TransferOutcome.Rejected rejected && rejected.reason() == Reason.TRANSFER_FAILED,
+                "T11:nothing-admitted-rejected");
+        tx2.commit();
+        c.that(source2.available(IRON) == 20 && nothing.available(IRON) == 0, "T11:nothing-admitted-restored");
+        c.that(feedback2.events().isEmpty(), "T11:nothing-admitted-no-feedback");
+    }
+
+    /**
+     * SPEC §6: the remainder cannot go back (the source will not take it). The outcome is unconfirmed, and an unconfirmed
+     * outcome is never an ordinary Rejected (DESIGN §7): the executor throws, and the caller's abort leaves no change.
+     */
+    private void t12UnrestorableRemainder(Check c) {
+        FlowBackend source = new OneWaySourceBackend(64);
+        source.seed(IRON, 20);
+        FlowBackend destination = new OverpromisingBackend(4, 7);
+        FeedbackSink feedback = new FeedbackSink();
+        FlowTransaction tx = FlowTransaction.open();
+        c.throwsAny(() -> executor.execute(source, destination, IRON, 12, tx, feedback), "T12:unrestorable-remainder-throws");
+        tx.abort();
+        c.that(source.available(IRON) == 20 && destination.available(IRON) == 0, "T12:abort-leaves-no-change");
+        c.that(feedback.events().isEmpty(), "T12:no-feedback");
+    }
+
+    /** SPEC §6: a source that reports stock but gives none is the source's refusal: EXTRACTION_FAILED, nothing moved. */
+    private void t13SourceRefuses(Check c) {
+        FlowBackend source = new StuckSourceBackend(64);
+        source.seed(IRON, 20);
+        FlowBackend destination = destinationFactory.apply(7);
+        FlowTransaction tx = FlowTransaction.open();
+        TransferOutcome outcome = executor.execute(source, destination, IRON, 12, tx, new FeedbackSink());
+        c.that(outcome instanceof TransferOutcome.Rejected rejected && rejected.reason() == Reason.EXTRACTION_FAILED,
+                "T13:extraction-failed");
+        tx.commit();
+        c.that(source.available(IRON) == 20 && destination.available(IRON) == 0, "T13:no-change");
     }
 }

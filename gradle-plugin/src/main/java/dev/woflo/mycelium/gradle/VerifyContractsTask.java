@@ -3,6 +3,7 @@ package dev.woflo.mycelium.gradle;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.DirectoryProperty;
@@ -25,13 +26,19 @@ import java.util.List;
 
 /**
  * Compiles the shared harness plus each selected contract package and runs its {@code harness.Run}.
- * Every harness must exit 0 (reference clean, every rejection-matrix entry caught). This is a build gate;
- * it is also only one input to acceptance (DESIGN §11): a green exit code proves the design-time harness,
- * never game-target behavior.
+ * Every harness must exit 0 (reference clean, every rejection-matrix entry caught, a {@code NoOp*} entry among them).
+ * This is a build gate; it is also only one input to acceptance (DESIGN §11): a green exit code proves the design-time
+ * harness, never game-target behavior.
+ *
+ * <p>{@code results.json} carries each harness's own report ({@code mycelium.harness.ContractRun} writes it): what the
+ * reference ran and every matrix entry, as run, so nothing downstream parses a package's source to learn its matrix.
  */
 public abstract class VerifyContractsTask extends DefaultTask {
     /** The release contracts and the harness are written in; older eras get downgraded bytecode (docs/eras.md). */
     static final int RELEASE = 17;
+
+    /** The system property {@code mycelium.harness.ContractRun} writes its report to. */
+    static final String REPORT_PROPERTY = "mycelium.harness.report";
 
     @Internal
     public abstract DirectoryProperty getRoot();
@@ -98,7 +105,10 @@ public abstract class VerifyContractsTask extends DefaultTask {
             }
             Harness.Bundle.write(bundle, entry.id(), RELEASE, List.of(entry.runMain()));
             Path runLog = reportDir.resolve(entry.slug() + ".log");
-            Process process = new ProcessBuilder(javaBin.getPath(), "-cp", classes.toString(), entry.runMain())
+            Path harnessReport = reportDir.resolve(entry.slug() + ".harness.json");
+            Files.deleteIfExists(harnessReport);
+            Process process = new ProcessBuilder(javaBin.getPath(), "-D" + REPORT_PROPERTY + "=" + harnessReport,
+                    "-cp", classes.toString(), entry.runMain())
                     .redirectErrorStream(true)
                     .redirectOutput(runLog.toFile())
                     .start();
@@ -106,6 +116,13 @@ public abstract class VerifyContractsTask extends DefaultTask {
             r.addProperty("exit", exit);
             r.addProperty("status", exit == 0 ? "pass" : "fail");
             r.addProperty("log", runLog.getFileName().toString());
+            if (Files.isRegularFile(harnessReport)) {
+                r.add("harness", JsonParser.parseString(Files.readString(harnessReport, StandardCharsets.UTF_8)));
+            } else if (exit == 0) {
+                // exit 0 without a report: the package's Run does not run on ContractRun (the repository check says so)
+                r.addProperty("status", "unreported");
+                failed.add(entry.id() + " (exited 0 but wrote no harness report: its Run must call mycelium.harness.ContractRun.run)");
+            }
             results.add(r);
             getLogger().lifecycle("Mycelium: {} harness exit={} ({})", entry.id(), exit, runLog.getFileName());
             if (exit != 0) {
@@ -114,7 +131,7 @@ public abstract class VerifyContractsTask extends DefaultTask {
         }
 
         JsonObject report = new JsonObject();
-        report.addProperty("schema", 1);
+        report.addProperty("schema", 2);
         report.addProperty("javaHome", javaHome);
         report.add("results", results);
         Files.writeString(reportDir.resolve("results.json"),

@@ -113,7 +113,7 @@ what make a no-op target fail.
 Required traits for this contract: `ROLLBACK_PARTICIPATION`, `BLOCK_ENTITY_CONTROL`. A missing trait yields
 `Unsupported` before any mutation and before the region is even measured for emptiness.
 
-**Basis note (mirrors `flow/SPEC.md` §7):** a trait declaration is a claim, not evidence. The harness does not
+**Basis note (mirrors `../flow/SPEC.md` §7):** a trait declaration is a claim, not evidence. The harness does not
 trust declarations — it executes fixtures. A failing fixture blocks a claim regardless of declaration, and all
 fixtures in the rejection matrix declare the required traits (the one exception, `UnqualifiedTarget`, exists
 specifically to exercise the `Unsupported` path in T10 and is not part of the rejection matrix itself).
@@ -156,29 +156,27 @@ intended reason:
 
 ## 9. Versioning and packaging
 
+- This is `world.copy@1`. Changes to laws, outcomes, or edge semantics produce `@2`; additions that preserve
+  all laws may remain `@1`.
+- The implementation namespace here (`mycelium.world_copy.v1`) is development-time. Emitted artifacts
+  renamespace Mycelium-owned classes under the consuming mod's artifact-owned prefix; no shared Mycelium
+  runtime ABI is assumed.
+- This contract is one building block of a tick-budgeted copy pipeline; a per-tick section scheduler, hydration,
+  and a shrink policy are composition concerns above this contract, not part of it.
 
 ## 10. Running the harness
 
-From `contracts/world-copy`:
-
-```powershell
-$h = Get-ChildItem -Recurse -Filter *.java ..\..\harness\src | % FullName
-$s = Get-ChildItem -Recurse -Filter *.java src | % FullName
-& "$env:JAVA_HOME\bin\javac.exe" --release 17 -d out ($h + $s)
-& "$env:JAVA_HOME\bin\java.exe" -cp out mycelium.world_copy.v1.harness.Run
-```
-
-Or from the Mycelium root: `./run-contracts.sh world-copy`.
+From the Mycelium root: `bash run-contracts.sh world-copy` (or `.\run-contracts.ps1 world-copy`), or `./gradlew myceliumVerify -Pmycelium.contracts=world.copy@1`.
 
 Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT`; exit code 0.
 
 ## 11. Explicit non-claims
 
-- No Minecraft, Fabric, NeoForge, or Osmosis code was executed to produce this package.
+- No Minecraft or mod loader code was executed to produce this package.
 - The native reference adapter and packaged-game fixture (real chunk sections, real block-entity contents,
   real budget numbers under load) are later artifacts; until they exist, this contract has no game-target
-  evidence. The "≤ 3ms of main-thread time per tick" budget target named in `TDD.md` §8.2 is a design target
-  for the composing scheduler, not a claim this package measures or enforces.
+  evidence. A per-tick main-thread budget (a consumer's, such as 3 ms) is a design target for the composing
+  scheduler, not a claim this package measures or enforces.
 - Block-entity *contents* (chest inventories, sign text, etc.) are explicitly out of scope: this contract
   tracks presence only. A target that preserves presence but drops or corrupts contents does not violate any
   law in this package.

@@ -4,6 +4,7 @@ import mycelium.harness.ContractRun;
 import mycelium.random_seeded.v1.fixtures.JdkRandomSource;
 import mycelium.random_seeded.v1.fixtures.LenientSource;
 import mycelium.random_seeded.v1.fixtures.ModuloBiasedSource;
+import mycelium.random_seeded.v1.fixtures.NoOpSource;
 import mycelium.random_seeded.v1.fixtures.SharedStateSource;
 import mycelium.random_seeded.v1.model.SeededRandom;
 
@@ -24,7 +25,9 @@ public final class Run {
                         new ContractRun.Broken("ModuloBiasedSource",
                                 () -> new RandomSeededContractTests(ModuloBiasedSource::new).run(), "T4:no-modulo-bias"),
                         new ContractRun.Broken("LenientSource",
-                                () -> new RandomSeededContractTests(LenientSource::new).run(), "T5:zero-bound")
+                                () -> new RandomSeededContractTests(LenientSource::new).run(), "T5:zero-bound"),
+                        new ContractRun.Broken("NoOpSource",
+                                () -> new RandomSeededContractTests(NoOpSource::new).run(), "T1:splitmix-identical")
                 ));
         System.exit(exit);
     }

@@ -1,5 +1,12 @@
 # rule.effects@1 — Contract Specification
 
+| | |
+|---|---|
+| Contract id | `rule.effects@1` (implementation namespace `mycelium.rule_effects.v1`) |
+| Status | Design-time contract package; Mycelium DESIGN v0.4 §6–§8, §11 |
+| Domain | Applying and removing a rule's effects (attribute modifiers, flags, status effects) on a bounded set of entities, with stable ids, locale scope, and transactional finality |
+| Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies beyond `harness/src` |
+| Claims discipline | Everything here is design-time. No claim is evidence of behavior on a real game target; that needs the native adapter and gametests (`rule_low_gravity`, `rule_no_stack`) |
 
 ---
 
@@ -100,5 +107,5 @@ From the Mycelium root: `./run-contracts.sh rule-effects` (or `.\run-contracts.p
 ## 11. Explicit non-claims
 
 - No Minecraft, Fabric or NeoForge code was executed to produce this package.
-- The native adapter (attribute modifiers with stable resource-location ids, per-entity flags through attachments, status effects) is Somnium Gate C/D work. Until it exists and `rule_no_stack` passes on a real server, this contract has no game-target evidence.
+- The native adapter (attribute modifiers with stable resource-location ids, per-entity flags through attachments, status effects) is its consumer's work. Until one exists and a gametest like `rule_no_stack` passes on a real server, this contract has no game-target evidence.
 - Rule priority, effect composition between rules, and attribute arithmetic are named here as out of scope rather than silently omitted.

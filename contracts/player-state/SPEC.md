@@ -103,21 +103,12 @@ The `SkippingMigrationChain` entry exercises the naive failure mode directly (`f
 
 ## 10. Running the harness
 
-From `contracts/player-state`:
-
-```powershell
-$h = Get-ChildItem -Recurse -Filter *.java ..\..\harness\src | % FullName
-$s = Get-ChildItem -Recurse -Filter *.java src | % FullName
-& "$env:JAVA_HOME\bin\javac.exe" --release 17 -d out ($h + $s)
-& "$env:JAVA_HOME\bin\java.exe" -cp out mycelium.player_state.v1.harness.Run
-```
-
-Or, from the Mycelium root: `./run-contracts.sh player-state`.
+From the Mycelium root: `bash run-contracts.sh player-state` (or `.\run-contracts.ps1 player-state`), or `./gradlew myceliumVerify -Pmycelium.contracts=persistence.player-state@1`.
 
 Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT`; exit code 0.
 
 ## 11. Explicit non-claims
 
-- No Minecraft, Fabric, NeoForge, or Osmosis code was executed to produce this package.
+- No Minecraft or mod loader code was executed to produce this package.
 - No native storage medium (NBT, a save file, a database) was exercised; `MemoryStatePort` and its lifecycle simulations are an in-memory stand-in for "survives the session," not evidence about any specific serialization format.
 - Concurrent writers, cross-player aggregation, and multi-step migrations authored out of order are out of scope for v1 and named here rather than silently omitted.

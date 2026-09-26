@@ -1,282 +1,239 @@
-# Agent Onboarding Guide: Mycelium
+# AGENTS.md: Mycelium
 
-This document orients AI agents, autonomous workers and human contributors to Mycelium. It says what the
-project is, what state it is in, what you may touch, how to prove your work, and where the bodies are buried.
-No `CLAUDE.md` is used in this workspace — `AGENTS.md` is the onboarding doc, here and in every project folder.
+How to work in this repository: what Mycelium is, what you may change, how to prove a change, and what may be added.
+It is written for AI agents and human contributors alike. `AGENTS.md` is the onboarding document here; there is no
+`CLAUDE.md`.
 
----
+## 1. What Mycelium is
 
-## 1. Project Identity
+**Build once, deploy everywhere.** A Minecraft mod is written once and built for every loader and version it can
+reach, with evidence of what holds on each. Mycelium serves every size of mod, from a server-side integration to a
+total conversion. It gives a mod three things:
 
+- **Contracts** (`contracts/`): typed, versioned domain capabilities. Each has laws, and a rejection matrix of
+  broken implementations that its harness must catch before any provider exists.
+- **A Gradle plugin** (`gradle-plugin/`). It imports contract models under the mod's own namespace, gates the build on
+  every harness, checks the mod's pure layer on every era's Java, keeps optional integrations isolated, and writes an
+  evidence manifest into the jar.
+- **A convention**, the tower (`DESIGN.md` §5). It keeps platform access in one layer, so the rest of a mod is the same
+  everywhere.
 
-**One-liner:** Mycelium gives a Minecraft mod three things: typed **contracts** with safety laws, positive
-obligations and a rejection matrix that must be caught before any provider exists; a **Gradle plugin** that
-imports contract models under the mod's own namespace, runs every harness as a build gate, and writes an
-evidence manifest into the jar; and a **layered convention** (the tower) that keeps platform access in one
-place so the same intent ships on multiple loaders across multiple versions.
+It ships no runtime. Everything a mod imports becomes that mod's own private code.
 
-## 2. Read This First
+| | |
+|---|---|
+| Java | Contracts and harness: written for 17, proven on every Java an era runs on (`docs/eras.md`). Plugin: built for 17. |
+| Dependencies | None at design time. The plugin uses Gson and ASM; era gates fetch JvmDowngrader and each era's JDK when needed. |
+| License | Not decided. Do not add a LICENSE without the owner's word. |
+| Design | `DESIGN.md` (v0.4, frozen). Read it once, in full, before proposing an architectural change. |
+| State | `README.md`'s status line (derived by the build), `CHANGELOG.md` (history), `docs/decisions/` (why). |
 
-### 2.1 State of the project
+Several mods, by different people and agents, build on Mycelium at once. A change here reaches all of them. Keep
+changes additive, version what is not, and coordinate before changing a package another consumer depends on (its
+`provenance` in `contracts/registry.json` says who it was written for).
 
-As of 2026-09-23 (evening): twelve contract packages exist (`dimension.travel@2` promoted from Somnium), all PASS with full reference-and-rejection-matrix coverage
-(three laws added from Somnium's red teams, `docs/decisions/0002-what-somnium-taught.md`; `myceliumUsage` checks imports are real;
-`contracts/registry.json` `liveConsumers` says who actually uses what; `CHANGELOG.md` has the rest)
-(`bash run-contracts.sh` or `./gradlew myceliumVerify`). The Gradle plugin (`gradle-plugin/`) works and is
-applied in all three of Somnium's loader buildscripts (Fabric, NeoForge, Forge; `docs/decisions/0003-forge.md`). Gate A (Osmosis characterization) has not been run. Gate B
-(substrate choice) is decided and evidenced — see `docs/decisions/0001-substrate.md`. Gates C onward (one
-vertical slice inside Osmosis, independent reuse proven by a second consumer) are partially met by Somnium's
-existence as a second, unrelated consumer, but no contract has yet been reused *back* into Osmosis. Read
-`README.md` for the map and `DESIGN.md` (v0.4, frozen for implementation) for the founding design — read that
-once, in full, before proposing an architectural change.
+## 2. Principles
 
-### 2.2 Claims discipline
+1. **Claims discipline** (`DESIGN.md` §11, §14). A passing harness is *design-time* evidence: the reference model and
+   the rejection matrix hold. It says nothing about a real game. Game-target evidence belongs to the consumer, from its
+   own gametests. The evidence manifest (`META-INF/mycelium/evidence.json`) records what ran and what was not checked,
+   with why. It never claims in-game behaviour, and neither may any document or commit here.
+2. **A no-op fails every contract.** Safety alone is satisfiable by doing nothing, so every contract has laws a
+   do-nothing implementation breaks, and its matrix proves it (`DESIGN.md` §8.3).
+3. **No shared runtime.** Imported models live under each consumer's own namespace, privately. Two mods pinning
+   different majors never conflict (`DESIGN.md` §1, §12).
+4. **Native is first-class.** A mod on Mycelium can do anything a mod without it can. Providers and native extensions
+   call the platform directly, through no wrapper of ours. Mycelium makes the platform layer small, never hidden, and
+   promotes a native pattern to a contract only when independent consumers show the same semantics (`DESIGN.md` §4).
+5. **No premature abstraction.** Typed records, sealed outcomes, small plans. No effect language, event bus or DSL
+   (`DESIGN.md` §7, §13).
+6. **Everything stated is derived or checked.** A fact this repository states fails the build when it stops being
+   true (`docs/decisions/0004-the-repository-checks-itself.md`).
 
-This is the load-bearing rule of the whole project (`DESIGN.md` §11, §14).
+What may be added, and what may not, is `docs/admission.md`. Read it before adding a contract, a task, an era or a
+loader.
 
+## 3. The tower (`DESIGN.md` §5)
 
-### 2.3 The three non-negotiables
-
-1. **Every contract's harness must reject every deliberately incorrect implementation in its rejection
-   matrix, including a `NoOp*` fixture, before any provider is written anywhere.** Safety alone is
-   satisfiable by doing nothing (a transfer that always moves zero preserves every item); positive
-   obligations are what make a no-op fail. See `DESIGN.md` §8.3.
-2. **No shared Mycelium runtime.** Imported contract models live under the *consumer's* artifact-owned
-   namespace (`myceliumImport`'s `namespace` parameter), privately, per artifact. Two mods pinning different
-   contract majors must carry different private code and never conflict. See `DESIGN.md` §12.
-3. **No premature IR.** Typed records, sealed outcomes and small plans. Do not build a general effect
-   language, event bus abstraction or DSL because it feels tidy — `DESIGN.md` §7 says why, and the abandonment
-   criteria in §13 apply to any abstraction that starts costing more than the duplication it replaces.
-
-### 2.4 The one-sentence architecture
-
-Contracts promise (laws plus positive obligations, proven by a harness); providers implement and touch the
-platform; a Gradle plugin imports the promise into a consumer's own namespace, gates the build on the harness,
-and records what actually happened.
-
-## 3. Architecture Overview
-
-### 3.1 The tower (`DESIGN.md` §5)
-
-| Layer | Where | What lives here | Touches Minecraft/loader? |
+| Layer | Where | What lives here | Touches Minecraft? |
 |---|---|---|---|
-| L0 Intent | a consumer's `intent/`, `GDD.md`/`TDD.md` | Authored behavior, feel criteria, feature identifiers | no |
-| L1 Kernels | a consumer's `kernels/` (e.g. Somnium's) | Pure algorithms over explicit inputs | **never** |
-| L2 Contracts | **`contracts/` in this repo** | Typed, versioned domain capabilities and their laws | **never** |
-| L3 Seams | a consumer's `common/` | Reusable planning, effect composition, referencing platform types only through L2 | only through contracts |
-| L4 Providers | a consumer's per-loader source | Native implementations, lifecycle binding, the designated platform-access layer | yes, and only here |
-| L5 Machine | **`gradle-plugin/` in this repo**, plus a consumer's build scripts | Import, verify, evidence, dependency resolution | n/a |
-| L6 Verification | contract `harness/`, a consumer's gametests | Rejection matrices, differential traces, feel checks | test-time |
+| L0 Intent | the consumer | Authored behaviour, feel criteria, feature identifiers | no |
+| L1 Kernels | the consumer's pure layer | Pure algorithms over explicit inputs | **never** |
+| L2 Contracts | **`contracts/`** | Typed, versioned capabilities and their laws | **never** |
+| L3 Seams | the consumer | Planning and composition, reaching the platform only through L2 | only through contracts |
+| L4 Providers | the consumer, per loader and era | Native implementations, lifecycle binding: the platform-access layer | yes, with full power |
+| L5 Machine | **`gradle-plugin/`**, plus the consumer's buildscripts | Import, verify, eras, isolation, evidence | n/a |
+| L6 Verification | contract harnesses; the consumer's gametests | Rejection matrices, era gates, real-game evidence | test-time |
 
-Mycelium proper is L2 and L5. Everything else lives in the consumer.
+Mycelium proper is L2 and L5. The rest lives in each consumer.
 
-### 3.2 Repository layout
+## 4. Map
 
 ```
 mycelium/
-├── DESIGN.md                 founding design, v0.4 (frozen); archive/ holds v0.1–v0.3 for history
-├── README.md                 the map: layout, running harnesses, using the plugin, gate status
-├── CONTRACT-PACKAGE.md        how a contract package must be laid out — read before adding one
-├── AGENTS.md                  this file
-├── docs/decisions/            one architectural decision per file, dated, with evidence
-├── harness/src/mycelium/harness/
-│   ├── Check.java             labeled failures; a label is part of a contract's public surface
-│   ├── Suite.java             named fixtures → report → exit code
-│   ├── ContractRun.java       reference must be CLEAN; every rejection-matrix entry must be CAUGHT
-│   └── Seeded.java            deterministic variety for property-style fixtures (wraps random.seeded@1;
-│                              the harness's sources are listed in harness/sources.txt)
+├── DESIGN.md               founding design, v0.4, frozen (archive/ holds earlier versions)
+├── README.md               the front page: status line (derived), layout, tasks, using the plugin
+├── AGENTS.md               this file
+├── CONTRACT-PACKAGE.md     what a contract package is made of, and what keeps each rule
+├── CHANGELOG.md            history: what changed, what ran, what was found
+├── docs/
+│   ├── admission.md        what belongs in Mycelium
+│   ├── eras.md             every Minecraft version: the pure layer's laws, the era gates, the platform map
+│   ├── integrations.md     optional integrations, isolated
+│   └── decisions/          one decision per file, dated, with its evidence
+├── eras/
+│   ├── minecraft.json      every version by era: Java, loaders, names, walls
+│   ├── loaders.json        each loader's packages (and the game's); the pure layer may mention none
+│   └── versions.json       every real version, from Mojang's launcher manifest
+├── harness/
+│   ├── sources.txt         what the harness is compiled from; every runner reads it
+│   ├── src/                Check, Suite, ContractRun (the rules every matrix keeps), Seeded
+│   └── test/               the harness's own checks, each a main; every runner runs them first
 ├── contracts/
-│   ├── registry.json          id → path, package, status, firstConsumer — the plugin reads this
-│   └── <slug>/                one per contract; see §3.3 and CONTRACT-PACKAGE.md
-├── gradle-plugin/              dev.woflo.mycelium, an included Gradle build
-│   └── src/main/java/dev/woflo/mycelium/gradle/
-│       ├── MyceliumPlugin.java        wires the three tasks below into a consumer's build
-│       ├── MyceliumExtension.java     the `mycelium { }` DSL block
-│       ├── ContractRegistry.java      reads contracts/registry.json
-│       ├── ImportContractsTask.java   copies+renamespaces model/ into the consumer
-│       ├── VerifyContractsTask.java   compiles+runs each selected harness; gates `check`
-│       ├── EvidenceTask.java          writes META-INF/mycelium/evidence.json
-│       └── Fingerprint.java           stable SHA-256 over a directory, for task inputs
-├── run-contracts.sh / .ps1    compile + run every harness without Gradle
-└── build.gradle.kts           dogfoods the plugin on this repo itself (`./gradlew myceliumVerify`)
+│   ├── registry.json       id, path, package, status, supersedes, provenance: the only such mapping
+│   ├── patterns.json       code copied between packages on purpose, kept identical
+│   └── <slug>/             one package per contract (CONTRACT-PACKAGE.md)
+├── gradle-plugin/          the plugins, an included build (map below)
+├── run-contracts.sh, .ps1  the harness without Gradle: identical behaviour
+└── build.gradle.kts        applies both plugins to this repository; `./gradlew check` runs everything
 ```
 
-### 3.3 One contract package
+### The plugin, class by class
 
-```
-contracts/<slug>/
-├── SPEC.md                         normative: scope, types, outcomes, laws, positive obligations,
-│                                    edge semantics, traits, fixtures table, rejection matrix, versioning,
-│                                    explicit non-claims (mirror contracts/flow/SPEC.md)
-└── src/mycelium/<slug_with_underscores>/v1/
-    ├── model/                       the contract — the ONLY package a consumer ever imports
-    ├── fixtures/                    reference implementation AND every incorrect implementation
-    │                                named in the rejection matrix — never shipped to a consumer
-    └── harness/
-        ├── <Name>ContractTests.java    fixtures T1..Tn against an implementation
-        └── Run.java                    main(): mycelium.harness.ContractRun.run(id, reference, matrix)
-```
+`gradle-plugin/src/main/java/dev/woflo/mycelium/gradle/`. The repository check fails if a class is missing here.
 
+| Class | What it is |
+|---|---|
+| `MyceliumPlugin.java` | `dev.woflo.mycelium`, for consumers: registers the tasks and wires them into `check` and every jar |
+| `MyceliumExtension.java` | the `mycelium { }` block: contracts, namespace, target, eras, pure layer, integrations |
+| `PureSpec.java` | `mycelium { pure { } }`: the artifact's pure layer and its suites |
+| `ContractRegistry.java` | reads `contracts/registry.json`, strictly; resolves selections and `supersedes` |
+| `ImportContractsTask.java` | `myceliumImport`: copies each selected model under the consumer's namespace |
+| `VerifyContractsTask.java` | `myceliumVerify`: compiles and runs each harness; collects each harness's own report |
+| `Harness.java` | what every runner shares: the harness's sources, and the bundle an era gate runs |
+| `UsageTask.java` | `myceliumUsage`: reports imported contracts the artifact's sources never use |
+| `IsolationTask.java` | `myceliumIsolation`: optional integrations stay in their home packages (`docs/integrations.md`) |
+| `PurityTask.java` | `myceliumPurity`: the pure layer's source laws, P1 and P3 (`docs/eras.md`) |
+| `PureCompileTask.java` | `myceliumPureCompile`: the pure layer compiled alone, into a bundle |
+| `Eras.java` | the era table: bounds, lookup, coverage |
+| `Loaders.java` | `eras/loaders.json`: the platform packages P1 forbids |
+| `EraTask.java` | `myceliumEraJava<N>` (and `myceliumEras`, all of them): every bundle on an era's JVM |
+| `Linkage.java` | law P2: every outside reference in a bundle exists on the era's Java |
+| `EvidenceTask.java` | `myceliumEvidence`: `META-INF/mycelium/evidence.json`, what ran and what was not checked |
+| `Fingerprint.java` | stable SHA-256 over files and directories, for inputs and evidence |
+| `MyceliumRepositoryPlugin.java` | `dev.woflo.mycelium.repository`, for this repository only: its `check` |
+| `RepositoryCheck.java` | the repository against what it states (registry, packages, models, patterns, eras, documents) |
+| `RepositoryCheckTask.java` | `myceliumRepository`: runs it, with what the harnesses ran and the harness's own checks |
+| `RefreshVersionsTask.java` | `myceliumRefreshVersions`: rewrites `eras/versions.json` from the manifest, by hand |
 
-## 4. Layer Rules (hard rules)
+The self-tests, `gradle-plugin/src/test/java/dev/woflo/mycelium/gradle/SelfTest.java`, break a scratch copy of the
+repository in each way a check exists for, and prove the check names the break.
 
-1. `contracts/*/src/*/model` and `contracts/*/src/*/fixtures` have **no** Minecraft or loader dependency, ever.
-   If a contract needs a Minecraft type, it's not a Mycelium contract — that decision belongs in the
-   consumer's L3/L4.
-2. `fixtures/` and `harness/` are **never** imported by a consumer. `ImportContractsTask` only copies
-   `model/`, and rejects (build failure) any model file that imports `mycelium.harness` — see
-   `ImportContractsTask.rewrite`/the harness-dependency check.
-3. Outcomes are a sealed interface: `Committed(receipt) | Rejected(reason) | Unsupported(detail)`, plus
-   `Stale`/`Indeterminate` where the contract's staging genuinely has that state. Zero effect is a rejection,
-   never a receipt (`DESIGN.md` §8.3, §14's decisive counterexamples).
-4. Every contract needs **both** safety laws and positive obligations, and a rejection matrix that catches a
-   `NoOp*` fixture via a positive-obligation label, not just a safety one.
-5. Labels (`"T3:some-label"`) are part of a contract's public surface. Don't rename one without bumping the
-   contract's version — other code (a consumer's tests, this repo's own CI expectations) may reference it.
-6. The Gradle plugin (`gradle-plugin/`) never gains Minecraft-specific logic. It knows about `.java` files,
-   packages and Gradle tasks — nothing loader-specific. If a task needs to know about Fabric, NeoForge or Forge,
-   that's the consumer's build script's job, not the plugin's.
-7. `registry.json` is the only place a contract's id, path and package are declared together. Add a row here
-   in the same change that adds the package; nothing should hardcode the mapping elsewhere.
+## 5. Hard rules
 
-## 5. Conventions
+1. Contract models, fixtures and the harness never touch Minecraft or a loader. If a contract needs a Minecraft type,
+   it is not a contract; that work is a provider's.
+2. `fixtures/` and `harness/` never ship. `myceliumImport` copies `model/` only, and refuses a model that reaches the
+   harness.
+3. A model never mentions another contract's package. Contracts compose in the consumer
+   (`docs/decisions/0005-what-a-contract-is-made-of.md`).
+4. Labels are a contract's public surface. Renaming one, or changing a law, an outcome or a required method, is a new
+   major (`CONTRACT-PACKAGE.md`, rule 12).
+5. The plugin never gains loader-specific logic. Loader knowledge is data (`eras/`) or a consumer's buildscript.
+6. `contracts/registry.json` is the only place a contract's id, path and package are declared together.
+7. `DESIGN.md` is frozen. Decisions that go beyond it are recorded in `docs/decisions/`.
 
-### 5.1 Java
+## 6. How to change Mycelium
 
-- Java 17 for everything under `contracts/` and `harness/` (`javac --release 17`). The plugin targets 17 too
-  (built on whatever JDK runs Gradle; see `gradle-plugin/build.gradle.kts`).
-- Records for data, sealed interfaces for outcomes, `switch` expressions. No Lombok, no third-party deps in
-  contracts (the plugin's Gson dependency stays inside the plugin, never leaks into a contract's model).
-- A `Tx` (or `*Tx`) type per contract follows `contracts/flow`'s `FlowTransaction` pattern exactly: open,
-  openNested, commit, abort, registerUndo, onOuterCommit. Copy it, don't invent a new transaction shape.
-- Naming: contract ids are `domain.capability@N`; model types are nouns; a contract's top-level static
-  executor class is named after the contract's verb (`Transfer`, `SleepLifecycle`, `WorldCopy`, `RuleEffects`).
+Every loop ends the same way: `./gradlew check` green, and a `CHANGELOG.md` entry saying what changed and what ran.
 
-### 5.2 Docs
+**Add a contract.** Read `docs/admission.md`. Write `SPEC.md` first, then `model/`, then `fixtures/` (the reference and
+every broken implementation, a `NoOp*` among them), then the harness (`CONTRACT-PACKAGE.md`). Add the registry row in
+the same change. Iterate with `bash run-contracts.sh <slug>` until the reference is clean and every entry `CAUGHT`.
+Don't wire it into a consumer's build; that is the consumer's decision.
 
-- `DESIGN.md` is the source of truth for *why*. `README.md` for *how to use this repo*.
-  `CONTRACT-PACKAGE.md` for *how a package must be shaped*. This file for *how to work here*. When two
-  disagree, say so in the change and fix the doc with the reason — don't silently pick one.
-- Decisions with rationale go in `docs/decisions/NNNN-<slug>.md`, one per file: date, status, context, options
-  considered, decision, evidence, consequences. `0001-substrate.md` is the template to follow.
-- Keep this file current. If you add a folder, a task, a gotcha or a command, add it here in the same change.
+**When a consumer finds a law the contract never stated.** Its bug may be one any implementation could make. If so,
+the law belongs here: add the law, a label, and a fixture that makes the mistake, and see the harness catch it. Say in
+the SPEC, in words, where it was learned. Additive changes stay in `@N`.
 
-## 6. How To Work Here
+**Change a contract's meaning.** That is a new major: a new package directory, `supersedes` in its row. Existing
+consumers keep the old one until they move.
 
-### 6.1 The loop for adding or changing a contract
+**Change the plugin.** Keep it loader-blind. Add a self-test that breaks what the change checks. Run `./gradlew check`
+here, then at least one consumer's build, which is the independent proof. A new task or option meets
+`docs/admission.md` ("A plugin task or option").
 
-```
-1. Does DESIGN.md's ontology (§3, §6) actually call for a new contract, or does an existing one cover it
-   with a version bump? A new contract id is a design decision, not a code change — say so if unsure.
-2. Follow CONTRACT-PACKAGE.md exactly. Write SPEC.md first: scope, types, outcomes, laws (L1..Ln), positive
-   obligations (P1..Pn), edge semantics, traits, a normative fixtures table, a rejection matrix.
-3. Write model/ (pure, no Minecraft, no harness dependency), then fixtures/ (reference + every incorrect
-   implementation named in the rejection matrix), then harness/Run.java.
-4. Compile and run: see §11. Iterate until Result: PASS with every matrix entry CAUGHT — including the
-   reference itself being CLEAN.
-5. Add a row to contracts/registry.json.
-6. If this repo's own build.gradle.kts verifies "every contract in the registry" (no explicit list), it
-   picks the new one up automatically — confirm with `./gradlew myceliumVerify`.
-7. Tell the consumer(s) that would use this contract; don't wire it into a consumer's build yourself unless
-   asked — that's a scope decision for that project.
-```
+**Add an era, a loader or a version.** Edit `eras/minecraft.json` or `eras/loaders.json` with sources, or run
+`./gradlew myceliumRefreshVersions` when a version ships. The repository check proves the table still covers every
+version exactly once.
 
-### 6.2 Agents propose; protected policies decide
+**Change the harness.** It is every contract's evidence. Prove the rule in `harness/test` and run every package.
 
-- Rejection matrices, safety laws, positive obligations and `registry.json` are **protected**. Propose
-  changes in a clearly labeled change; never weaken a law or delete a rejection-matrix entry to make your own
-  work pass. `DESIGN.md` §12 is explicit: a repair must not authorize itself.
-- Never mark a fixture as skipped or delete one to get green. If a fixture genuinely can't pass yet, that's a
-  design conversation (is the contract wrong, or the implementation?), not something to quietly drop.
-- Never claim two loaders/versions behave identically without both traces existing somewhere (a consumer's
-  job, but don't write claims-discipline-violating text in this repo's own docs either).
+**Change a document.** Living documents stay timeless (`docs/admission.md`, "A document"). A decision gets its own
+record: copy the structure of `docs/decisions/0001-substrate.md` (date, status, context, options, decision, evidence,
+consequences).
 
-### 6.3 Scope boundaries for autonomous agents
+## 7. What checks what
+
+`./gradlew check` at the root runs all of it. The runner scripts are the quick path for the harnesses alone.
+
+| Gate | What it proves |
+|---|---|
+| `myceliumVerify` | every harness: the reference clean, every matrix entry caught for its label, a `NoOp*` among them |
+| `myceliumPurity`, `myceliumPureCompile` | the contract models are a pure layer (P1, P3), and compile alone |
+| `myceliumEras` | every harness on every Java an era runs on: stubs, linkage (P2), behaviour |
+| `myceliumRepository` | registry against disk, package shapes, model ownership, copied patterns, era coverage, loader packages, document counts, paths and maps, and the harness's own checks |
+| `selfTest` (`gradle-plugin`) | every repository check fires on the break it exists for; era, registry, evidence and integration semantics |
+| `bash run-contracts.sh`, `.\run-contracts.ps1` | the harness's own checks, then every package, without Gradle |
+
+A green gate is one input to acceptance, never the decision (`DESIGN.md` §11). Skipping a fixture to get green is
+insufficient evidence, not a pass.
+
+## 8. Scope for autonomous agents
 
 You may, without asking:
-- Create and edit files inside `contracts/`, `harness/`, `gradle-plugin/`, `docs/decisions/`.
-- Add a new contract package end to end, including its registry row.
-- Run `run-contracts.sh`/`.ps1` and `./gradlew myceliumVerify` locally.
-- Fix a bug in the Gradle plugin, with tests/verification of the fix.
+- change `contracts/`, `harness/`, `gradle-plugin/`, `eras/`, `docs/` and the living documents, within the rules above;
+- add a contract end to end, with its registry row;
+- fix a plugin bug, with a self-test that proves the fix;
+- run every gate and runner.
+
+Ask first:
+- before changing an existing contract's laws, outcomes or labels in place (that is a new major);
+- before editing a package another consumer is developing (see its provenance);
+- before adding a dependency (Gson and ASM in the plugin; nothing in contracts or the harness);
+- before publishing, tagging, adding a LICENSE, or anything destructive outside this folder;
+- before touching another repository. A consumer's repository is read-only from here: read it to understand a need,
+  and change it only from its own repository, with its owner's go-ahead.
+
+Rejection matrices, laws and `contracts/registry.json` are protected. Never weaken a law or delete a matrix entry to
+make your own work pass: a repair must not authorize itself (`DESIGN.md` §12).
+
+## 9. Gotchas
+
+| Area | Issue | Mitigation |
+|---|---|---|
+| Claims | A passing harness is tempting to read as "works in Minecraft" | It proves the model and the matrix. Game evidence is the consumer's |
+| No-ops | Safety laws alone let a do-nothing implementation pass | Every matrix has a `NoOp*` entry; `ContractRun` fails a matrix without one |
+| Package names | Slugs are kebab-case; Java packages cannot be | The registry's `package` is the only mapping; never recompute it |
+| Transactions | A new transaction shape invites undo-order and nested-commit bugs | Copy `FlowTransaction` and rename it; `contracts/patterns.json` keeps the copies identical |
+| Coupling | Adding a Minecraft type to a contract "just this once" | It breaks purity and the no-runtime rule. The consumer's seam converts |
+| Shared vocabulary | Ten `Reason` enums look like duplication | They share a name, not a meaning. Each is its own contract's (decision 0005) |
+| Vacuous passes | A gate given nothing to check can look green | Every report says what it checked; evidence carries `"checked": false` with a `why` |
+| Old versions | A build that compiles is not a port | A rung is ported when its whole suite runs there (`docs/eras.md`) |
+
+## 10. Commands
 
 
-### 6.4 Reporting
+On a machine shared with other JVMs (a game server, say), keep Gradle's heap small (`GRADLE_OPTS=-Xmx512m`) and run
+one Gradle build at a time.
 
+## 11. Open questions
 
-## 7. Common Tasks
-
-### Add a contract
-See §6.1. The harness must catch every incorrect implementation *before* any provider anywhere depends on it.
-
-### Fix a failing rejection-matrix entry
-1. Read the fixture's own doc comment — it should say what law or obligation it's meant to violate.
-2. Run just that package: `bash run-contracts.sh <slug>` (or `.ps1`). Read the CAUGHT/MISSED line and the
-   failing label underneath it.
-3. Fix either the reference executor (if the law is right but the code is wrong) or the fixture (if the
-   fixture doesn't actually violate what it claims to) — never both to force a pass; figure out which one
-   is actually incorrect against `SPEC.md`.
-
-### Change the Gradle plugin
-1. `gradle-plugin/` is an included build (`pluginManagement { includeBuild("gradle-plugin") }` in this repo's
-   `settings.gradle.kts`, and in a consumer's `settings.gradle.kts` via a relative path).
-2. After a change, `./gradlew myceliumVerify` here dogfoods it against every registered contract. A
-   consumer's own build (e.g. Somnium's `:26.3-fabric:build`) is the second, independent proof it still works
-   — run at least one before calling a plugin change done.
-3. `ImportContractsTask`, `VerifyContractsTask` and `EvidenceTask` are the only three tasks the plugin wires
-   into a consumer. Keep it that way; don't grow a fourth without a concrete need from a consumer.
-
-### Add a decision record
-Copy `docs/decisions/0001-substrate.md`'s structure. One decision, one file, dated, with the evidence that
-justified it — not a design discussion, a record of what was decided and why.
-
-## 8. Verification Checklist (before calling anything done)
-
-- [ ] Every contract package's harness: `Result: PASS`, reference `CLEAN`, every rejection-matrix entry
-      `CAUGHT` for its *intended* label (not just "some" failure)
-- [ ] `bash run-contracts.sh` (all packages) and `./gradlew myceliumVerify` both agree
-- [ ] No model file imports `mycelium.harness` (the import task would reject it, but check before, not after)
-- [ ] `contracts/registry.json` updated in the same change as any new/moved/renamed package
-- [ ] No claim in a commit message, doc or report says a contract "works" in-game — that evidence belongs to
-      a consumer, not here
-- [ ] Docs updated in the same change: this file if you added a folder/task/gotcha, `README.md` if the gate
-      table or usage changed, a decision record if you made an architectural call
-
-## 9. Known Gotchas
-
-
-## 10. File Map for Quick Navigation
-
-
-## 11. Commands
-
-Without Gradle:
-
-
-With Gradle (dogfoods the plugin on this repo):
-
-```bash
-./gradlew myceliumVerify                                     # every package in the registry
-./gradlew myceliumVerify -Pmycelium.contracts=world.copy@1   # a subset
-```
-
-Building the plugin alone: `./gradlew :gradle-plugin:build` (or just build a consumer that applies it — that
-exercises the same code path plus real-world integration).
-
-## 12. Open Questions
-
-- Gate A (Osmosis characterization) hasn't started: no contract has been reused *back* into Osmosis yet, so
-  the "independent reuse" claim (Gate D1) is one-directional (Somnium reusing Mycelium) until that happens.
-- Contract format and corpus storage beyond the current file-tree-plus-registry.json approach: still open per
-  `DESIGN.md` §15.
-- Whether `persistence.player-state@1` and `presentation.particle-cue@1` (authored for Somnium) get adopted
-  back into Osmosis, or stay Somnium-only: whoever needs it next decides, per `DESIGN.md`'s incremental
-  adoption principle.
-
-## 13. Resources
-
+- Contract format and corpus storage beyond a file tree and a registry (`DESIGN.md` §15).
+- The design's gates (`DESIGN.md` §14) are measured against real consumers; where each stands is recorded in
+  `CHANGELOG.md` and `docs/decisions/` as it moves.
 
 ---
 
-*Keep this file current. When a contract's actual behavior disagrees with its `SPEC.md`, the spec changes and
-the reason is written down — the spec is normative, but only because it's kept honest. When in doubt, read
-`DESIGN.md`. When `DESIGN.md` doesn't say, that's a decision to make and record, not to guess past.*
+*When a contract's behaviour disagrees with its SPEC, the SPEC changes and the reason is written down: it is normative
+because it is kept honest. When `DESIGN.md` doesn't say, that is a decision to make and record, not to guess past.*

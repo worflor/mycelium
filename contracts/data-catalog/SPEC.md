@@ -1,5 +1,7 @@
 # data.catalog@1
 
+A reloadable, validated set of named data entries: what a datapack folder of rules, words or places becomes. Written
+for Somnium, where three data loaders had grown the same unwritten law.
 
 ## Model
 
@@ -30,5 +32,9 @@
 | `MergingCatalog` | A reload adds to what was there | T6 |
 | `ListOrderWinsCatalog` | The last duplicate in the list wins, not the later pack | T3 |
 | `IncrementalCatalog` | Publishes as it goes | T4 |
+| `NoOpCatalog` | Loads nothing: every reload is the empty snapshot | T1 (`T1:id-order`) |
+
+`NoOpCatalog` never throws, never goes stale and is trivially atomic. It is in the matrix because this is a model
+contract, and a type that does nothing must still fail one of its laws (CONTRACT-PACKAGE.md).
 
 Not covered (a runtime concern): where sources come from (a resource manager, a folder), and when reload is called.

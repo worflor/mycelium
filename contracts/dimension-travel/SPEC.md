@@ -6,12 +6,23 @@
 | Status | Mycelium contract package, mirrors `../flow/SPEC.md` in layout and discipline |
 | Domain | Move a player between dimensions (or same-coordinate across a seam) with position and inventory intact, confirming arrival before reporting success |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies |
-| Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires the native adapter (`FabricDimensions.teleport` / vanilla `teleportTo`, TDD §7.1) and packaged-game fixtures of a later gate |
+| Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires a native adapter (vanilla `teleportTo`, or a loader's own teleport) and packaged-game fixtures |
 
 ---
 
 ## 1. Scope
 
+- One player, one travel request per call: a target `Position` (dimension + exact coordinates + look) and a
+  `Pose` to arrive in.
+- `move` is the sole mutating call on the port. It may throw `PortFailure` after having partially acted — the
+  contract never assumes a throw means nothing happened, and never assumes a non-throwing return means arrival
+  is confirmed. Confirmation is always a separate, explicit check against `exists`/`where` after `move`
+  returns.
+- `drift` is same-coordinate travel: a convenience built on `execute` that preserves `x`, `y`, `z` (and look)
+  exactly and only changes the dimension.
+- Inventory is read-only from this contract's point of view: `move` must not touch it, and nothing here
+  transforms, merges, or drops stacks. Carrying things out, or leaving them behind, is a higher-level concern that runs
+  around a travel, not inside it.
 
 ## 2. Types
 
@@ -102,7 +113,7 @@ an unmoved player); P1/P2 are what make that fail.
 Required traits: `POSITION_EXACT`, `INVENTORY_PRESERVING`. A missing trait yields `Unsupported` before any
 mutation and before the player's current position is even inspected.
 
-**Basis note (mirrors `flow/SPEC.md` §7):** a trait declaration is a claim, not evidence. The harness does not
+**Basis note (mirrors `../flow/SPEC.md` §7):** a trait declaration is a claim, not evidence. The harness does not
 trust declarations — it executes fixtures. A failing fixture blocks a claim regardless of declaration, and
 every fixture in the rejection matrix declares both required traits. `UnqualifiedTravelPort` (declaring only
 `POSITION_EXACT`) exercises the `Unsupported` edge in T11 and is not itself a rejection-matrix entry.
@@ -139,25 +150,23 @@ intended reason:
 
 ## 9. Versioning and packaging
 
+- This is `dimension.travel@1`. Changes to laws, outcomes, or edge semantics produce `@2`; additions that
+  preserve all laws may remain `@1`.
+- The implementation namespace here (`mycelium.dimension_travel.v1`) is development-time. Emitted artifacts
+  renamespace Mycelium-owned classes under the consuming mod's artifact-owned prefix; no shared Mycelium
+  runtime ABI is assumed.
+- This contract is a building block for composed moves (plan where to go, then go): a failure here (`Rejected` or
+  `Indeterminate`) is expected to unwind the whole composed transaction.
 
 ## 10. Running the harness
 
-From `contracts/dimension-travel`:
-
-```powershell
-$h = Get-ChildItem -Recurse -Filter *.java ..\..\harness\src | % FullName
-$s = Get-ChildItem -Recurse -Filter *.java src | % FullName
-& "$env:JAVA_HOME\bin\javac.exe" --release 17 -d out ($h + $s)
-& "$env:JAVA_HOME\bin\java.exe" -cp out mycelium.dimension_travel.v1.harness.Run
-```
-
-Or from the Mycelium root: `./run-contracts.sh dimension-travel`.
+From the Mycelium root: `bash run-contracts.sh dimension-travel` (or `.\run-contracts.ps1 dimension-travel`), or `./gradlew myceliumVerify -Pmycelium.contracts=dimension.travel@1`.
 
 Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT`; exit code 0.
 
 ## 11. Explicit non-claims
 
-- No Minecraft, Fabric, NeoForge, or Osmosis code was executed to produce this package.
+- No Minecraft or mod loader code was executed to produce this package.
 - The native reference adapter (`FabricDimensions.teleport`, vanilla `teleportTo`/`changeDimension`) and a
   packaged-game fixture are later artifacts; until they exist, this contract has no game-target evidence. In
   particular, "target chunk not loaded" is modeled here only as `LaggyPort`'s deferred `move` — no real chunk

@@ -38,13 +38,20 @@ that chunk fall into nothing.
 | `EternalLeaseKeeper` | Leases never lapse | H5 |
 | `ShortLeaseKeeper` | A lease asked for again is replaced, so a shorter ask cuts it short | H5 |
 | `RenewsOwnersOnlyKeeper` | Renewal forgets leases, so a lease's ticket times out under it | H6 |
+| `ReleaseAllOverreachKeeper` | Letting go of everything drops every place the owner touched, shared or leased ones too | H4 |
+| `NoOpKeeper` | Keeps nothing: takes no ticket, drops none | H1 |
+
+`NoOpKeeper` breaks no law about letting go, since it never drops anything wrongly. It is in the matrix because this is
+a model contract: the laws govern a type, and a type that does nothing must still fail one (CONTRACT-PACKAGE.md).
 
 ## Using it
 
-The engine adapter is two calls: vanilla's add and remove for one ticket type at one level. Renew every held place
-more often than the ticket type's timeout (PORTAL's is 300 ticks), and clear the ledger when the server stops, since
-the tickets go with it. Take every ticket through the ledger: a single raw `addTicket` or `setChunkForced(false)`
-elsewhere, at the same type and level, brings the bug back.
+The engine adapter is two calls: vanilla's add and remove for one ticket type at one level. Use a ticket type of your
+own, never one vanilla or another mod also takes (`PORTAL`, `FORCED`): the ledger counts only its own holders, and an
+outside holder of the same type and level shares the one ticket, so a real portal going out takes your hold with it.
+Renew every held place more often than the ticket type's timeout, and clear the ledger when the server stops, since the
+tickets go with it. Take every ticket of that type through the ledger: a single raw add or remove elsewhere brings the
+bug back.
 
 Not covered: ticket levels as a range (a hold at radius 2 and another at radius 1 are different places here),
 simulation versus loading, persistence across restarts (a dream's holds never need it). Add them as a minor version

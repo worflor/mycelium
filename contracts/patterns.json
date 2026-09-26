@@ -1,0 +1,13 @@
+{
+ "schema": 1,
+ "note": "Code a contract copies rather than invents. Contracts share no runtime and import nothing from one another (DESIGN §12; docs/decisions/0005-what-a-contract-is-made-of.md), so a shape many of them need is copied into each. A copy must stay a copy: the repository check compares every model file whose name matches 'fileName' with the canonical file, after removing comments, the package line and the class's own name, and trimming each line. A copy that must differ is exempted here, by its path, with the reason; nothing else may differ.",
+ "patterns": [
+  {
+   "name": "transaction",
+   "canonical": "contracts/flow/src/mycelium/flow/v1/model/FlowTransaction.java",
+   "fileName": "(Tx|\\w+Tx|\\w+Transaction)\\.java",
+   "why": "Nested commits, undo order and deferred outer-commit actions are easy to get subtly wrong (DESIGN §7): the finality rule depends on every contract's transaction behaving exactly alike.",
+   "exempt": {}
+  }
+ ]
+}

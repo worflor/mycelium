@@ -1,0 +1,355 @@
+package dev.woflo.mycelium.gradle;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
+/**
+ * The plugin's self-tests, in the repository's own dependency-free style (a main, labelled checks, exit code = failures;
+ * see the harness's {@code Suite} and {@code SeededIdentity}). Run by {@code ./gradlew -p gradle-plugin selfTest}, and
+ * by the Mycelium root's {@code check}.
+ *
+ * <p>The repository checks are proven the only honest way: a scratch copy of the repository is broken in one specific
+ * way, and the check must name that break (compared with an unbroken copy, so the test holds whatever else the
+ * repository states that day). A check never shown to fire is not evidence.
+ */
+public final class SelfTest {
+    private static final List<String> FAILURES = new ArrayList<>();
+    private static int assertions;
+
+    public static void main(String[] args) throws Exception {
+        Path root = Path.of(args.length > 0 ? args[0] : "..").toAbsolutePath().normalize();
+        eras(root);
+        registry();
+        integrations();
+        evidence();
+        loaders(root);
+        repository(root);
+        System.out.println();
+        System.out.println("Mycelium plugin self-test: " + (FAILURES.isEmpty() ? "PASS" : "FAIL") + " (" + assertions
+                + " assertions, " + FAILURES.size() + " failed)");
+        FAILURES.forEach(f -> System.out.println("  - " + f));
+        System.exit(FAILURES.size());
+    }
+
+    static void that(boolean ok, String label) {
+        assertions++;
+        if (!ok) {
+            FAILURES.add(label);
+        }
+    }
+
+    // --- eras ------------------------------------------------------------------------------------------------------
+
+    static void eras(Path root) {
+        Eras eras = Eras.load(root.toFile());
+        String[][] expect = {
+                {"c0.0.11a", "classic"}, {"c0.0.13a_03", "classic"}, {"c0.30_01c", "classic"},
+                {"a1.0.4", "alpha"}, {"a1.2.6", "alpha"},
+                {"b1.0", "beta"}, {"b1.7.3", "beta"}, {"b1.8.1", "beta"}, {"b1.9-pre1", "beta"}, {"b1.9-pre6", "beta"},
+                {"1.0", "release"}, {"1.7.10", "release"}, {"1.8", "modpacks"}, {"1.12.2", "modpacks"},
+                {"1.13", "flattening"}, {"1.13.2", "flattening"}, {"1.14", "fabric"}, {"1.16.5", "fabric"},
+                {"1.17", "java16"}, {"1.17.1", "java16"}, {"1.18", "caves"}, {"1.20.1", "caves"},
+                {"1.20.2", "configuration"}, {"1.20.4", "configuration"}, {"1.20.5", "components"},
+                {"1.20.5-pre1", "components"}, {"1.21.4", "components"}, {"1.21.11", "components"}, {"1.21.100", "components"},
+                {"26.1", "unobfuscated"}, {"26.1.2", "unobfuscated"}, {"26.3", "unobfuscated"}, {"26.99", "unobfuscated"},
+        };
+        for (String[] e : expect) {
+            String got;
+            try {
+                got = eras.of(e[0]).id();
+            } catch (RuntimeException ex) {
+                got = "throws: " + ex.getMessage();
+            }
+            that(e[1].equals(got), "eras:of " + e[0] + " is " + e[1] + ", got " + got);
+        }
+        that(eras.allJavas().equals(List.of(8, 16, 17, 21, 25)), "eras:allJavas is 8,16,17,21,25: " + eras.allJavas());
+        String[] order = {"c0.0.11a", "a1.0.4", "b1.0", "1.0", "1.21.1", "26.3"};
+        for (int i = 0; i < order.length; i++) {
+            for (int j = 0; j < order.length; j++) {
+                int c = Eras.compare(order[i], order[j]);
+                that(Integer.signum(c) == Integer.signum(Integer.compare(i, j)), "eras:compare orders " + order[i] + " and " + order[j]);
+                that(c == -Eras.compare(order[j], order[i]), "eras:compare is antisymmetric on " + order[i] + ", " + order[j]);
+            }
+        }
+        try {
+            eras.of("27.1");
+            that(false, "eras:a version past every era is a miss");
+        } catch (IllegalArgumentException ex) {
+            that(ex.getMessage().contains("after 'unobfuscated'"), "eras:a miss names the nearest era: " + ex.getMessage());
+        }
+        that(!Eras.readable("rd-132211") && !Eras.readable("inf-20100618") && Eras.readable("c0.30_01c"),
+                "eras:pre-Classic ids are not readable versions; Classic ones are");
+        that(Eras.atMost("26.3", "26.x") && Eras.atMost("26.40.1", "26.x") && !Eras.atMost("27.1", "26.x"), "eras:a line ends after its last version");
+        that(Eras.atLeast("a1.0.4", "a1.x") && !Eras.atLeast("c0.30_01c", "a1.x"), "eras:a line starts at its first version");
+    }
+
+    // --- the registry ------------------------------------------------------------------------------------------------
+
+    static final String ROW_A = "{\"id\":\"x.a@1\",\"path\":\"a\",\"package\":\"mycelium.a.v1\",\"status\":\"reference\"}";
+    static final String ROW_B = "{\"id\":\"x.a@2\",\"path\":\"a-2\",\"package\":\"mycelium.a.v2\",\"status\":\"reference\",\"supersedes\":\"x.a@1\"}";
+
+    static String registryText(String... rows) {
+        return "{\"schema\":2,\"note\":\"n\",\"contracts\":[" + String.join(",", rows) + "]}";
+    }
+
+    static boolean refuses(Runnable r, String fragment) {
+        try {
+            r.run();
+            return false;
+        } catch (RuntimeException e) {
+            return e.getMessage() != null && e.getMessage().contains(fragment);
+        }
+    }
+
+    static void registry() {
+        that(ContractRegistry.parse(registryText(ROW_A, ROW_B), "t").all().size() == 2, "registry:a valid registry reads");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("}", ",\"liveConsumers\":[]}")), "t"), "liveConsumers"),
+                "registry:an unknown field is refused, by name");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace(",\"status\":\"reference\"", "")), "t"), "status"),
+                "registry:a row without status is refused");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_B), "t"), "supersedes unknown"),
+                "registry:superseding an unknown contract is refused");
+        that(refuses(() -> ContractRegistry.parse("{\"schema\":1,\"contracts\":[]}", "t"), "schema"),
+                "registry:another schema is refused");
+        ContractRegistry reg = ContractRegistry.parse(registryText(ROW_A, ROW_B), "t");
+        that(refuses(() -> reg.resolve(List.of("x.a@1", "x.a@2")), "never both"),
+                "registry:a build selecting a contract and its successor is refused, naming both");
+        that(reg.resolve(List.of("x.a@2")).size() == 1, "registry:a build selecting the successor alone is fine");
+        that(reg.require("x.a@1").runFile().equals("contracts/a/src/mycelium/a/v1/harness/Run.java"),
+                "registry:the harness main lives where every runner looks");
+    }
+
+    // --- integrations ------------------------------------------------------------------------------------------------
+
+    static void integrations() {
+        that(refuses(() -> IsolationTask.Integration.decode("voicechat|woflo.voice|"), "no API packages"),
+                "integration:an empty API list is refused, not a gate that keeps nothing out");
+        that(refuses(() -> IsolationTask.Integration.decode("voicechat||de.maxhenkel"), "home package"),
+                "integration:a blank home package is refused");
+        that(refuses(() -> IsolationTask.Integration.decode("voicechat|woflo.voice"), "malformed"),
+                "integration:a declaration missing its parts is refused");
+        that(refuses(() -> IsolationTask.Integration.decode("voicechat|woflo.voice|de maxhenkel"), "not a Java package"),
+                "integration:an API that is not a package is refused");
+        IsolationTask.Integration ok = IsolationTask.Integration.decode("voicechat|woflo.voice|de.maxhenkel.voicechat|a/B.java");
+        that(IsolationTask.Integration.decode(ok.encode()).equals(ok), "integration:encode and decode round-trip");
+    }
+
+    // --- the evidence convention ------------------------------------------------------------------------------------
+
+    static void evidence() {
+        JsonObject none = EvidenceTask.usageOf(null, "a@1");
+        that(!none.get("checked").getAsBoolean() && none.has("why"), "evidence:usage that did not run says so, with why");
+        JsonObject empty = EvidenceTask.usageOf(JsonParser.parseString("{\"schema\":2,\"checked\":false,\"why\":\"no sources\"}")
+                .getAsJsonObject(), "a@1");
+        that(!empty.get("checked").getAsBoolean() && "no sources".equals(empty.get("why").getAsString()),
+                "evidence:usage with nothing to judge by says it checked nothing, and why");
+        JsonObject seen = EvidenceTask.usageOf(JsonParser.parseString("{\"schema\":2,\"checked\":true,\"results\":"
+                + "[{\"id\":\"a@1\",\"referencingFiles\":3}]}").getAsJsonObject(), "a@1");
+        that(seen.get("checked").getAsBoolean() && seen.get("referenced").getAsBoolean(), "evidence:usage that ran says what it saw");
+    }
+
+    // --- loaders -----------------------------------------------------------------------------------------------------
+
+    static void loaders(Path root) {
+        List<String> packages = Loaders.load(root.toFile()).platformPackages();
+        for (String p : List.of("net.minecraft", "com.mojang", "net.fabricmc", "net.neoforged", "net.minecraftforge", "cpw.mods",
+                "org.spongepowered", "net.legacyfabric", "net.ornithemc", "net.modificationstation", "org.quiltmc")) {
+            that(packages.contains(p), "loaders:the pure layer keeps " + p + " out");
+        }
+    }
+
+    // --- the repository check, on broken copies -----------------------------------------------------------------------
+
+    static final Set<String> SKIP = Set.of("build", "out", ".gradle", ".git", ".jvmdg", "archive");
+
+    static void repository(Path root) throws IOException {
+        Path base = copy(root);
+        Set<String> baseline = findings(base);
+        expect(root, "an unregistered package on disk", r -> mkdirs(r.resolve("contracts/zzz-unregistered/src/mycelium/zzz/v1/model")),
+                f -> f.contains("zzz-unregistered") && f.contains("no row"), baseline);
+        expect(root, "a registry row with no package", r -> rename(r.resolve("contracts/cue"), r.resolve("contracts/cue-moved")),
+                f -> f.contains("presentation.particle-cue@1") && f.contains("not a package on disk"), baseline);
+        expect(root, "a transaction copy that drifted", r -> replace(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"),
+                        "undos.clear();", "undos.clear(); undos.clear();"),
+                f -> f.contains("cue/v1/model/Tx.java") && f.contains("transaction"), baseline);
+        expect(root, "only the class's name and comments changed", r -> {
+                    Path tx = r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java");
+                    replace(tx, "public final class Tx", "/** renamed */ public final class Tx");
+                },
+                f -> f.contains("cue/v1/model/Tx.java"), baseline, false);
+        expect(root, "an era bound that names no real version", r -> replace(r.resolve("eras/minecraft.json"), "\"to\": \"b1.x\"", "\"to\": \"b1.9\""),
+                f -> f.contains("'b1.9'") && f.contains("not a version the launcher names"), baseline);
+        expect(root, "an era naming a loader with no packages", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"babric\",", "\"babric\", \"riftloader\","),
+                f -> f.contains("riftloader"), baseline);
+        expect(root, "a gap in the era table", r -> replace(r.resolve("eras/minecraft.json"), "\"from\": \"1.18\"", "\"from\": \"1.19\""),
+                f -> f.contains("1.18") && f.contains("no era"), baseline);
+        expect(root, "a wrong count in README's status line", r -> replaceRegex(r.resolve("README.md"), "(\\| Status \\|[^\\n]*?)\\d+ packages", "$1999 packages"),
+                f -> f.contains("999 packages"), baseline);
+        expect(root, "a count stated outside the status line", r -> append(r.resolve("AGENTS.md"), "\nThere are twelve contract packages.\n"),
+                f -> f.contains("AGENTS.md") && f.contains("twelve contract packages"), baseline);
+        expect(root, "a path that does not exist", r -> append(r.resolve("CONTRACT-PACKAGE.md"), "\nSee `harness/src/mycelium/harness/Nowhere.java`.\n"),
+                f -> f.contains("Nowhere.java"), baseline);
+        expect(root, "a package keeping its own harness", r -> write(r.resolve("contracts/cue/src/mycelium/cue/v1/harness/Check.java"),
+                        "package mycelium.cue.v1.harness; public final class Check {}"),
+                f -> f.contains("cue") && f.contains("own Check.java"), baseline);
+        expect(root, "a package whose harness did not report", r -> UNREPORTED.add("presentation.particle-cue@1"),
+                f -> f.contains("presentation.particle-cue@1") && f.contains("no harness report"), baseline);
+        expect(root, "a path that leaves the repository", r -> append(r.resolve("AGENTS.md"), "\nSee `../elsewhere/AGENTS.md`.\n"),
+                f -> f.contains("../elsewhere/AGENTS.md") && f.contains("outside this repository"), baseline);
+        expect(root, "a contract document naming a file its package lacks", r -> append(r.resolve("contracts/cue/SPEC.md"),
+                        "\nSee `harness/Nowhere.java`.\n"),
+                f -> f.contains("contracts/cue/SPEC.md") && f.contains("harness/Nowhere.java"), baseline);
+        expect(root, "a contract document naming a file its package has", r -> append(r.resolve("contracts/cue/SPEC.md"),
+                        "\nSee `harness/Run.java` and `model/Tx.java`.\n"),
+                f -> f.contains("contracts/cue/SPEC.md"), baseline, false);
+        expect(root, "a bare file name from a consumer's project", r -> append(r.resolve("CONTRACT-PACKAGE.md"),
+                        "\nA consumer's `fabric.mod.json` is its own.\n"),
+                f -> f.contains("fabric.mod.json"), baseline, false);
+        expect(root, "an era that runs backwards", r -> replaceRegex(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1\\.20\\.5\",(\\s+)\"to\": \"1\\.21\\.x\"", "\"from\": \"1.21.4\",$1\"to\": \"1.20.6\""),
+                f -> f.contains("runs backwards"), baseline);
+        expect(root, "a model reaching another contract", r -> append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"),
+                        "\nclass Reach { mycelium.flow.v1.model.Receipt r; }\n"),
+                f -> f.contains("reaches mycelium.flow.v1"), baseline);
+        expect(root, "a plugin class the map does not name", r -> write(r.resolve("gradle-plugin/src/main/java/dev/woflo/mycelium/gradle/Unmapped.java"),
+                        "package dev.woflo.mycelium.gradle; final class Unmapped {}"),
+                f -> f.contains("Unmapped.java"), baseline);
+        delete(base);
+    }
+
+    interface Break {
+        void apply(Path copy) throws IOException;
+    }
+
+    static void expect(Path root, String what, Break change, Predicate<String> finding, Set<String> baseline) throws IOException {
+        expect(root, what, change, finding, baseline, true);
+    }
+
+    static void expect(Path root, String what, Break change, Predicate<String> finding, Set<String> baseline, boolean fires)
+            throws IOException {
+        Path copy = copy(root);
+        try {
+            change.apply(copy);
+            List<String> fresh = new ArrayList<>();
+            for (String f : findings(copy)) {
+                if (!baseline.contains(f)) {
+                    fresh.add(f);
+                }
+            }
+            boolean fired = fresh.stream().anyMatch(finding);
+            that(fired == fires, "repository:" + what + (fires ? " is found" : " is not a finding") + " (new findings: " + fresh + ")");
+        } finally {
+            UNREPORTED.clear();
+            delete(copy);
+        }
+    }
+
+    /** Contracts whose harness report the next check is not handed (a break of what ran, not of a file). */
+    static final Set<String> UNREPORTED = new java.util.HashSet<>();
+
+    /** What myceliumVerify would hand the check: a report for every registered contract, but those {@link #UNREPORTED}. */
+    static java.util.Map<String, Integer> reported(Path copy) {
+        java.util.Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        try {
+            for (ContractRegistry.Entry e : ContractRegistry.load(copy.toFile()).all()) {
+                if (!UNREPORTED.contains(e.id())) {
+                    out.put(e.id(), 1);
+                }
+            }
+        } catch (RuntimeException e) {
+            // a registry that does not load is the check's own finding
+        }
+        return out;
+    }
+
+    static Set<String> findings(Path copy) throws IOException {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        for (RepositoryCheck.Finding f : RepositoryCheck.run(copy, reported(copy)).findings()) {
+            out.add(f.toString().replace(copy.toString().replace('\\', '/'), "<root>"));
+        }
+        return out;
+    }
+
+    static Path copy(Path root) throws IOException {
+        Path to = Files.createTempDirectory("mycelium-selftest");
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (Path p : (Iterable<Path>) walk::iterator) {
+                Path rel = root.relativize(p);
+                boolean skip = false;
+                for (Path part : rel) {
+                    if (SKIP.contains(part.toString())) {
+                        skip = true;
+                        break;
+                    }
+                }
+                if (skip) {
+                    continue;
+                }
+                Path target = to.resolve(rel.toString());
+                if (Files.isDirectory(p)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.copy(p, target);
+                }
+            }
+        }
+        return to;
+    }
+
+    static void delete(Path dir) throws IOException {
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(dir)) {
+            for (Path p : (Iterable<Path>) walk.sorted(Comparator.reverseOrder())::iterator) {
+                Files.delete(p);
+            }
+        }
+    }
+
+    static void mkdirs(Path p) throws IOException {
+        Files.createDirectories(p);
+    }
+
+    static void rename(Path from, Path to) throws IOException {
+        Files.move(from, to);
+    }
+
+    static void write(Path p, String text) throws IOException {
+        Files.createDirectories(p.getParent());
+        Files.writeString(p, text, StandardCharsets.UTF_8);
+    }
+
+    static void append(Path p, String text) throws IOException {
+        Files.writeString(p, Files.readString(p, StandardCharsets.UTF_8) + text, StandardCharsets.UTF_8);
+    }
+
+    static void replace(Path p, String from, String to) throws IOException {
+        String s = Files.readString(p, StandardCharsets.UTF_8);
+        if (!s.contains(from)) {
+            throw new IllegalStateException("self-test setup: '" + from + "' not in " + p);
+        }
+        Files.writeString(p, s.replace(from, to), StandardCharsets.UTF_8);
+    }
+
+    static void replaceRegex(Path p, String regex, String to) throws IOException {
+        String s = Files.readString(p, StandardCharsets.UTF_8);
+        String t = s.replaceFirst(regex, to);
+        if (t.equals(s)) {
+            throw new IllegalStateException("self-test setup: /" + regex + "/ not in " + p);
+        }
+        Files.writeString(p, t, StandardCharsets.UTF_8);
+    }
+}

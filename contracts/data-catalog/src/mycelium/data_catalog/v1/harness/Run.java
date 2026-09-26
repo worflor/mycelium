@@ -4,6 +4,7 @@ import mycelium.data_catalog.v1.fixtures.AbortOnFirstBadCatalog;
 import mycelium.data_catalog.v1.fixtures.IncrementalCatalog;
 import mycelium.data_catalog.v1.fixtures.ListOrderWinsCatalog;
 import mycelium.data_catalog.v1.fixtures.MergingCatalog;
+import mycelium.data_catalog.v1.fixtures.NoOpCatalog;
 import mycelium.data_catalog.v1.model.ReferenceCatalog;
 import mycelium.harness.ContractRun;
 
@@ -24,7 +25,9 @@ public final class Run {
                         new ContractRun.Broken("ListOrderWinsCatalog",
                                 () -> new DataCatalogContractTests(ListOrderWinsCatalog::new).run(), "T3:later-pack-wins"),
                         new ContractRun.Broken("IncrementalCatalog",
-                                () -> new DataCatalogContractTests(IncrementalCatalog::new).run(), "T4:old-whole-until-done")
+                                () -> new DataCatalogContractTests(IncrementalCatalog::new).run(), "T4:old-whole-until-done"),
+                        new ContractRun.Broken("NoOpCatalog",
+                                () -> new DataCatalogContractTests(NoOpCatalog::new).run(), "T1:id-order")
                 ));
         System.exit(exit);
     }

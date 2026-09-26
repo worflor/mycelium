@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Contract id | `inventory.transfer@1` (implementation namespace `mycelium.flow.v1`) |
-| Status | First contract package of the Mycelium founding design (see `../../../DESIGN.md`, v0.4, §6–§8, §11, §14) |
+| Status | First contract package of the Mycelium founding design (see `../../DESIGN.md`, v0.4, §6–§8, §11, §14) |
 | Domain | Bounded, single-variant transfer between disjoint, non-voiding providers whose required guarantees are established |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies |
 | Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires the native adapter and packaged-game fixtures of Gate B/C |
@@ -60,7 +60,10 @@ Safety alone is satisfiable by doing nothing; P1/P2 are what make a no-op fail.
 | `available == 0` | `Rejected(EMPTY_SOURCE)` |
 | `admissible capacity == 0` | `Rejected(FULL_DESTINATION)` |
 | `min(...) > 0` but less than requested | `Committed(min(...))` — partial capacity is a committed transfer, not a rejection |
-| provider insert admits less than extracted | remainder restored to source; committed = what the destination accepted |
+| provider insert admits less than extracted | remainder restored to source; committed = what the destination accepted (T11) |
+| provider insert admits nothing of what was extracted | everything restored; `Rejected(TRANSFER_FAILED)` (T11) |
+| source will not take the remainder back | the executor throws: the outcome is unconfirmed, and an unconfirmed outcome is never an ordinary `Rejected` (DESIGN §7). The caller aborts; nothing survives (T12) |
+| source reports stock but extraction yields nothing | `Rejected(EXTRACTION_FAILED)`: the source refused, not the destination; no change (T13) |
 
 ## 7. Traits and admission
 
@@ -84,6 +87,11 @@ Reference fixture set executed by `FlowContractTests`:
 | T8 identity | source 20 iron + 5 gold; destination capacity 64 holding 2 gold | 12 iron | destination iron 12, destination gold 2, source gold 5 |
 | T9 unqualified | providers lacking a required trait | 12 | `Unsupported`; no mutation |
 | T10 anti-evasion | admissible request against providers declaring the required traits | 12 | must be `Committed`, never `Unsupported`/`Rejected` |
+| T11 admits less than promised | source 20; destination promises 7, holds 4 (`OverpromisingBackend`); then one that promises 7, holds 0 | 12 | `Committed(4)`; source 16, destination 4; one feedback of 4. Holding 0: `Rejected(TRANSFER_FAILED)`, source 20, no feedback |
+| T12 unrestorable remainder | source takes nothing back (`OneWaySourceBackend`); destination promises 7, holds 4 | 12 | the executor throws; after the caller's abort, source 20, destination 0, no feedback |
+| T13 source refuses | source reports 20, gives none (`StuckSourceBackend`) | 12 | `Rejected(EXTRACTION_FAILED)`; no change |
+
+`OverpromisingBackend`, `OneWaySourceBackend` and `StuckSourceBackend` are not broken implementations of this contract. They are provider behaviours every executor must handle (DESIGN §8.1: a promise of room is not room). Without them the executor's restore path was never reached: deleting it from the reference passed every fixture until T11 existed (red team, 2026-09-26).
 
 **Rejection matrix** — deliberately incorrect implementations, each of which the harness must reject for the intended reason:
 
@@ -94,6 +102,8 @@ Reference fixture set executed by `FlowContractTests`:
 | `VoidingPartialBackend` (reports acceptance, retains half) | L1 / L4 | T1 destination quantity |
 | `IdentityMergerBackend` (merges distinct resources into one bucket) | L3 | T8 identity |
 | `PrematureFinalizerExecutor` (emits feedback at execution, not outermost commit) | L5 | T6 finality on abort |
+| `NoRestoreExecutor` (drops the remainder a destination did not admit) | L1 / L4 | T11 source restored |
+| `UncheckedExtractionExecutor` (does not look at what extraction gave, so reports the source's refusal as the transfer's) | §6 | T13 extraction failed |
 
 ## 9. Versioning and packaging
 
@@ -102,18 +112,12 @@ Reference fixture set executed by `FlowContractTests`:
 
 ## 10. Running the harness
 
-From `contracts/flow`:
-
-```powershell
-$files = Get-ChildItem -Recurse -Filter *.java src | ForEach-Object { $_.FullName }
-& "$env:JAVA_HOME\bin\javac.exe" --release 17 -d out $files
-& "$env:JAVA_HOME\bin\java.exe" -cp out mycelium.flow.v1.harness.Run
-```
+From the Mycelium root: `bash run-contracts.sh flow` (or `.\run-contracts.ps1 flow`), or `./gradlew myceliumVerify -Pmycelium.contracts=inventory.transfer@1`. The harness runs on the shared `mycelium.harness.ContractRun`, like every package.
 
 Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT`; exit code 0.
 
 ## 11. Explicit non-claims
 
-- No Minecraft, Fabric, NeoForge, or Osmosis code was executed to produce this package.
+- No Minecraft or mod loader code was executed to produce this package.
 - The native reference adapter and packaged-game fixture are the next artifacts (Gate B/C); until they exist, this contract has no game-target evidence.
 - Aliasing, concurrency, and split plan/execute staleness are out of scope for v1 and named here rather than silently omitted.

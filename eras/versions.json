@@ -1,0 +1,828 @@
+{
+ "schema": 1,
+ "note": "Every Minecraft version the launcher names as a release, beta or alpha (Classic and earlier are 'old_alpha'), newest first, as Mojang's version manifest lists them: https://piston-meta.mojang.com/mc/game/version_manifest_v2.json (read 2026-09-26). Weekly snapshots, pre-releases and release candidates are left out: they are not targets, and a pre-release belongs to its release's era. The repository check uses this list to prove every era bound names a real version and every real version falls in exactly one era. Refresh it with ./gradlew myceliumRefreshVersions when a version ships; a version missing here is not an error, a line bound ('26.x') already covers it.",
+ "source": "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+ "read": "2026-09-26",
+ "versions": [
+  {
+   "id": "26.3",
+   "type": "release",
+   "released": "2026-09-15"
+  },
+  {
+   "id": "26.2",
+   "type": "release",
+   "released": "2026-06-16"
+  },
+  {
+   "id": "26.1.2",
+   "type": "release",
+   "released": "2026-04-09"
+  },
+  {
+   "id": "26.1.1",
+   "type": "release",
+   "released": "2026-04-01"
+  },
+  {
+   "id": "26.1",
+   "type": "release",
+   "released": "2026-03-24"
+  },
+  {
+   "id": "1.21.11",
+   "type": "release",
+   "released": "2025-12-09"
+  },
+  {
+   "id": "1.21.10",
+   "type": "release",
+   "released": "2025-10-07"
+  },
+  {
+   "id": "1.21.9",
+   "type": "release",
+   "released": "2025-09-30"
+  },
+  {
+   "id": "1.21.8",
+   "type": "release",
+   "released": "2025-07-17"
+  },
+  {
+   "id": "1.21.7",
+   "type": "release",
+   "released": "2025-06-30"
+  },
+  {
+   "id": "1.21.6",
+   "type": "release",
+   "released": "2025-06-17"
+  },
+  {
+   "id": "1.21.5",
+   "type": "release",
+   "released": "2025-03-25"
+  },
+  {
+   "id": "1.21.4",
+   "type": "release",
+   "released": "2024-12-03"
+  },
+  {
+   "id": "1.21.3",
+   "type": "release",
+   "released": "2024-10-23"
+  },
+  {
+   "id": "1.21.2",
+   "type": "release",
+   "released": "2024-10-22"
+  },
+  {
+   "id": "1.21.1",
+   "type": "release",
+   "released": "2024-08-08"
+  },
+  {
+   "id": "1.21",
+   "type": "release",
+   "released": "2024-06-13"
+  },
+  {
+   "id": "1.20.6",
+   "type": "release",
+   "released": "2024-04-29"
+  },
+  {
+   "id": "1.20.5",
+   "type": "release",
+   "released": "2024-04-23"
+  },
+  {
+   "id": "1.20.4",
+   "type": "release",
+   "released": "2023-12-07"
+  },
+  {
+   "id": "1.20.3",
+   "type": "release",
+   "released": "2023-12-04"
+  },
+  {
+   "id": "1.20.2",
+   "type": "release",
+   "released": "2023-09-20"
+  },
+  {
+   "id": "1.20.1",
+   "type": "release",
+   "released": "2023-06-12"
+  },
+  {
+   "id": "1.20",
+   "type": "release",
+   "released": "2023-06-02"
+  },
+  {
+   "id": "1.19.4",
+   "type": "release",
+   "released": "2023-03-14"
+  },
+  {
+   "id": "1.19.3",
+   "type": "release",
+   "released": "2022-12-07"
+  },
+  {
+   "id": "1.19.2",
+   "type": "release",
+   "released": "2022-08-05"
+  },
+  {
+   "id": "1.19.1",
+   "type": "release",
+   "released": "2022-07-27"
+  },
+  {
+   "id": "1.19",
+   "type": "release",
+   "released": "2022-06-07"
+  },
+  {
+   "id": "1.18.2",
+   "type": "release",
+   "released": "2022-02-28"
+  },
+  {
+   "id": "1.18.1",
+   "type": "release",
+   "released": "2021-12-10"
+  },
+  {
+   "id": "1.18",
+   "type": "release",
+   "released": "2021-11-30"
+  },
+  {
+   "id": "1.17.1",
+   "type": "release",
+   "released": "2021-07-06"
+  },
+  {
+   "id": "1.17",
+   "type": "release",
+   "released": "2021-06-08"
+  },
+  {
+   "id": "1.16.5",
+   "type": "release",
+   "released": "2021-01-14"
+  },
+  {
+   "id": "1.16.4",
+   "type": "release",
+   "released": "2020-10-29"
+  },
+  {
+   "id": "1.16.3",
+   "type": "release",
+   "released": "2020-09-10"
+  },
+  {
+   "id": "1.16.2",
+   "type": "release",
+   "released": "2020-08-11"
+  },
+  {
+   "id": "1.16.1",
+   "type": "release",
+   "released": "2020-06-24"
+  },
+  {
+   "id": "1.16",
+   "type": "release",
+   "released": "2020-06-23"
+  },
+  {
+   "id": "1.15.2",
+   "type": "release",
+   "released": "2020-01-17"
+  },
+  {
+   "id": "1.15.1",
+   "type": "release",
+   "released": "2019-12-16"
+  },
+  {
+   "id": "1.15",
+   "type": "release",
+   "released": "2019-12-09"
+  },
+  {
+   "id": "1.14.4",
+   "type": "release",
+   "released": "2019-07-19"
+  },
+  {
+   "id": "1.14.3",
+   "type": "release",
+   "released": "2019-06-24"
+  },
+  {
+   "id": "1.14.2",
+   "type": "release",
+   "released": "2019-05-27"
+  },
+  {
+   "id": "1.14.1",
+   "type": "release",
+   "released": "2019-05-13"
+  },
+  {
+   "id": "1.14",
+   "type": "release",
+   "released": "2019-04-23"
+  },
+  {
+   "id": "1.13.2",
+   "type": "release",
+   "released": "2018-10-22"
+  },
+  {
+   "id": "1.13.1",
+   "type": "release",
+   "released": "2018-08-22"
+  },
+  {
+   "id": "1.13",
+   "type": "release",
+   "released": "2018-07-18"
+  },
+  {
+   "id": "1.12.2",
+   "type": "release",
+   "released": "2017-09-18"
+  },
+  {
+   "id": "1.12.1",
+   "type": "release",
+   "released": "2017-08-03"
+  },
+  {
+   "id": "1.12",
+   "type": "release",
+   "released": "2017-06-02"
+  },
+  {
+   "id": "1.11.2",
+   "type": "release",
+   "released": "2016-12-21"
+  },
+  {
+   "id": "1.11.1",
+   "type": "release",
+   "released": "2016-12-20"
+  },
+  {
+   "id": "1.11",
+   "type": "release",
+   "released": "2016-11-14"
+  },
+  {
+   "id": "1.10.2",
+   "type": "release",
+   "released": "2016-06-23"
+  },
+  {
+   "id": "1.10.1",
+   "type": "release",
+   "released": "2016-06-22"
+  },
+  {
+   "id": "1.10",
+   "type": "release",
+   "released": "2016-06-08"
+  },
+  {
+   "id": "1.9.4",
+   "type": "release",
+   "released": "2016-05-10"
+  },
+  {
+   "id": "1.9.3",
+   "type": "release",
+   "released": "2016-05-10"
+  },
+  {
+   "id": "1.9.2",
+   "type": "release",
+   "released": "2016-03-30"
+  },
+  {
+   "id": "1.9.1",
+   "type": "release",
+   "released": "2016-03-30"
+  },
+  {
+   "id": "1.9",
+   "type": "release",
+   "released": "2016-02-29"
+  },
+  {
+   "id": "1.8.9",
+   "type": "release",
+   "released": "2015-12-03"
+  },
+  {
+   "id": "1.8.8",
+   "type": "release",
+   "released": "2015-07-27"
+  },
+  {
+   "id": "1.8.7",
+   "type": "release",
+   "released": "2015-06-05"
+  },
+  {
+   "id": "1.8.6",
+   "type": "release",
+   "released": "2015-05-25"
+  },
+  {
+   "id": "1.8.5",
+   "type": "release",
+   "released": "2015-05-22"
+  },
+  {
+   "id": "1.8.4",
+   "type": "release",
+   "released": "2015-04-17"
+  },
+  {
+   "id": "1.8.3",
+   "type": "release",
+   "released": "2015-02-20"
+  },
+  {
+   "id": "1.8.2",
+   "type": "release",
+   "released": "2015-02-19"
+  },
+  {
+   "id": "1.8.1",
+   "type": "release",
+   "released": "2014-11-24"
+  },
+  {
+   "id": "1.8",
+   "type": "release",
+   "released": "2014-09-02"
+  },
+  {
+   "id": "1.7.10",
+   "type": "release",
+   "released": "2014-05-14"
+  },
+  {
+   "id": "1.7.9",
+   "type": "release",
+   "released": "2014-04-14"
+  },
+  {
+   "id": "1.7.8",
+   "type": "release",
+   "released": "2014-04-09"
+  },
+  {
+   "id": "1.7.7",
+   "type": "release",
+   "released": "2014-04-09"
+  },
+  {
+   "id": "1.7.6",
+   "type": "release",
+   "released": "2014-04-09"
+  },
+  {
+   "id": "1.7.5",
+   "type": "release",
+   "released": "2014-02-26"
+  },
+  {
+   "id": "1.7.4",
+   "type": "release",
+   "released": "2013-12-09"
+  },
+  {
+   "id": "1.7.3",
+   "type": "release",
+   "released": "2013-12-06"
+  },
+  {
+   "id": "1.7.2",
+   "type": "release",
+   "released": "2013-10-25"
+  },
+  {
+   "id": "1.6.4",
+   "type": "release",
+   "released": "2013-09-19"
+  },
+  {
+   "id": "1.6.2",
+   "type": "release",
+   "released": "2013-07-05"
+  },
+  {
+   "id": "1.6.1",
+   "type": "release",
+   "released": "2013-06-28"
+  },
+  {
+   "id": "1.5.2",
+   "type": "release",
+   "released": "2013-04-25"
+  },
+  {
+   "id": "1.5.1",
+   "type": "release",
+   "released": "2013-03-20"
+  },
+  {
+   "id": "1.4.7",
+   "type": "release",
+   "released": "2012-12-27"
+  },
+  {
+   "id": "1.4.5",
+   "type": "release",
+   "released": "2012-12-19"
+  },
+  {
+   "id": "1.4.6",
+   "type": "release",
+   "released": "2012-12-19"
+  },
+  {
+   "id": "1.4.4",
+   "type": "release",
+   "released": "2012-12-13"
+  },
+  {
+   "id": "1.4.2",
+   "type": "release",
+   "released": "2012-11-24"
+  },
+  {
+   "id": "1.3.2",
+   "type": "release",
+   "released": "2012-08-15"
+  },
+  {
+   "id": "1.3.1",
+   "type": "release",
+   "released": "2012-07-31"
+  },
+  {
+   "id": "1.2.5",
+   "type": "release",
+   "released": "2012-03-29"
+  },
+  {
+   "id": "1.2.4",
+   "type": "release",
+   "released": "2012-03-21"
+  },
+  {
+   "id": "1.2.3",
+   "type": "release",
+   "released": "2012-03-01"
+  },
+  {
+   "id": "1.2.2",
+   "type": "release",
+   "released": "2012-02-29"
+  },
+  {
+   "id": "1.2.1",
+   "type": "release",
+   "released": "2012-02-29"
+  },
+  {
+   "id": "1.1",
+   "type": "release",
+   "released": "2012-01-11"
+  },
+  {
+   "id": "1.0",
+   "type": "release",
+   "released": "2011-11-17"
+  },
+  {
+   "id": "b1.8.1",
+   "type": "old_beta",
+   "released": "2011-09-18"
+  },
+  {
+   "id": "b1.8",
+   "type": "old_beta",
+   "released": "2011-09-14"
+  },
+  {
+   "id": "b1.7.3",
+   "type": "old_beta",
+   "released": "2011-07-07"
+  },
+  {
+   "id": "b1.7.2",
+   "type": "old_beta",
+   "released": "2011-06-30"
+  },
+  {
+   "id": "b1.7",
+   "type": "old_beta",
+   "released": "2011-06-29"
+  },
+  {
+   "id": "b1.6.6",
+   "type": "old_beta",
+   "released": "2011-05-30"
+  },
+  {
+   "id": "b1.6.5",
+   "type": "old_beta",
+   "released": "2011-05-27"
+  },
+  {
+   "id": "b1.6.4",
+   "type": "old_beta",
+   "released": "2011-05-25"
+  },
+  {
+   "id": "b1.6.3",
+   "type": "old_beta",
+   "released": "2011-05-25"
+  },
+  {
+   "id": "b1.6.2",
+   "type": "old_beta",
+   "released": "2011-05-25"
+  },
+  {
+   "id": "b1.6.1",
+   "type": "old_beta",
+   "released": "2011-05-25"
+  },
+  {
+   "id": "b1.6",
+   "type": "old_beta",
+   "released": "2011-05-25"
+  },
+  {
+   "id": "b1.5_01",
+   "type": "old_beta",
+   "released": "2011-04-19"
+  },
+  {
+   "id": "b1.5",
+   "type": "old_beta",
+   "released": "2011-04-18"
+  },
+  {
+   "id": "b1.4_01",
+   "type": "old_beta",
+   "released": "2011-04-04"
+  },
+  {
+   "id": "b1.4",
+   "type": "old_beta",
+   "released": "2011-03-30"
+  },
+  {
+   "id": "b1.3_01",
+   "type": "old_beta",
+   "released": "2011-02-22"
+  },
+  {
+   "id": "b1.3b",
+   "type": "old_beta",
+   "released": "2011-02-21"
+  },
+  {
+   "id": "b1.2_02",
+   "type": "old_beta",
+   "released": "2011-01-20"
+  },
+  {
+   "id": "b1.2_01",
+   "type": "old_beta",
+   "released": "2011-01-13"
+  },
+  {
+   "id": "b1.2",
+   "type": "old_beta",
+   "released": "2011-01-12"
+  },
+  {
+   "id": "b1.1_02",
+   "type": "old_beta",
+   "released": "2010-12-21"
+  },
+  {
+   "id": "b1.1_01",
+   "type": "old_beta",
+   "released": "2010-12-21"
+  },
+  {
+   "id": "b1.0.2",
+   "type": "old_beta",
+   "released": "2010-12-20"
+  },
+  {
+   "id": "b1.0_01",
+   "type": "old_beta",
+   "released": "2010-12-19"
+  },
+  {
+   "id": "b1.0",
+   "type": "old_beta",
+   "released": "2010-12-19"
+  },
+  {
+   "id": "a1.2.6",
+   "type": "old_alpha",
+   "released": "2010-12-02"
+  },
+  {
+   "id": "a1.2.5",
+   "type": "old_alpha",
+   "released": "2010-11-30"
+  },
+  {
+   "id": "a1.2.4_01",
+   "type": "old_alpha",
+   "released": "2010-11-29"
+  },
+  {
+   "id": "a1.2.3_04",
+   "type": "old_alpha",
+   "released": "2010-11-25"
+  },
+  {
+   "id": "a1.2.3_02",
+   "type": "old_alpha",
+   "released": "2010-11-24"
+  },
+  {
+   "id": "a1.2.3_01",
+   "type": "old_alpha",
+   "released": "2010-11-23"
+  },
+  {
+   "id": "a1.2.3",
+   "type": "old_alpha",
+   "released": "2010-11-23"
+  },
+  {
+   "id": "a1.2.2b",
+   "type": "old_alpha",
+   "released": "2010-11-09"
+  },
+  {
+   "id": "a1.2.2a",
+   "type": "old_alpha",
+   "released": "2010-11-09"
+  },
+  {
+   "id": "a1.2.1_01",
+   "type": "old_alpha",
+   "released": "2010-11-04"
+  },
+  {
+   "id": "a1.2.1",
+   "type": "old_alpha",
+   "released": "2010-11-04"
+  },
+  {
+   "id": "a1.2.0_02",
+   "type": "old_alpha",
+   "released": "2010-11-03"
+  },
+  {
+   "id": "a1.2.0_01",
+   "type": "old_alpha",
+   "released": "2010-10-30"
+  },
+  {
+   "id": "a1.2.0",
+   "type": "old_alpha",
+   "released": "2010-10-29"
+  },
+  {
+   "id": "a1.1.2_01",
+   "type": "old_alpha",
+   "released": "2010-09-22"
+  },
+  {
+   "id": "a1.1.2",
+   "type": "old_alpha",
+   "released": "2010-09-19"
+  },
+  {
+   "id": "a1.1.0",
+   "type": "old_alpha",
+   "released": "2010-09-12"
+  },
+  {
+   "id": "a1.0.17_04",
+   "type": "old_alpha",
+   "released": "2010-08-22"
+  },
+  {
+   "id": "a1.0.17_02",
+   "type": "old_alpha",
+   "released": "2010-08-19"
+  },
+  {
+   "id": "a1.0.16",
+   "type": "old_alpha",
+   "released": "2010-08-11"
+  },
+  {
+   "id": "a1.0.15",
+   "type": "old_alpha",
+   "released": "2010-08-03"
+  },
+  {
+   "id": "a1.0.14",
+   "type": "old_alpha",
+   "released": "2010-07-29"
+  },
+  {
+   "id": "a1.0.11",
+   "type": "old_alpha",
+   "released": "2010-07-22"
+  },
+  {
+   "id": "a1.0.5_01",
+   "type": "old_alpha",
+   "released": "2010-07-12"
+  },
+  {
+   "id": "a1.0.4",
+   "type": "old_alpha",
+   "released": "2010-07-08"
+  },
+  {
+   "id": "inf-20100618",
+   "type": "old_alpha",
+   "released": "2010-06-15"
+  },
+  {
+   "id": "c0.30_01c",
+   "type": "old_alpha",
+   "released": "2009-12-21"
+  },
+  {
+   "id": "c0.0.13a",
+   "type": "old_alpha",
+   "released": "2009-05-30"
+  },
+  {
+   "id": "c0.0.13a_03",
+   "type": "old_alpha",
+   "released": "2009-05-21"
+  },
+  {
+   "id": "c0.0.11a",
+   "type": "old_alpha",
+   "released": "2009-05-16"
+  },
+  {
+   "id": "rd-161348",
+   "type": "old_alpha",
+   "released": "2009-05-16"
+  },
+  {
+   "id": "rd-160052",
+   "type": "old_alpha",
+   "released": "2009-05-15"
+  },
+  {
+   "id": "rd-20090515",
+   "type": "old_alpha",
+   "released": "2009-05-14"
+  },
+  {
+   "id": "rd-132328",
+   "type": "old_alpha",
+   "released": "2009-05-13"
+  },
+  {
+   "id": "rd-132211",
+   "type": "old_alpha",
+   "released": "2009-05-13"
+  }
+ ]
+}

@@ -80,10 +80,14 @@ public abstract class EraTask extends DefaultTask {
         List<String> suites = getSuites().get();
 
         JsonArray results = new JsonArray();
+        JsonArray skipped = new JsonArray();
         List<String> failed = new ArrayList<>();
+        int expected = getBundles().getFiles().size();
         for (File dir : getBundles().getFiles()) {
             if (!Files.isRegularFile(dir.toPath().resolve("bundle.properties"))) {
-                continue; // a contract that was not verified this run, or a pure layer with nothing to test
+                // a contract not verified this run (verify off), or no pure layer declared: named, not dropped
+                skipped.add(dir.getName());
+                continue;
             }
             Harness.Bundle bundle = Harness.Bundle.read(dir.toPath());
             String slug = bundle.name().replaceAll("[^A-Za-z0-9._-]", "_");
@@ -162,11 +166,19 @@ public abstract class EraTask extends DefaultTask {
                     r.get("bytecode").getAsString(), refs.size(), ran.size(), failures == 0 ? " pass" : ", " + failures + " FAILED");
         }
 
+        // A gate over nothing must not read as a gate that held: it says what it expected, checked and skipped.
         JsonObject report = new JsonObject();
-        report.addProperty("schema", 2);
+        report.addProperty("schema", 3);
         report.addProperty("java", java);
         report.addProperty("eraJava", eraJava);
+        report.addProperty("expected", expected);
+        report.addProperty("checked", results.size());
+        report.add("skipped", skipped);
         report.add("results", results);
+        if (results.isEmpty()) {
+            getLogger().warn("Mycelium: the Java {} gate checked nothing ({} bundle(s) expected, none built{}); era.json records it",
+                    java, expected, skipped.isEmpty() ? "" : ": " + skipped);
+        }
         Files.writeString(out.resolve("era.json"), new GsonBuilder().setPrettyPrinting().create().toJson(report), StandardCharsets.UTF_8);
         if (!failed.isEmpty()) {
             throw new GradleException("Mycelium: does not hold on Java " + java + " (docs/eras.md):\n  " + String.join("\n  ", failed));

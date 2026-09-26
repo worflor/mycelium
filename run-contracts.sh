@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Compiles the shared harness plus every contract package and runs each package's Run main.
-# Exit code is the sum of all package exit codes. Usage: ./run-contracts.sh [slug ...]
+# Runs the harness's own checks, then compiles the shared harness plus each contract package and runs its
+# harness/Run. Exit code is the sum of every failure. Usage: ./run-contracts.sh [slug ...]
+# run-contracts.ps1 does exactly the same; myceliumVerify is the build gate (it also collects each harness's report).
 set -u
 cd "$(dirname "$0")"
 JDK="${MYCELIUM_JDK:-${JAVA_HOME:-}}"
@@ -9,7 +10,7 @@ elif [ -n "$JDK" ] && [ -x "$JDK/bin/javac.exe" ]; then JAVAC="$JDK/bin/javac.ex
 else JAVAC=javac; JAVA=java; fi
 
 # The shared harness, as harness/sources.txt defines it (one definition for every runner).
-harness_files() { grep -v '^\s*#' harness/sources.txt | grep -v '^\s*$' | tr -d '' | while read -r d; do find "$d" -name '*.java'; done; }
+harness_files() { tr -d '\r' < harness/sources.txt | grep -v '^\s*#' | grep -v '^\s*$' | while read -r d; do find "$d" -name '*.java'; done; }
 
 slugs=("$@")
 if [ ${#slugs[@]} -eq 0 ]; then
@@ -17,19 +18,34 @@ if [ ${#slugs[@]} -eq 0 ]; then
 fi
 
 total=0
-# Seeded must draw exactly what java.util.SplittableRandom draws (docs/eras.md); checked once, on this JDK.
-sid="harness/out-identity"; rm -rf "$sid"; mkdir -p "$sid"
-if "$JAVAC" --release 17 -d "$sid" $( { harness_files; find harness/test -name '*.java'; } | sort -u) && "$JAVA" -cp "$sid" mycelium.harness.SeededIdentity; then :; else total=$((total+1)); fi
-rm -rf "$sid"
+# The harness's own checks (harness/test): each class is a main that exits 0 when it holds.
+checks="harness/out-checks"; rm -rf "$checks"; mkdir -p "$checks"
+if "$JAVAC" --release 17 -d "$checks" $( { harness_files; find harness/test -name '*.java'; } | sort -u); then
+  for f in $(find harness/test -name '*.java' | sort); do
+    main=$(echo "${f#harness/test/}" | sed -e 's#/#.#g' -e 's#\.java$##')
+    if "$JAVA" -cp "$checks" "$main" > "$checks.log" 2>&1; then echo "[harness] ${main##*.} holds";
+    else cat "$checks.log"; echo "[harness] ${main##*.} DOES NOT HOLD"; total=$((total+1)); fi
+  done
+else
+  echo "[harness] COMPILE FAILED"; total=$((total+1))
+fi
+rm -rf "$checks" "$checks.log"
+echo
+
 for slug in "${slugs[@]}"; do
   pkg="contracts/$slug"
+  if [ ! -d "$pkg/src" ]; then echo "[$slug] NO PACKAGE (no $pkg/src)"; total=$((total+1)); continue; fi
+  # the main every runner starts: exactly one harness/Run.java (CONTRACT-PACKAGE.md)
+  runs=$(find "$pkg/src" -path '*/harness/Run.java')
+  count=$(printf '%s' "$runs" | grep -c .)
+  if [ "$count" -ne 1 ]; then echo "[$slug] expected exactly one harness/Run.java, found $count"; total=$((total+1)); continue; fi
   out="$pkg/out"
   rm -rf "$out"; mkdir -p "$out"
   files=$( { harness_files; find "$pkg/src" -name '*.java'; } | sort -u)
   if ! "$JAVAC" --release 17 -d "$out" $files; then
     echo "[$slug] COMPILE FAILED"; total=$((total+1)); continue
   fi
-  main=$(grep -rl 'public static void main' "$pkg/src" | head -1 | sed -e "s#$pkg/src/##" -e 's#/#.#g' -e 's#\.java$##')
+  main=$(echo "${runs#$pkg/src/}" | sed -e 's#/#.#g' -e 's#\.java$##')
   "$JAVA" -cp "$out" "$main"; code=$?
   echo "[$slug] exit=$code"; echo
   total=$((total+code))

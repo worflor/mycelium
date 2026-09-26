@@ -115,6 +115,8 @@ public abstract class MyceliumExtension {
 
     /** As above, with {@code gates}: comma-separated source paths allowed to reach into the home package. */
     public void integration(String name, String homePackage, String apiPackages, String gates) {
-        getIntegrations().add(name + "|" + homePackage + "|" + apiPackages + "|" + gates);
+        // validated here, as written, so a mistake is named at the line that made it
+        getIntegrations().add(new IsolationTask.Integration(name, homePackage, IsolationTask.Integration.split(apiPackages),
+                IsolationTask.Integration.split(gates)).encode());
     }
 }

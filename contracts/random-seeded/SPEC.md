@@ -25,6 +25,10 @@
 | `SharedStateSource` | One state for every stream | T2 |
 | `ModuloBiasedSource` | `bits % bound` | T4 |
 | `LenientSource` | Answers a nonsense bound instead of refusing | T5 |
+| `NoOpSource` | Every draw is zero | T1 |
+
+`NoOpSource` is perfectly reproducible and every bounded draw stays in range. It is in the matrix because this is a
+model contract, and a type that does nothing must still fail one of its laws (CONTRACT-PACKAGE.md).
 
 Not covered: splitting streams (`split()`), floats, Gaussians. Add them as a minor version when a consumer needs them.
 

@@ -39,9 +39,13 @@ import java.util.regex.Pattern;
  * Comments and string literals are ignored. P2 (linkage) is checked per era on the bytecode ({@link EraTask}).
  */
 public abstract class PurityTask extends DefaultTask {
-    /** Always forbidden: the game, every loader, Mixin. */
-    static final List<String> PLATFORM = List.of("net.minecraft", "com.mojang", "net.fabricmc", "net.neoforged",
-            "net.minecraftforge", "cpw.mods", "org.spongepowered", "net.legacyfabric", "net.ornithemc", "net.modificationstation");
+    /**
+     * Always forbidden: the game, the tools, every loader some era names ({@code eras/loaders.json}, read by
+     * {@link Loaders#platformPackages()}). Declared here as data, not a list in code: a list in code drifted from the era
+     * table once (Quilt was named by an era and guarded by nothing).
+     */
+    @Input
+    public abstract ListProperty<String> getPlatformPackages();
 
     /** A pure layer's time and chance come from its inputs and its seed, never from the machine. */
     static final Map<String, Pattern> NONDETERMINISM = new LinkedHashMap<>();
@@ -62,7 +66,7 @@ public abstract class PurityTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getPlatformSources();
 
-    /** Packages forbidden by prefix, beyond {@link #PLATFORM} (integration APIs, the consumer's own list). */
+    /** Packages forbidden by prefix, beyond {@link #getPlatformPackages()} (integration APIs, the consumer's own list). */
     @Input
     public abstract ListProperty<String> getForbidden();
 
@@ -98,7 +102,10 @@ public abstract class PurityTask extends DefaultTask {
                 violations.add("P1 package " + split + " is split between the pure layer and the platform");
             }
         }
-        List<String> forbidden = new ArrayList<>(PLATFORM);
+        if (getPlatformPackages().get().isEmpty()) {
+            throw new GradleException("Mycelium: no platform packages to keep out of the pure layer (eras/loaders.json)");
+        }
+        List<String> forbidden = new ArrayList<>(getPlatformPackages().get());
         forbidden.addAll(getForbidden().get());
         for (Map.Entry<Path, String> e : code.entrySet()) {
             String where = e.getKey().getFileName().toString() + " (" + packageOf(Files.readString(e.getKey(), StandardCharsets.UTF_8)) + ")";

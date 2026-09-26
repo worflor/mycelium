@@ -96,6 +96,28 @@ public final class LedgerVariants {
         };
     }
 
+    /** Letting go of everything drops every place the owner held, even those another owner or a lease still holds. */
+    public static Keeper<Integer, Integer> releaseAllOverreaches(Tickets<Integer> engine) {
+        return new Base(engine) {
+            private final Map<Integer, java.util.Set<Integer>> placesOf = new HashMap<>();
+
+            @Override
+            public void hold(Integer place, Integer owner) {
+                placesOf.computeIfAbsent(owner, k -> new java.util.HashSet<>()).add(place);
+                super.hold(place, owner);
+            }
+
+            @Override
+            public void releaseAll(Integer owner) {
+                holds.releaseAll(owner);
+                for (Integer p : placesOf.getOrDefault(owner, java.util.Set.of())) {
+                    engine.drop(p);
+                }
+                placesOf.remove(owner);
+            }
+        };
+    }
+
     /** The reference wiring, open for one thing to go wrong. */
     abstract static class Base implements Keeper<Integer, Integer> {
         final Holds<Integer, Integer> holds = new Holds<>();

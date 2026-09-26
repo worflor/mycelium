@@ -76,11 +76,16 @@ public abstract class UsageTask extends DefaultTask {
             }
         }
         if (texts.isEmpty()) {
-            // nothing to judge by: saying "unused" here would be the false claim this task exists to prevent
-            getLogger().warn("Mycelium: no sources found to check contract usage against; usage not recorded");
+            // Nothing to judge by: saying "unused" here would be the false claim this task exists to prevent, and saying
+            // nothing would let the manifest read as if usage had been checked. It says it checked nothing, and why.
+            getLogger().warn("Mycelium: no sources found to check contract usage against; the manifest records usage as not checked");
+            JsonObject report = new JsonObject();
+            report.addProperty("schema", 2);
+            report.addProperty("checked", false);
+            report.addProperty("why", "no sources of this artifact's own to judge by");
             Path out = getReportDir().get().getAsFile().toPath();
             Files.createDirectories(out);
-            Files.deleteIfExists(out.resolve("usage.json"));
+            Files.writeString(out.resolve("usage.json"), new GsonBuilder().setPrettyPrinting().create().toJson(report), StandardCharsets.UTF_8);
             return;
         }
         JsonArray results = new JsonArray();
@@ -104,7 +109,8 @@ public abstract class UsageTask extends DefaultTask {
             }
         }
         JsonObject report = new JsonObject();
-        report.addProperty("schema", 1);
+        report.addProperty("schema", 2);
+        report.addProperty("checked", true);
         report.addProperty("sourcesScanned", texts.size());
         report.add("results", results);
         Path out = getReportDir().get().getAsFile().toPath();

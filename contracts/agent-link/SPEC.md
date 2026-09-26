@@ -1,0 +1,93 @@
+# agent.link@1
+
+A mod answering requests from an out-of-process agent over a connection that drops. The mod is the side that touches
+the world: it runs commands, reads state and sends messages when the agent asks. The connection will drop (the agent
+restarts, the server restarts, a socket times out), and the agent will retry what it did not hear back about. Without a
+law, a retried `give` gives twice, and a request that arrives before the handshake runs anyway. This contract is the
+mod's side of the link: who may ask, what gets refused, what runs at most once, and how the mod reconnects.
+
+Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the core's requests.
+
+## Model
+
+- `Request(id, method, mutating, bytes, params)`: one inbound call. `mutating` is the caller's declaration that running
+  it twice would be wrong. `bytes` is the frame's size on the wire.
+- `Reply`: `Answered(id, result, replayed)` or `Refused(id, refusal, detail)`, with `Refusal` one of `UNAUTHENTICATED`,
+  `TOO_LARGE`, `UNKNOWN_METHOD`, `INVALID`, `FAILED` (the handler threw: the detail is its message), `BUSY` (a
+  retry arrived while the first is still running).
+- `Handler`: `knows(method)`, `handle(method, params)`. The world-touching side, supplied by the consumer.
+- `Limits(maxFrameBytes, rememberReplies)`.
+- `Link`: `hello(token)`, `receive(request)`, `dropped()`, `remembered()`.
+- `LinkSession`: the reference.
+- `Backoff(baseMs, capMs)`: `delay(attempt, u)` for reconnect attempt `attempt >= 0` and a caller-supplied uniform
+  `u` in `[0, 1)` (the model draws no randomness; the consumer passes its own).
+
+## Laws
+
+| Law | Label | Statement |
+|---|---|---|
+| L1 | `L1:at-most-once` | A mutating request whose id was already answered is not run again: the remembered reply comes back with `replayed = true` |
+| L2 | `L2:dedup-survives-reconnect` | L1 holds across `dropped()` and a new `hello`: remembering is the session's, not the connection's |
+| L3 | `L3:no-work-before-hello` | Before a successful `hello`, after a failed one, and after `dropped()`, every request is refused `UNAUTHENTICATED` and nothing runs |
+| L4 | `L4:memory-bounded` | At most `rememberReplies` replies are remembered, the oldest forgotten first |
+| L5 | `L5:oversize-refused` | A request larger than `maxFrameBytes` is refused `TOO_LARGE` and does not run |
+| L6 | `L6:unknown-refused` | A method the handler does not know is refused `UNKNOWN_METHOD` and does not run; a blank id is refused `INVALID` |
+| L1 | `L1:no-concurrent-twin` | A mutating request whose id is still running is refused `BUSY`, not run a second time |
+| L7 | `L7:failure-is-remembered` | A mutating request whose handler threw is answered `FAILED`, and a retry gets the same refusal without running again (it may have half-happened) |
+| B1 | `B1:delay-within-bounds` | Every delay is at least 1 ms and at most `capMs`, for every attempt and every `u` |
+| B2 | `B2:envelope-grows-to-cap` | The largest possible delay never shrinks as attempts grow, and reaches `capMs` |
+| B3 | `B3:never-gives-up` | A delay exists for every attempt up to `Integer.MAX_VALUE`, without overflow |
+
+## Positive obligations
+
+| Obligation | Label | Statement |
+|---|---|---|
+| P1 | `P1:executes-and-answers` | After a good `hello`, a known, in-size request runs exactly once and is answered with the handler's result |
+| P2 | `P2:reply-correlates` | Every reply carries its request's id |
+| P3 | `P3:reads-are-fresh` | A non-mutating request runs every time it is asked, so a read never returns a remembered answer |
+| P4 | `P4:first-retry-prompt` | The first retry waits at most `baseMs` |
+
+## Rejection matrix
+
+| Broken fixture | What it gets wrong | Caught by |
+|---|---|---|
+| `NoOpLink` | Answers "ok" without running anything | `P1:executes-and-answers` |
+| `ForgetfulLink` | Remembers nothing: a retried `give` gives twice | `L1:at-most-once` |
+| `RacingLink` | Remembers answers but not what is running: two retries in flight both run | `L1:no-concurrent-twin` |
+| `AmnesiacLink` | Forgets on `dropped()`: the retry after a reconnect runs again | `L2:dedup-survives-reconnect` |
+| `TrustingLink` | Runs requests without a handshake | `L3:no-work-before-hello` |
+| `HoardingLink` | Remembers every reply forever | `L4:memory-bounded` |
+| `GluttonLink` | No frame limit | `L5:oversize-refused` |
+| `GuessingLink` | Passes unknown methods to the handler | `L6:unknown-refused` |
+| `RetryingLink` | Forgets failures, so a half-done mutation is run again | `L7:failure-is-remembered` |
+| `MisroutedLink` | Replies under the wrong id | `P2:reply-correlates` |
+| `StaleReadLink` | Remembers reads too | `P3:reads-are-fresh` |
+| `OverflowBackoff` | `base << attempt` unguarded: negative delays on long outages | `B3:never-gives-up` |
+| `GiveUpBackoff` | Stops (a negative delay) after 20 attempts | `B3:never-gives-up` |
+| `UncappedBackoff` | No ceiling | `B1:delay-within-bounds` |
+| `SlowStartBackoff` | First retry waits the cap | `P4:first-retry-prompt` |
+
+## Edge semantics
+
+- The token comparison is constant-time in the reference (`MessageDigest.isEqual`). The harness cannot observe timing;
+  this is stated, not checked.
+- `dropped()` ends authentication and nothing else. Remembered replies outlive it by design (L2).
+- The caller decides what is mutating. A caller that marks a `give` as a read gets reads' semantics.
+- A request with a remembered id but a different method or parameters still gets the remembered reply: an id names one
+  intent. Callers must not reuse ids.
+
+## Using it
+
+One `LinkSession` per mod lifetime, not per connection. The transport (a socket, framing, JSON) is the consumer's: parse
+a frame into a `Request`, `receive` it, and write the `Reply`. Call `dropped()` whenever the socket closes. Reconnect
+with `Backoff`, resetting the attempt count after a successful `hello`. Run world-touching handlers on the server thread
+from inside `handle`; `receive` may be called from the connection's thread.
+
+## Versioning
+
+New `Refusal` values and new methods on `Link` with defaults stay in `@1`. Changing what is remembered, or when, is `@2`.
+
+## Not claimed
+
+Anything about the transport, the wire format, or whether a handler's effect happened in the world. The reply says what
+the handler returned.

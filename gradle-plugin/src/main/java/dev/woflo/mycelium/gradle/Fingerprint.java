@@ -10,7 +10,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
-/** Stable SHA-256 over a directory's files (relative path + bytes, sorted). Used for evidence and task inputs. */
+/**
+ * Stable SHA-256 over a directory's files (relative path + bytes, sorted), or over one file's bytes. Used for evidence
+ * and task inputs. A path that is neither hashes as "missing", so a thing appearing or vanishing changes the value too.
+ */
 public final class Fingerprint {
     private Fingerprint() {
     }
@@ -18,7 +21,13 @@ public final class Fingerprint {
     public static String ofDirectory(Path dir) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            if (Files.isDirectory(dir)) {
+            if (Files.isRegularFile(dir)) {
+                // a single file (contracts/registry.json): before this, a file hashed as "missing", so editing the
+                // registry never re-ran a task
+                md.update(dir.getFileName().toString().getBytes(StandardCharsets.UTF_8));
+                md.update((byte) 0);
+                md.update(Files.readAllBytes(dir));
+            } else if (Files.isDirectory(dir)) {
                 List<Path> files = new ArrayList<>();
                 try (Stream<Path> walk = Files.walk(dir)) {
                     walk.filter(Files::isRegularFile).forEach(files::add);
