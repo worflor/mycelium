@@ -68,8 +68,10 @@ plugins {
 }
 
 
-Optional blocks: `pure { }` declares the mod's pure layer, which is proven on every era (`docs/eras.md`), and
-`integration(...)` declares an optional integration, kept isolated (`docs/integrations.md`).
+Optional blocks: `pure { }` declares the mod's pure layer, which is proven on every era and shipped downgraded where
+an era needs it (`docs/eras.md`); `integration(...)` declares an optional integration, kept isolated
+(`docs/integrations.md`); `ports(...)` names the mod's own packages that are meant to touch the platform, for
+`myceliumSurface` (`docs/eras.md`).
 
 | Task | Effect |
 |---|---|
@@ -80,6 +82,8 @@ Optional blocks: `pure { }` declares the mod's pure layer, which is proven on ev
 | `myceliumPurity` | The pure layer mentions no platform package (P1), and reads no clock, environment or unseeded chance (P3). |
 | `myceliumPureCompile` | Compiles the pure layer alone. If it compiles there, it is pure in fact. |
 | `myceliumEraJava<N>` | One era's gate: every bundle on that Java's JVM (stubs, linkage P2, behaviour). `myceliumEras` runs every declared era. |
+| `myceliumPureShip` | Puts the pure layer's classes into this target's jar: downgraded and shaded (from the era gate's own output) when the era needs it, a no-op when it does not (`docs/eras.md`). |
+| `myceliumSurface` | Reports platform references per package of the mod's own sources, split into declared `ports(...)` and everything else: the cost the next rung would have to eat (`docs/eras.md`). |
 | `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into every jar: target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |

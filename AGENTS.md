@@ -105,7 +105,7 @@ mycelium/
 | Class | What it is |
 |---|---|
 | `MyceliumPlugin.java` | `dev.woflo.mycelium`, for consumers: registers the tasks and wires them into `check` and every jar |
-| `MyceliumExtension.java` | the `mycelium { }` block: contracts, namespace, target, eras, pure layer, integrations |
+| `MyceliumExtension.java` | the `mycelium { }` block: contracts, namespace, target, eras, pure layer, integrations, ports |
 | `PureSpec.java` | `mycelium { pure { } }`: the artifact's pure layer and its suites |
 | `ContractRegistry.java` | reads `contracts/registry.json`, strictly; resolves selections and `supersedes` |
 | `ImportContractsTask.java` | `myceliumImport`: copies each selected model under the consumer's namespace |
@@ -119,6 +119,8 @@ mycelium/
 | `Loaders.java` | `eras/loaders.json`: the platform packages P1 forbids |
 | `EraTask.java` | `myceliumEraJava<N>` (and `myceliumEras`, all of them): every bundle on an era's JVM |
 | `Linkage.java` | law P2: every outside reference in a bundle exists on the era's Java |
+| `PureShipTask.java` | `myceliumPureShip`: puts the pure layer's classes (downgraded, shaded, or as compiled) into the target's jar |
+| `SurfaceTask.java` | `myceliumSurface`: platform references per package, outside declared ports (`docs/eras.md`) |
 | `EvidenceTask.java` | `myceliumEvidence`: `META-INF/mycelium/evidence.json`, what ran and what was not checked |
 | `Fingerprint.java` | stable SHA-256 over files and directories, for inputs and evidence |
 | `MyceliumRepositoryPlugin.java` | `dev.woflo.mycelium.repository`, for this repository only: its `check` |

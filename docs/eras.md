@@ -159,14 +159,46 @@ These were learned porting a consumer across 26.x and 1.21.x on three loaders (`
 
 The rule that follows: a rung is not ported until its whole suite runs there, not only its build.
 
+## Shipping downgraded jars (`myceliumPureShip`)
+
+A target whose era is older than the pure layer's release needs its jar to carry the downgraded, shaded bytecode,
+not the classes as compiled. `myceliumPureShip` does that: it depends on this target's own `myceliumEraJava<N>`
+(added automatically if a consumer's `eras(...)` does not already run it) and copies, out of that gate's own jar,
+exactly two kinds of class — the artifact's declared pure packages (`pure.sources`, plus every imported contract
+model, which join the pure layer) and anything JvmDowngrader shaded under the artifact's `shadePrefix` (its own
+backport support classes, which the downgraded bytecode calls directly). The shared Mycelium harness and the
+artifact's test suites are part of the same bundle and never ship (`fixtures/` and `harness/` never ship). Nothing
+is recompiled or re-downgraded for shipping: the bytes are exactly the ones the era gate already proved hold
+(stubs, linkage, behaviour), which is the only honest way to say "the era gate checked exactly these bytes"
+(`docs/decisions/0006-shipping-downgraded-jars.md`).
+
+A target whose era is at least the pure layer's release needs no downgrade: `myceliumPureShip` is a no-op and says
+so (`ship.json`'s `why`). Every `Jar` task adds the ship task's classes and, only when a downgrade actually
+happened, excludes the same packages from wherever `main` already compiled them (a consumer may add its pure
+sources to `main` directly, as `docs/decisions/0001-substrate.md` does for Somnium's kernels) — one path, never two, and never
+touched when there is nothing to ship.
+
+`myceliumPureShip` works on the standard `jar` task; a loader's remap or repackaging step (Loom's `remapJar`,
+ForgeGradle/jarJar) consumes that task's output exactly as it already does, and needs to know nothing about
+Mycelium.
+
+## The portability surface (`myceliumSurface`)
+
+Per package of the artifact's own main sources (never the imported models, proven pure already), `myceliumSurface`
+counts references to a platform package (every root `eras/loaders.json` names, the game's own included), the same
+textual match `myceliumPurity` and `myceliumIsolation` already use. A package the consumer names in
+`mycelium { ports("...") }` is expected to touch the platform; every other package's references are the surface —
+the cost the next rung would have to eat, made visible before the port starts, with the aim of only ever shrinking
+it. `build/mycelium/surface/surface.json` holds the full report; `failOnGrowth` compares it against a checked-in
+baseline of the same shape, opt-in and off by default.
+
+It is a textual count (the same reference used three times on one line counts three), not a distinct-type or
+call-graph count, and it does not itself cross a wall: Stonecutter bridges neighbouring versions within a port, and
+a provider directory per era still crosses the walls this table describes.
+
 ## Not yet built (in order)
 
-1. **Shipping downgraded jars.** A target whose Java is older than the source's release needs its jar downgraded and
-   shaded at build time. The era gate already proves such a jar would hold; the first rung that needs it builds it.
-2. **Portability surface.** A report of how much of an artifact touches Minecraft outside its ports, per package. It
-   makes the cost of the next rung visible before the port starts, and the aim is to shrink it. Stonecutter bridges
-   neighbouring versions; a provider directory per era crosses the walls.
-3. **Rungs**, one at a time, each when a consumer needs it:
+1. **Rungs**, one at a time, each when a consumer needs it:
    - 1.20.1 (Fabric, Forge);
    - 1.18.2;
    - 1.16.5 (Java 8);
