@@ -214,6 +214,8 @@ public final class SelfTest {
         that(SurfaceTask.count("net.minecraft.World w;", "net.minecraft") == 1, "surface:one reference counts once");
         that(SurfaceTask.count("net.minecraft.World a; net.minecraft.World b;", "net.minecraft") == 2,
                 "surface:the same reference twice counts twice (a textual count, not a distinct-type count)");
+        that(SurfaceTask.count("import net.minecraft.server.MinecraftServer;", "net.minecraft") == 1,
+                "surface:a class in a package under the root counts");
         that(SurfaceTask.count("net.minecraftforge.Something s;", "net.minecraft") == 0,
                 "surface:a package that merely starts with the platform root's name is not a reference to it");
         // count() itself takes already-stripped code, exactly as SurfaceTask.run() strips it: comments out

@@ -68,8 +68,8 @@ already exist in `myceliumEraJava<N>` today).
    not ask for it."
 3. **A flat list, `mycelium.ports`, and a report per package.** Decided. `myceliumSurface` scans the artifact's
    own main sources (never the imported models — those are proven pure already) for references to any platform
-   root (`eras/loaders.json`, the game included), the same textual match `PurityTask` and `IsolationTask` already
-   use (a dotted mention before a capitalized name, `_`, `$` or `*`, comments and strings ignored), grouped by the
+   root (`eras/loaders.json`, the game included), the same textual match `IsolationTask` uses (the root, a dot, then
+   a name or `*`, so a class in any package under the root counts; comments and strings ignored), grouped by the
    file's own package. A package in `mycelium.ports` is expected to touch the platform; every other package's
    references are the surface — the number the next rung has to eat, and the one that should only fall.
    `failOnGrowth` against a checked-in baseline is opt-in and off by default; misconfiguring it (asking to fail

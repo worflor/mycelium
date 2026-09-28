@@ -40,9 +40,9 @@ import java.util.regex.Pattern;
  * number is the cost the next rung would have to eat, and the point is to make it visible and watch it fall, not to
  * gate a build by itself (that is {@code failOnGrowth}, and only when a consumer asks for it).
  *
- * <p>A reference is counted the same way {@link PurityTask} and {@link IsolationTask} already find one: a dotted
- * mention of the package immediately before a capitalized name, {@code _}, {@code $} or {@code *}, outside comments
- * and string literals. It is a textual count, not a type count: three uses of the same class on one line are three.
+ * <p>A reference is counted the way {@link IsolationTask#mentions} finds one: the package root, a dot, then a name or
+ * {@code *} ({@code net.minecraft.World}, {@code net.minecraft.server.MinecraftServer}), outside comments and string
+ * literals. It is a textual count, not a type count: three uses of the same class on one line are three.
  */
 public abstract class SurfaceTask extends DefaultTask {
     /** The artifact's own main sources (never the imported models: those are proven pure already). */
@@ -200,9 +200,9 @@ public abstract class SurfaceTask extends DefaultTask {
         return m.find() ? m.group(1) : "";
     }
 
-    /** How many times {@code root.Type}, {@code root.CONST}, {@code root._x} or {@code root.*} appears. */
+    /** How many times {@code root.} then a name or {@code *} appears: a class in the root or in any package under it. */
     static int count(String code, String root) {
-        Matcher m = Pattern.compile("(?<![\\w.])" + Pattern.quote(root) + "\\.(?:[A-Z_$]|\\*)").matcher(code);
+        Matcher m = Pattern.compile("(?<![\\w.])" + Pattern.quote(root) + "\\.(?=[\\w$*])").matcher(code);
         int n = 0;
         while (m.find()) {
             n++;
