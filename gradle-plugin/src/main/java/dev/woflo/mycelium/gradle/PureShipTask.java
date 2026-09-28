@@ -82,7 +82,7 @@ public abstract class PureShipTask extends DefaultTask {
 
     /**
      * The same folder's files, as an input: what ships is copied from the era gate's jar, so a change in that jar
-     * must re-run this task, not only the gate running first. A folder that does not exist yet is an empty input.
+     * must re-run this task, not only the gate running first. Set only when this target needs a downgrade.
      */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
