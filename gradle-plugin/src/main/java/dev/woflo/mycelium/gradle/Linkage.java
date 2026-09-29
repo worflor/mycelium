@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,10 +44,47 @@ final class Linkage {
         Map<String, byte[]> classes = classes(jar);
         Set<String> inside = new HashSet<>(classes.keySet());
         Map<String, String> refs = new LinkedHashMap<>();
+        Map<String, Hierarchy> hierarchy = new HashMap<>();
         for (Map.Entry<String, byte[]> e : classes.entrySet()) {
-            new ClassReader(e.getValue()).accept(new Collector(e.getKey(), inside, refs), ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            Hierarchy h = new Hierarchy();
+            new ClassReader(e.getValue()).accept(h, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            hierarchy.put(e.getKey(), h);
+        }
+        for (Map.Entry<String, byte[]> e : classes.entrySet()) {
+            new ClassReader(e.getValue()).accept(new Collector(e.getKey(), inside, refs, hierarchy),
+                    ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         }
         return refs;
+    }
+
+    /** What a class of the jar extends and declares: enough to tell a member it declares from one it inherits. */
+    private static final class Hierarchy extends ClassVisitor {
+        String superName;
+        String[] interfaces = new String[0];
+        final Set<String> methods = new HashSet<>();
+        final Set<String> fields = new HashSet<>();
+
+        Hierarchy() {
+            super(Opcodes.ASM9);
+        }
+
+        @Override
+        public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+            this.superName = superName;
+            this.interfaces = interfaces == null ? new String[0] : interfaces;
+        }
+
+        @Override
+        public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+            fields.add(name + " " + descriptor);
+            return null;
+        }
+
+        @Override
+        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+            methods.add(name + " " + descriptor);
+            return null;
+        }
     }
 
     /**
@@ -58,13 +96,27 @@ final class Linkage {
      * @return one line per gap: {@code Caller#method -> what}
      */
     static List<String> missingStubs(Path jar, String shadePrefix) throws IOException {
+        return missingStubs(jar, shadePrefix, true);
+    }
+
+    /**
+     * {@link #missingStubs(Path, String)}, optionally without the backports that throw and that nothing in the artifact is
+     * found to call: a backport is often partial in a corner the artifact never reaches (a process handle's
+     * {@code onExit}), and a jar of the game's own size must not fail on every such corner.
+     */
+    static List<String> missingStubs(Path jar, String shadePrefix, boolean includeUnreachable) throws IOException {
+        return missingStubs(jar, List.of(shadePrefix), includeUnreachable);
+    }
+
+    /** {@link #missingStubs(Path, String, boolean)} for a jar whose backports are shaded under more than one prefix. */
+    static List<String> missingStubs(Path jar, List<String> shadePrefixes, boolean includeUnreachable) throws IOException {
         Map<String, byte[]> classes = classes(jar);
-        String backports = shadePrefix.replace('.', '/') + "/";
+        List<String> backportDirs = shadePrefixes.stream().map(p -> p.replace('.', '/') + "/").collect(java.util.stream.Collectors.toList());
         Set<String> broken = new HashSet<>(); // owner#name of every method that throws MissingStubError
         List<String> out = new ArrayList<>();
         for (Map.Entry<String, byte[]> e : classes.entrySet()) {
             String owner = e.getKey();
-            boolean own = !owner.startsWith(backports);
+            boolean own = backportDirs.stream().noneMatch(owner::startsWith);
             new ClassReader(e.getValue()).accept(new ClassVisitor(Opcodes.ASM9) {
                 @Override
                 public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
@@ -95,7 +147,7 @@ final class Linkage {
         }
         for (Map.Entry<String, byte[]> e : classes.entrySet()) {
             String owner = e.getKey();
-            if (owner.startsWith(backports)) {
+            if (backportDirs.stream().anyMatch(owner::startsWith)) {
                 continue;
             }
             new ClassReader(e.getValue()).accept(new ClassVisitor(Opcodes.ASM9) {
@@ -114,7 +166,7 @@ final class Linkage {
                 }
             }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         }
-        if (out.isEmpty()) {
+        if (out.isEmpty() && includeUnreachable) {
             broken.forEach(b -> out.add(b + " (a backport that throws; no caller in the artifact found)"));
         }
         return out;
@@ -169,12 +221,14 @@ final class Linkage {
         private final String owner;
         private final Set<String> inside;
         private final Map<String, String> refs;
+        private final Map<String, Hierarchy> hierarchy;
 
-        Collector(String owner, Set<String> inside, Map<String, String> refs) {
+        Collector(String owner, Set<String> inside, Map<String, String> refs, Map<String, Hierarchy> hierarchy) {
             super(Opcodes.ASM9);
             this.owner = owner;
             this.inside = inside;
             this.refs = refs;
+            this.hierarchy = hierarchy;
         }
 
         void type(Type t, String where) {
@@ -208,8 +262,53 @@ final class Linkage {
             } else if (!inside.contains(o)) {
                 cls(o, where);
                 refs.putIfAbsent(kind + " " + o + " " + name + " " + desc, where);
+            } else {
+                inherited(kind, o, name, desc, where);
             }
             type(kind == 'M' ? Type.getMethodType(desc) : Type.getType(desc), where);
+        }
+
+        /**
+         * A member named on a class of the jar that the jar does not declare is inherited: from a class of the jar, or
+         * from the first class outside it that the superclass chain reaches, which is where the era's JVM must have it
+         * (a class loader's {@code getDefinedPackage} named on the artifact's own loader exists only from Java 9). A
+         * member an interface of the jar or outside it might supply is not traced.
+         */
+        void inherited(char kind, String o, String name, String desc, String where) {
+            String key = name + " " + desc;
+            String c = o;
+            for (int hops = 0; hops < 64 && c != null; hops++) {
+                Hierarchy h = hierarchy.get(c);
+                if (h == null) {
+                    refs.putIfAbsent(kind + " " + c + " " + name + " " + desc, where);
+                    return;
+                }
+                if ((kind == 'M' ? h.methods : h.fields).contains(key)) {
+                    return;
+                }
+                for (String i : h.interfaces) {
+                    if (hierarchy.containsKey(i) && declaredAbove(kind, i, key, 0)) {
+                        return;
+                    }
+                }
+                c = h.superName;
+            }
+        }
+
+        private boolean declaredAbove(char kind, String c, String key, int depth) {
+            Hierarchy h = hierarchy.get(c);
+            if (h == null || depth > 32) {
+                return false;
+            }
+            if ((kind == 'M' ? h.methods : h.fields).contains(key)) {
+                return true;
+            }
+            for (String i : h.interfaces) {
+                if (declaredAbove(kind, i, key, depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         void handle(Handle h, String where) {

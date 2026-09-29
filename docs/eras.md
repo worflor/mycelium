@@ -182,6 +182,29 @@ touched when there is nothing to ship.
 ForgeGradle/jarJar) consumes that task's output exactly as it already does, and needs to know nothing about
 Mycelium.
 
+## Downgrading the jar's own classes (`myceliumDowngradeJar`)
+
+`myceliumPureShip` carries the pure layer to an old era from the era gate's own bytes. A port written in the same modern
+Java as the pure layer (records, `List.of`, pattern matching) has the same problem for the rest of the jar, and no
+gate bundle to take the bytes from. `myceliumDowngradeJar` takes the jar itself, the standard `jar` task's output by
+default, and the classpath it was compiled against, and runs JvmDowngrader over all of it: bytecode to the era's class
+version, the Java APIs it calls backported into classes shaded under the artifact's `shadePrefix`. Then it holds the
+result to the same two things as the gate: no call of the artifact's own may be one the downgrader had no backport
+for, and every `java.*` and `javax.*` class, method and field the result reaches must exist on a real JVM of the
+era's version (law P2, over the whole jar). A jar whose classes already run on the era is copied through and the
+report says so.
+
+The classes `myceliumPureShip` already put under the shade prefix are set aside while the rest is downgraded and put back
+where the shade did not write them again, so a backport is never in the jar twice. A nested or synthetic class the
+artifact compiled itself (`Outer$1`) makes way for the pure layer's shipped `Outer`, whose other compilation has no such
+class.
+
+Nothing in `check` or in any jar runs it. A consumer puts its output where the loader's tooling takes the jar (Loom's
+`remapJar` input, say), before any remapping, so the classpath the classes were compiled against is the one the
+downgrader reads. `build/mycelium/downgrade/report/downgrade.json` records what ran; the design-time claim stays
+what `DESIGN.md` §11 allows: the bytes were downgraded and their Java references resolve on the era's Java, not that the
+game runs them.
+
 ## The portability surface (`myceliumSurface`)
 
 Per package of the artifact's own main sources (never the imported models, proven pure already), `myceliumSurface`

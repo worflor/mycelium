@@ -294,6 +294,26 @@ public final class MyceliumPlugin implements Plugin<Project> {
             project.getTasks().withType(Jar.class).configureEach(jar ->
                     jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium")));
 
+            // Downgrading the jar's own classes (docs/decisions/0007). Nothing in `check` or in a jar runs it: a consumer whose
+            // port is written for a newer Java than its era runs puts this task's output where its loader's tooling takes the
+            // jar (Loom's remapJar input, say), and no build that does not is changed.
+            TaskProvider<Jar> jarTask = project.getTasks().named("jar", Jar.class);
+            project.getTasks().register("myceliumDowngradeJar", DowngradeJarTask.class, t -> {
+                t.setGroup("mycelium");
+                t.setDescription("Downgrades the jar's own classes to the Java this target's era runs on, and proves it.");
+                t.getInput().set(jarTask.flatMap(Jar::getArchiveFile));
+                t.getClasspath().from(sourceSets.getByName("main").getCompileClasspath());
+                t.getJava().set(ext.getMinecraft().map(ext::javaFor));
+                t.getShadePrefix().set(ext.getShadePrefix().map(p -> p + "_ports"));
+                t.getShippedShadePrefix().set(ext.getShadePrefix());
+                t.getDowngrader().from(downgrader);
+                t.getLauncher().set(ext.getMinecraft().flatMap(mc -> toolchains.launcherFor(
+                        spec -> spec.getLanguageVersion().set(JavaLanguageVersion.of(ext.javaFor(mc))))));
+                t.getOutput().set(project.getLayout().getBuildDirectory()
+                        .file(jarTask.flatMap(Jar::getArchiveFileName).map(n -> "mycelium/downgrade/" + n)));
+                t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/downgrade/report"));
+            });
+
             // Shipping downgraded jars: the ship task's classes are the *only* path a pure package reaches this jar.
             // A consumer whose own main sourceSet also compiles the pure sources directly (as the substrate decision,
             // a downgrade — never the other way around, and never when no downgrade is needed (there, ship contributes
@@ -302,8 +322,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 jar.dependsOn(pureShip);
                 jar.from(pureShip.flatMap(PureShipTask::getClassesDir));
                 Provider<java.io.File> shipClassesDir = pureShip.flatMap(t -> t.getClassesDir().getAsFile());
-                // Exactly what ship put in makes way: a class from anywhere else whose entry ship also supplies is
-                // dropped. Decided per entry from ship's own output, so it holds however the build is ordered.
+                // Exactly what ship put in makes way: a class from anywhere else whose entry ship also supplies, or whose
+                // outermost class it supplies, is dropped. Decided per entry from ship's own output, so it holds however
+                // the build is ordered.
                 jar.exclude(element -> {
                     if (!ext.getMinecraft().isPresent() || ext.getPure().getSources().isEmpty()) {
                         return false;
@@ -316,8 +337,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     if (element.getFile().toPath().startsWith(ship)) {
                         return false; // never exclude the classes ship itself just added
                     }
-                    String path = element.getRelativePath().getPathString();
-                    return path.endsWith(".class") && java.nio.file.Files.isRegularFile(ship.resolve(path));
+                    return PureShipTask.makesWay(ship, element.getRelativePath().getPathString());
                 });
             });
         });

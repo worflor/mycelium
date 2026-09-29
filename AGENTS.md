@@ -120,6 +120,7 @@ mycelium/
 | `EraTask.java` | `myceliumEraJava<N>` (and `myceliumEras`, all of them): every bundle on an era's JVM |
 | `Linkage.java` | law P2: every outside reference in a bundle exists on the era's Java |
 | `PureShipTask.java` | `myceliumPureShip`: puts the pure layer's classes (downgraded, shaded, or as compiled) into the target's jar |
+| `DowngradeJarTask.java` | `myceliumDowngradeJar`: the jar's own classes downgraded to the Java the era runs on, and proven (stubs, Java linkage); a consumer's loader step takes its output |
 | `SurfaceTask.java` | `myceliumSurface`: platform references per package, outside declared ports (`docs/eras.md`) |
 | `EvidenceTask.java` | `myceliumEvidence`: `META-INF/mycelium/evidence.json`, what ran and what was not checked |
 | `Fingerprint.java` | stable SHA-256 over files and directories, for inputs and evidence |

@@ -83,6 +83,7 @@ an era needs it (`docs/eras.md`); `integration(...)` declares an optional integr
 | `myceliumPureCompile` | Compiles the pure layer alone. If it compiles there, it is pure in fact. |
 | `myceliumEraJava<N>` | One era's gate: every bundle on that Java's JVM (stubs, linkage P2, behaviour). `myceliumEras` runs every declared era. |
 | `myceliumPureShip` | Puts the pure layer's classes into this target's jar: downgraded and shaded (from the era gate's own output) when the era needs it, a no-op when it does not (`docs/eras.md`). |
+| `myceliumDowngradeJar` | The jar's own classes, not only the pure layer's, downgraded and shaded for an era older than the Java they were compiled for, then held to the era's Java: no call without a backport, every `java.*` reference present on a real JVM of it. Runs only when a consumer's loader step takes its output (`docs/eras.md`). |
 | `myceliumSurface` | Reports platform references per package of the mod's own sources, split into declared `ports(...)` and everything else: the cost the next rung would have to eat (`docs/eras.md`). |
 | `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into every jar: target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |

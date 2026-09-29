@@ -35,6 +35,7 @@ public final class SelfTest {
         evidence();
         loaders(root);
         shipping();
+        downgrading();
         surface();
         repository(root);
         System.out.println();
@@ -206,6 +207,151 @@ public final class SelfTest {
         } finally {
             delete(era);
         }
+    }
+
+    // --- downgrading the jar's own classes (docs/decisions/0007) --------------------------------------------------------
+
+    static void downgrading() throws IOException {
+        Path dir = Files.createTempDirectory("mycelium-selftest-downgrade");
+        try {
+            // whether a jar needs downgrading is read from its classes' own versions, not from a promise
+            Path jar = dir.resolve("in.jar");
+            try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
+                entry(z, "a/A.class", header(61));
+                entry(z, "a/B.class", header(52));
+                entry(z, "META-INF/versions/21/a/C.class", header(65));
+                entry(z, "notes.txt", "class".getBytes(StandardCharsets.UTF_8));
+                entry(z, "pfx/j9/Stub.class", header(52));
+            }
+            that(DowngradeJarTask.maxMajor(jar) == 61, "downgrade:the newest class version in the jar decides, and a multi-release copy is not the jar's own");
+            Path only8 = dir.resolve("only52.jar");
+            try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(only8))) {
+                entry(z, "a/B.class", header(52));
+            }
+            that(DowngradeJarTask.maxMajor(only8) == 52, "downgrade:a jar of Java 8 classes reads as 52");
+
+            // a nested or synthetic class follows its outermost class: two compilations do not make the same ones
+            Path ship = dir.resolve("ship");
+            write(ship.resolve("a/B.class"), "x");
+            that(PureShipTask.makesWay(ship, "a/B.class"), "downgrade:a class ship supplies makes way");
+            that(PureShipTask.makesWay(ship, "a/B$1.class"), "downgrade:a synthetic class of a class ship supplies makes way (its other compilation has none)");
+            that(PureShipTask.makesWay(ship, "a/B$Inner$1.class"), "downgrade:so does a class nested twice");
+            that(!PureShipTask.makesWay(ship, "a/C$1.class"), "downgrade:a nested class of a class ship does not supply stays");
+            that(!PureShipTask.makesWay(ship, "a/Bee.class"), "downgrade:a name that merely starts like a shipped class stays");
+            that(!PureShipTask.makesWay(ship, "a/B.txt"), "downgrade:only classes make way");
+
+            // a backport that throws is the artifact's problem only when the artifact calls it
+            Path called = dir.resolve("called.jar");
+            try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(called))) {
+                entry(z, "pfx/J_Q_Thing.class", throwing("pfx/J_Q_Thing", "onExit", "no backport"));
+                entry(z, "own/Caller.class", calling("own/Caller", "pfx/J_Q_Thing", "onExit"));
+            }
+            that(Linkage.missingStubs(called, java.util.List.of("pfx", "pfx_ports"), false).stream().anyMatch(l -> l.startsWith("own/Caller#run -> ")),
+                    "downgrade:a call of a backport that throws is named");
+            Path unreached = dir.resolve("unreached.jar");
+            try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(unreached))) {
+                entry(z, "pfx/J_Q_Thing.class", throwing("pfx/J_Q_Thing", "onExit", "no backport"));
+                entry(z, "own/Other.class", calling("own/Other", "java/lang/System", "gc"));
+            }
+            that(Linkage.missingStubs(unreached, "pfx", false).isEmpty(),
+                    "downgrade:a partial backport nothing calls does not fail a jar of the game's own size");
+            that(!Linkage.missingStubs(unreached, "pfx", true).isEmpty(),
+                    "downgrade:the era gate still names it: a bundle small enough to have no such corner");
+
+            // a member named on a class of the jar that only a class outside it declares is where the era must have it
+            Path inherited = dir.resolve("inherited.jar");
+            try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(inherited))) {
+                entry(z, "own/Loader.class", extending("own/Loader", "java/lang/ClassLoader", "declared"));
+                entry(z, "own/Use.class", callingVirtual("own/Use", "own/Loader", "getDefinedPackage", "(Ljava/lang/String;)Ljava/lang/Package;"));
+                entry(z, "own/Use2.class", callingVirtual("own/Use2", "own/Loader", "declared", "()V"));
+            }
+            java.util.Map<String, String> refs = Linkage.outsideReferences(inherited);
+            that(refs.containsKey("M java/lang/ClassLoader getDefinedPackage (Ljava/lang/String;)Ljava/lang/Package;"),
+                    "downgrade:a method the jar's class inherits from a class outside is traced to it (Java 9's getDefinedPackage on Java 8)");
+            that(refs.keySet().stream().noneMatch(r -> r.contains(" declared ")), "downgrade:a method the jar's class declares is not");
+        } finally {
+            delete(dir);
+        }
+    }
+
+    /** A class extending {@code superName} that declares one static method {@code declared()V}. */
+    private static byte[] extending(String owner, String superName, String declared) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, owner, null, superName, null);
+        org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, declared, "()V", null, null);
+        mv.visitCode();
+        mv.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        mv.visitMaxs(0, 1);
+        mv.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    /** A class whose {@code run} calls {@code target.method(desc)} on a null receiver (never run; only read). */
+    private static byte[] callingVirtual(String owner, String target, String method, String desc) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "run", "()V", null, null);
+        mv.visitCode();
+        mv.visitInsn(org.objectweb.asm.Opcodes.ACONST_NULL);
+        mv.visitTypeInsn(org.objectweb.asm.Opcodes.CHECKCAST, target);
+        if (desc.startsWith("(Ljava/lang/String;)")) {
+            mv.visitInsn(org.objectweb.asm.Opcodes.ACONST_NULL);
+        }
+        mv.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKEVIRTUAL, target, method, desc, false);
+        if (!desc.endsWith(")V")) {
+            mv.visitInsn(org.objectweb.asm.Opcodes.POP);
+        }
+        mv.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        mv.visitMaxs(3, 0);
+        mv.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static byte[] header(int major) {
+        return new byte[] {(byte) 0xca, (byte) 0xfe, (byte) 0xba, (byte) 0xbe, 0, 0, (byte) (major >> 8), (byte) major};
+    }
+
+    private static void entry(java.util.zip.ZipOutputStream z, String name, byte[] bytes) throws IOException {
+        z.putNextEntry(new java.util.zip.ZipEntry(name));
+        z.write(bytes);
+        z.closeEntry();
+    }
+
+    /** A class whose static method {@code name} throws {@code MissingStubError(what)}, as JvmDowngrader writes one. */
+    private static byte[] throwing(String owner, String name, String what) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                name, "()V", null, null);
+        mv.visitCode();
+        mv.visitTypeInsn(org.objectweb.asm.Opcodes.NEW, "xyz/wagyourtail/jvmdg/exc/MissingStubError");
+        mv.visitInsn(org.objectweb.asm.Opcodes.DUP);
+        mv.visitLdcInsn(what);
+        mv.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, "xyz/wagyourtail/jvmdg/exc/MissingStubError", "<init>",
+                "(Ljava/lang/String;)V", false);
+        mv.visitInsn(org.objectweb.asm.Opcodes.ATHROW);
+        mv.visitMaxs(3, 0);
+        mv.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    /** A class whose static {@code run} calls {@code target.method()} (static, no arguments). */
+    private static byte[] calling(String owner, String target, String method) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "run", "()V", null, null);
+        mv.visitCode();
+        mv.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC, target, method, "()V", false);
+        mv.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
     }
 
     // --- the portability surface (docs/decisions/0006) ----------------------------------------------------------------

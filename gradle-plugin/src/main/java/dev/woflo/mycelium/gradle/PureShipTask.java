@@ -252,6 +252,28 @@ public abstract class PureShipTask extends DefaultTask {
         return packages.contains(pkg) || pkg.equals(shadePrefix) || pkg.startsWith(shadePrefix + ".");
     }
 
+    /**
+     * Whether a class the artifact compiled itself makes way for what ship supplied: ship has the class, or has the
+     * top-level class it is nested in. A nested or synthetic class ({@code Outer$1}, {@code Outer$Inner}) belongs to its
+     * outermost class, and the two compilations of that class (the artifact's, for its own release, and the pure bundle's,
+     * for the pure layer's) do not always make the same ones: an enum switch has a synthetic {@code Outer$1} on one and none
+     * on the other. Left in the jar, the artifact's {@code Outer$1} would be a stale class of another compilation, at a
+     * class version the era may not run, that nothing calls.
+     *
+     * @param shipClasses the directory ship wrote its classes to
+     * @param entryPath a jar entry's path, e.g. {@code dev/woflo/Outer$1.class}
+     */
+    static boolean makesWay(Path shipClasses, String entryPath) {
+        if (!entryPath.endsWith(".class")) {
+            return false;
+        }
+        if (Files.isRegularFile(shipClasses.resolve(entryPath))) {
+            return true;
+        }
+        int dollar = entryPath.indexOf('$', entryPath.lastIndexOf('/') + 1);
+        return dollar > 0 && Files.isRegularFile(shipClasses.resolve(entryPath.substring(0, dollar) + ".class"));
+    }
+
     /** Every package declared by the artifact's pure sources and its imported contract models, from the source. */
     static Set<String> scanPackages(ConfigurableFileCollection pureSources, ConfigurableFileCollection importedSources) throws IOException {
         TreeSet<String> out = new TreeSet<>();
