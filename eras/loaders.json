@@ -1,42 +1,86 @@
 {
- "schema": 1,
- "note": "The Java packages each loader in eras/minecraft.json puts in a mod's reach, and the game's own. The pure layer may mention none of them (docs/eras.md, law P1); myceliumPurity reads this file, so a loader named in an era is guarded as soon as it is named here, and the repository check fails if an era names a loader this file does not. Each entry says where its packages come from, so it can be re-verified: a loader's packages are what its own published artifacts declare, not what its name suggests.",
- "game": {
-  "packages": ["net.minecraft", "com.mojang"],
-  "source": "Minecraft itself, and Mojang's own libraries it ships with (Brigadier, DataFixerUpper, authlib)"
- },
- "tools": {
-  "packages": ["org.spongepowered"],
-  "source": "Mixin (org.spongepowered:mixin): bytecode injection into the game, platform by definition"
- },
- "loaders": {
-  "fabric": {
-   "packages": ["net.fabricmc"],
-   "source": "Fabric Loader and Fabric API (net.fabricmc:fabric-loader, net.fabricmc.fabric-api:fabric-api on maven.fabricmc.net)"
+  "schema": 1,
+  "note": "The Java packages each loader in eras/minecraft.json puts in a mod's reach (and each plugin platform in a plugin's), and the game's own. The pure layer may mention none of them (docs/eras.md, law P1); myceliumPurity reads this file, so a loader named in an era is guarded as soon as it is named here, and the repository check fails if an era names a loader this file does not. Each entry says where its packages come from, so it can be re-verified: a loader's packages are what its own published artifacts declare, not what its name suggests.",
+  "game": {
+    "packages": [
+      "net.minecraft",
+      "com.mojang"
+    ],
+    "source": "Minecraft itself, and Mojang's own libraries it ships with (Brigadier, DataFixerUpper, authlib)"
   },
-  "forge": {
-   "packages": ["net.minecraftforge", "cpw.mods"],
-   "source": "Forge (net.minecraftforge:forge on maven.minecraftforge.net); cpw.mods is FML before 1.13 and ModLauncher/SecureJarHandler after"
+  "tools": {
+    "packages": [
+      "org.spongepowered"
+    ],
+    "source": "Mixin (org.spongepowered:mixin): bytecode injection into the game, platform by definition"
   },
-  "neoforge": {
-   "packages": ["net.neoforged", "cpw.mods"],
-   "source": "NeoForge (net.neoforged:neoforge on maven.neoforged.net); cpw.mods is the ModLauncher its early versions ran on"
-  },
-  "quilt": {
-   "packages": ["org.quiltmc", "net.fabricmc"],
-   "source": "Quilt Loader and QSL (org.quiltmc:quilt-loader, org.quiltmc.qsl on maven.quiltmc.org); Quilted Fabric API keeps Fabric API's net.fabricmc packages"
-  },
-  "legacy-fabric": {
-   "packages": ["net.fabricmc", "net.legacyfabric"],
-   "source": "Fabric Loader with Legacy Fabric API (net.legacyfabric.legacy-fabric-api on repo.legacyfabric.net)"
-  },
-  "ornithe": {
-   "packages": ["net.fabricmc", "net.ornithemc"],
-   "source": "Fabric Loader with Ornithe's Standard Libraries (net.ornithemc:osl on maven.ornithemc.net)"
-  },
-  "babric": {
-   "packages": ["net.fabricmc", "net.modificationstation"],
-   "source": "Fabric Loader on Beta 1.7.3 (github.com/babric) with StationAPI (net.modificationstation.stationapi, github.com/ModificationStation/StationAPI)"
+  "loaders": {
+    "fabric": {
+      "packages": [
+        "net.fabricmc"
+      ],
+      "source": "Fabric Loader and Fabric API (net.fabricmc:fabric-loader, net.fabricmc.fabric-api:fabric-api on maven.fabricmc.net)"
+    },
+    "forge": {
+      "packages": [
+        "net.minecraftforge",
+        "cpw.mods"
+      ],
+      "source": "Forge (net.minecraftforge:forge on maven.minecraftforge.net); cpw.mods is FML before 1.13 and ModLauncher/SecureJarHandler after"
+    },
+    "neoforge": {
+      "packages": [
+        "net.neoforged",
+        "cpw.mods"
+      ],
+      "source": "NeoForge (net.neoforged:neoforge on maven.neoforged.net); cpw.mods is the ModLauncher its early versions ran on"
+    },
+    "quilt": {
+      "packages": [
+        "org.quiltmc",
+        "net.fabricmc"
+      ],
+      "source": "Quilt Loader and QSL (org.quiltmc:quilt-loader, org.quiltmc.qsl on maven.quiltmc.org); Quilted Fabric API keeps Fabric API's net.fabricmc packages"
+    },
+    "legacy-fabric": {
+      "packages": [
+        "net.fabricmc",
+        "net.legacyfabric"
+      ],
+      "source": "Fabric Loader with Legacy Fabric API (net.legacyfabric.legacy-fabric-api on repo.legacyfabric.net)"
+    },
+    "ornithe": {
+      "packages": [
+        "net.fabricmc",
+        "net.ornithemc"
+      ],
+      "source": "Fabric Loader with Ornithe's Standard Libraries (net.ornithemc:osl on maven.ornithemc.net)"
+    },
+    "babric": {
+      "packages": [
+        "net.fabricmc",
+        "net.modificationstation"
+      ],
+      "source": "Fabric Loader on Beta 1.7.3 (github.com/babric) with StationAPI (net.modificationstation.stationapi, github.com/ModificationStation/StationAPI)"
+    },
+    "bukkit": {
+      "packages": [
+        "org.bukkit",
+        "org.spigotmc",
+        "net.md_5"
+      ],
+      "source": "The Bukkit API as Spigot publishes it (org.spigotmc:spigot-api on hub.spigotmc.org), with its BungeeCord chat components (net.md_5.bungee.api.chat); CraftBukkit and every fork implement it"
+    },
+    "paper": {
+      "packages": [
+        "io.papermc",
+        "com.destroystokyo.paper",
+        "net.kyori",
+        "org.bukkit",
+        "org.spigotmc",
+        "net.md_5"
+      ],
+      "source": "Paper's API (io.papermc.paper:paper-api on repo.papermc.io): the Bukkit API plus io.papermc/com.destroystokyo.paper, and the Adventure text library (net.kyori) it ships"
+    }
   }
- }
 }
