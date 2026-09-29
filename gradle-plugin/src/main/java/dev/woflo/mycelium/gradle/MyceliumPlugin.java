@@ -301,17 +301,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
             project.getTasks().withType(Jar.class).configureEach(jar -> {
                 jar.dependsOn(pureShip);
                 jar.from(pureShip.flatMap(PureShipTask::getClassesDir));
-                Provider<java.util.Set<String>> shippablePackages = project.provider(() -> {
-                    try {
-                        return PureShipTask.scanPackages(ext.getPure().getSources(),
-                                project.files(importTask.flatMap(ImportContractsTask::getOutputDir)));
-                    } catch (java.io.IOException e) {
-                        throw new org.gradle.api.GradleException("Mycelium: could not scan the pure layer's packages", e);
-                    }
-                });
                 Provider<java.io.File> shipClassesDir = pureShip.flatMap(t -> t.getClassesDir().getAsFile());
-                // Read once per jar execution, not once per file: exclude(Spec) runs per copied file.
-                java.util.concurrent.atomic.AtomicReference<java.util.Set<String>> cached = new java.util.concurrent.atomic.AtomicReference<>();
+                // Exactly what ship put in makes way: a class from anywhere else whose entry ship also supplies is
+                // dropped. Decided per entry from ship's own output, so it holds however the build is ordered.
                 jar.exclude(element -> {
                     if (!ext.getMinecraft().isPresent() || ext.getPure().getSources().isEmpty()) {
                         return false;
@@ -320,16 +312,12 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     if (targetJava >= ext.getPure().getRelease().get()) {
                         return false; // no downgrade needed: ship contributed nothing, so nothing to make way for
                     }
-                    if (element.getFile().toPath().startsWith(shipClassesDir.get().toPath())) {
+                    java.nio.file.Path ship = shipClassesDir.get().toPath();
+                    if (element.getFile().toPath().startsWith(ship)) {
                         return false; // never exclude the classes ship itself just added
                     }
-                    String path = element.getRelativePath().getPathString().replace('\\', '/');
-                    if (!path.endsWith(".class")) {
-                        return false;
-                    }
-                    int slash = path.lastIndexOf('/');
-                    String pkg = (slash < 0 ? "" : path.substring(0, slash)).replace('/', '.');
-                    return cached.updateAndGet(s -> s != null ? s : shippablePackages.get()).contains(pkg);
+                    String path = element.getRelativePath().getPathString();
+                    return path.endsWith(".class") && java.nio.file.Files.isRegularFile(ship.resolve(path));
                 });
             });
         });
