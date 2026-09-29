@@ -18,7 +18,8 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 - `Handler`: `knows(method)`, `handle(method, params)`. The world-touching side, supplied by the consumer.
 - `Limits(maxFrameBytes, rememberReplies)`.
 - `Link`: `hello(token)`, `receive(request)`, `dropped()`, `remembered()`.
-- `LinkSession`: the reference.
+- `Ledger`: what is remembered about mutating requests, apart from the session: `enter(id)` (the remembered reply, or `BUSY` if running, or null and now running), `finish(id, reply)`, `abandon(id)`, `size()`. `MemoryLedger` is the reference.
+- `LinkSession`: the reference. `LinkSession(token, handler, limits)` keeps a ledger of its own; `LinkSession(token, handler, limits, ledger)` remembers in the ledger the caller keeps.
 - `Backoff(baseMs, capMs)`: `delay(attempt, u)` for reconnect attempt `attempt >= 0` and a caller-supplied uniform
   `u` in `[0, 1)` (the model draws no randomness; the consumer passes its own).
 
@@ -34,6 +35,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | L6 | `L6:unknown-refused` | A method the handler does not know is refused `UNKNOWN_METHOD` and does not run; a blank id is refused `INVALID` |
 | L1 | `L1:no-concurrent-twin` | A mutating request whose id is still running is refused `BUSY`, not run a second time |
 | L7 | `L7:failure-is-remembered` | A mutating request whose handler threw is answered `FAILED`, and a retry gets the same refusal without running again (it may have half-happened) |
+| L8 | `L8:dedup-survives-handover` | Two links over one `Ledger` (a consumer replaced while the server runs): a mutating request the first answered is not run by the second (replayed), one the first is still running is refused `BUSY` by the second and not run beside it, and one whose handler threw is not run again |
 | B1 | `B1:delay-within-bounds` | Every delay is at least 1 ms and at most `capMs`, for every attempt and every `u` |
 | B2 | `B2:envelope-grows-to-cap` | The largest possible delay never shrinks as attempts grow, and reaches `capMs` |
 | B3 | `B3:never-gives-up` | A delay exists for every attempt up to `Integer.MAX_VALUE`, without overflow |
@@ -60,6 +62,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | `GluttonLink` | No frame limit | `L5:oversize-refused` |
 | `GuessingLink` | Passes unknown methods to the handler | `L6:unknown-refused` |
 | `RetryingLink` | Forgets failures, so a half-done mutation is run again | `L7:failure-is-remembered` |
+| `ParochialLink` | Keeps its own memory whatever ledger it is given: the request in flight when its consumer is replaced runs twice | `L8:dedup-survives-handover` |
 | `MisroutedLink` | Replies under the wrong id | `P2:reply-correlates` |
 | `StaleReadLink` | Remembers reads too | `P3:reads-are-fresh` |
 | `OverflowBackoff` | `base << attempt` unguarded: negative delays on long outages | `B3:never-gives-up` |
@@ -82,6 +85,12 @@ One `LinkSession` per mod lifetime, not per connection. The transport (a socket,
 a frame into a `Request`, `receive` it, and write the `Reply`. Call `dropped()` whenever the socket closes. Reconnect
 with `Backoff`, resetting the attempt count after a successful `hello`. Run world-touching handlers on the server thread
 from inside `handle`; `receive` may be called from the connection's thread.
+
+A mod whose own code is replaced while the server runs (a hot-swapped payload) has more than one session in a lifetime,
+and a session per replacement forgets exactly what L1 and L2 promise to remember: the agent resends the request that was
+in flight across the swap, and the new session runs it again. Keep one `Ledger` outside what is replaced, made of
+nothing the replacement redefines (JDK types only, when the replaced code is loaded by a class loader of its own), and
+build each new session over it (L8). A consumer that never replaces itself needs no ledger of its own.
 
 Ids must be unique across the caller's restarts, not only within one of its processes. The session remembers answers
 for the mod's lifetime (L2), so an agent whose id counter starts over when it restarts gets its new requests answered

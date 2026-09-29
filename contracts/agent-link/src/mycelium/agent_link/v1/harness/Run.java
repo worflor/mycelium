@@ -13,22 +13,26 @@ public final class Run {
     private Run() {
     }
 
+    /** A flawed link; handed a ledger by the harness, it builds its own private one and ignores it. */
     private static ContractRun.Broken link(String name, Flaw flaw, String label) {
         return new ContractRun.Broken(name, () -> new AgentLinkContractTests(
-                (t, h, l) -> new FlexLink(t, h, l, flaw), AgentLinkContractTests::reference).run(), label);
+                (t, h, l) -> new FlexLink(t, h, l, flaw), AgentLinkContractTests::reference,
+                (t, h, l, ledger) -> new FlexLink(t, h, l, flaw)).run(), label);
     }
 
     private static ContractRun.Broken backoff(String name, AgentLinkContractTests.Delays delays, String label) {
-        return new ContractRun.Broken(name, () -> new AgentLinkContractTests(LinkSession::new, delays).run(), label);
+        return new ContractRun.Broken(name, () -> new AgentLinkContractTests(LinkSession::new, delays, LinkSession::new).run(), label);
     }
 
     public static void main(String[] args) {
         int exit = ContractRun.run("agent.link@1",
                 () -> {
                     // two independent correct links: the model's reference and FlexLink with no flaw
-                    Check reference = new AgentLinkContractTests(LinkSession::new, AgentLinkContractTests::reference).run();
+                    Check reference = new AgentLinkContractTests(LinkSession::new, AgentLinkContractTests::reference,
+                            LinkSession::new).run();
                     Check second = new AgentLinkContractTests((t, h, l) -> new FlexLink(t, h, l, Flaw.NONE),
-                            AgentLinkContractTests::reference).run();
+                            AgentLinkContractTests::reference,
+                            (t, h, l, ledger) -> new FlexLink(t, h, l, Flaw.NONE, ledger)).run();
                     for (String f : second.failures()) {
                         reference.fail("FlexLink(NONE) " + f);
                     }
@@ -44,6 +48,11 @@ public final class Run {
                         link("GluttonLink", Flaw.GLUTTON, "L5:oversize-refused"),
                         link("GuessingLink", Flaw.GUESSING, "L6:unknown-refused"),
                         link("RetryingLink", Flaw.RETRYING, "L7:failure-is-remembered"),
+                        // a correct link in every other way that keeps its own memory whatever ledger it is given:
+                        // the replaced consumer's requests in flight run twice
+                        new ContractRun.Broken("ParochialLink", () -> new AgentLinkContractTests(
+                                LinkSession::new, AgentLinkContractTests::reference,
+                                (t, h, l, ledger) -> new LinkSession(t, h, l)).run(), "L8:dedup-survives-handover"),
                         link("MisroutedLink", Flaw.MISROUTED, "P2:reply-correlates"),
                         link("StaleReadLink", Flaw.STALE_READS, "P3:reads-are-fresh"),
                         backoff("OverflowBackoff", BadBackoffs::overflow, "B3:never-gives-up"),

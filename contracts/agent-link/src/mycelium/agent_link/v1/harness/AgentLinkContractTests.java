@@ -2,8 +2,10 @@ package mycelium.agent_link.v1.harness;
 
 import mycelium.agent_link.v1.model.Backoff;
 import mycelium.agent_link.v1.model.Handler;
+import mycelium.agent_link.v1.model.Ledger;
 import mycelium.agent_link.v1.model.Limits;
 import mycelium.agent_link.v1.model.Link;
+import mycelium.agent_link.v1.model.MemoryLedger;
 import mycelium.agent_link.v1.model.Reply;
 import mycelium.agent_link.v1.model.Request;
 import mycelium.harness.Check;
@@ -19,6 +21,11 @@ public final class AgentLinkContractTests {
         Link make(String token, Handler handler, Limits limits);
     }
 
+    /** Builds a link over a handler and a ledger the caller keeps (L8). */
+    public interface Handovers {
+        Link make(String token, Handler handler, Limits limits, Ledger ledger);
+    }
+
     /** A reconnect schedule: (base, cap, attempt, u) -> delay. */
     public interface Delays {
         long delay(long base, long cap, int attempt, double u);
@@ -28,10 +35,12 @@ public final class AgentLinkContractTests {
 
     private final Links links;
     private final Delays delays;
+    private final Handovers handovers;
 
-    public AgentLinkContractTests(Links links, Delays delays) {
+    public AgentLinkContractTests(Links links, Delays delays, Handovers handovers) {
         this.links = links;
         this.delays = delays;
+        this.handovers = handovers;
     }
 
     /** The reference schedule. */
@@ -49,6 +58,7 @@ public final class AgentLinkContractTests {
         l5Oversize(c);
         l6Unknown(c);
         l7FailureRemembered(c);
+        l8SurvivesHandover(c);
         p1ExecutesAndAnswers(c);
         p2Correlates(c);
         p3ReadsFresh(c);
@@ -195,6 +205,48 @@ public final class AgentLinkContractTests {
         c.that(refused(first, Reply.Refusal.FAILED) && refused(again, Reply.Refusal.FAILED) && h.runs("boom") == 1,
                 "L7:failure-is-remembered");
         c.that(first instanceof Reply.Refused f && "half done".equals(f.detail()), "L7:failure-carries-its-message");
+    }
+
+    /**
+     * L8: the consumer is replaced (a new link, a new handler) over the ledger the old one used. What the old one
+     * answered is not run again, what the old one is still running is refused BUSY and not run beside it, and what the
+     * old one's handler threw is not run again.
+     */
+    private void l8SurvivesHandover(Check c) {
+        Ledger ledger = new MemoryLedger(64);
+        // answered before the handover
+        Counting first = new Counting();
+        Counting second = new Counting();
+        Link a = handover(first, ledger);
+        Link b = handover(second, ledger);
+        a.receive(give("h1"));
+        Reply again = b.receive(give("h1"));
+        boolean answered = first.runs("give") == 1 && second.runs("give") == 0
+                && again instanceof Reply.Answered y && y.replayed();
+
+        // still running on the old side when the new side is asked; the old one then finishes
+        Request r = new Request("h2", "retry", true, 10, "{}");
+        first.link = b;
+        first.reentry = r;
+        a.receive(r);
+        boolean busy = first.runs("retry") == 1 && second.runs("retry") == 0
+                && first.inner instanceof Reply.Refused f && f.refusal() == Reply.Refusal.BUSY;
+        Reply after = b.receive(r);
+        boolean finished = second.runs("retry") == 0 && after instanceof Reply.Answered z && z.replayed();
+
+        // a failure on the old side is the new side's answer too: it may have half happened
+        a.receive(new Request("h3", "boom", true, 5, "{}"));
+        Reply failed = b.receive(new Request("h3", "boom", true, 5, "{}"));
+        boolean refused = second.runs("boom") == 0 && refused(failed, Reply.Refusal.FAILED);
+
+        c.that(answered && busy && finished && refused, "L8:dedup-survives-handover");
+    }
+
+    private Link handover(Counting h, Ledger ledger) {
+        Link l = handovers.make(TOKEN, h, Limits.defaults(), ledger);
+        h.link = l;
+        l.hello(TOKEN);
+        return l;
     }
 
     /** P1: after a good hello, a known in-size request runs once and returns the handler's result. */

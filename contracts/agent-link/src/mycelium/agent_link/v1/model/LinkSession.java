@@ -2,31 +2,36 @@ package mycelium.agent_link.v1.model;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
 
 /**
- * The reference link. Authentication is per connection; remembered replies to mutating requests are per session, in
- * an insertion-ordered map trimmed from the oldest end. Thread-safe: one connection thread at a time is the expected
- * use, but {@code receive} and {@code dropped} may race and are serialised.
+ * The reference link. Authentication is per connection; what is remembered about mutating requests is the ledger's,
+ * which outlives the connection and, when the consumer passes one in, the session itself (L8). Thread-safe: one
+ * connection thread at a time is the expected use, but {@code receive} and {@code dropped} may race and are serialised.
  */
 public final class LinkSession implements Link {
     private final byte[] token;
     private final Handler handler;
     private final Limits limits;
-    private final Map<String, Reply> replies = new LinkedHashMap<>();
-    private final Set<String> running = new HashSet<>();
+    private final Ledger ledger;
     private boolean authenticated;
 
+    /** A session with a ledger of its own: it remembers for as long as it lives. */
     public LinkSession(String token, Handler handler, Limits limits) {
+        this(token, handler, limits, new MemoryLedger(limits.rememberReplies()));
+    }
+
+    /**
+     * A session over {@code ledger}: it remembers, and finds running, whatever any session over the same ledger did.
+     * The ledger should remember at least {@code limits.rememberReplies()} replies (L4 is the ledger's to keep).
+     */
+    public LinkSession(String token, Handler handler, Limits limits, Ledger ledger) {
         if (token == null || token.isEmpty()) {
             throw new IllegalArgumentException("a link needs a non-empty token");
         }
         this.token = token.getBytes(StandardCharsets.UTF_8);
         this.handler = handler;
         this.limits = limits;
+        this.ledger = ledger;
     }
 
     @Override
@@ -53,12 +58,9 @@ public final class LinkSession implements Link {
                 return new Reply.Refused(id, Reply.Refusal.UNKNOWN_METHOD, r.method());
             }
             if (r.mutating()) {
-                Reply seen = replies.get(id);
+                Reply seen = ledger.enter(id);
                 if (seen != null) {
                     return seen instanceof Reply.Answered a ? a.replay() : seen;
-                }
-                if (!running.add(id)) {
-                    return new Reply.Refused(id, Reply.Refusal.BUSY, "still running; ask again for its answer");
                 }
             }
         }
@@ -70,20 +72,12 @@ public final class LinkSession implements Link {
             reply = new Reply.Refused(id, Reply.Refusal.FAILED, String.valueOf(e.getMessage()));
         } catch (Error e) { // out of memory and the like: nothing is remembered, and the id is free to retry
             if (r.mutating()) {
-                synchronized (this) {
-                    running.remove(id);
-                }
+                ledger.abandon(id);
             }
             throw e;
         }
         if (r.mutating()) {
-            synchronized (this) {
-                running.remove(id);
-                replies.put(id, reply);
-                while (replies.size() > limits.rememberReplies()) {
-                    replies.remove(replies.keySet().iterator().next());
-                }
-            }
+            ledger.finish(id, reply);
         }
         return reply;
     }
@@ -94,7 +88,7 @@ public final class LinkSession implements Link {
     }
 
     @Override
-    public synchronized int remembered() {
-        return replies.size();
+    public int remembered() {
+        return ledger.size();
     }
 }

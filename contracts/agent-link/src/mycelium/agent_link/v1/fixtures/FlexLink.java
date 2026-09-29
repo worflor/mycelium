@@ -1,6 +1,7 @@
 package mycelium.agent_link.v1.fixtures;
 
 import mycelium.agent_link.v1.model.Handler;
+import mycelium.agent_link.v1.model.Ledger;
 import mycelium.agent_link.v1.model.Limits;
 import mycelium.agent_link.v1.model.Link;
 import mycelium.agent_link.v1.model.Reply;
@@ -28,11 +29,19 @@ public final class FlexLink implements Link {
     private final Set<String> running = new HashSet<>();
     private boolean authed;
 
+    private final Ledger shared;
+
     public FlexLink(String token, Handler handler, Limits limits, Flaw flaw) {
+        this(token, handler, limits, flaw, null);
+    }
+
+    /** With a ledger from the caller, remembering is the ledger's (L8); without, this link's own. */
+    public FlexLink(String token, Handler handler, Limits limits, Flaw flaw, Ledger shared) {
         this.token = token;
         this.handler = handler;
         this.limits = limits;
         this.flaw = flaw;
+        this.shared = shared;
     }
 
     @Override
@@ -60,7 +69,13 @@ public final class FlexLink implements Link {
             return new Reply.Answered(id, "ok", false);
         }
         boolean remember = (r.mutating() || flaw == Flaw.STALE_READS) && flaw != Flaw.FORGETFUL;
-        if (remember) {
+        boolean handed = remember && shared != null && flaw == Flaw.NONE;
+        if (handed) {
+            Reply seen = shared.enter(id);
+            if (seen != null) {
+                return seen instanceof Reply.Answered a ? a.replay() : seen;
+            }
+        } else if (remember) {
             Reply seen = replies.get(id);
             if (seen != null) {
                 return seen instanceof Reply.Answered a ? a.replay() : seen;
@@ -75,7 +90,9 @@ public final class FlexLink implements Link {
         } catch (Exception e) {
             reply = new Reply.Refused(id, Reply.Refusal.FAILED, String.valueOf(e.getMessage()));
         }
-        if (remember) {
+        if (handed) {
+            shared.finish(id, reply);
+        } else if (remember) {
             running.remove(id);
             if (!(flaw == Flaw.RETRYING && reply instanceof Reply.Refused)) {
                 replies.put(id, reply);
@@ -100,6 +117,6 @@ public final class FlexLink implements Link {
 
     @Override
     public int remembered() {
-        return replies.size();
+        return shared != null && flaw == Flaw.NONE ? shared.size() : replies.size();
     }
 }
