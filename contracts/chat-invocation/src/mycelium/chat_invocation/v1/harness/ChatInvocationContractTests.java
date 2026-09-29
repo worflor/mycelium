@@ -35,6 +35,7 @@ public final class ChatInvocationContractTests {
         p1Delivered(c);
         p2InOrder(c);
         p3Admitted(c);
+        p4ReadyInIsExact(c);
         return c;
     }
 
@@ -207,5 +208,57 @@ public final class ChatInvocationContractTests {
         boolean again = committed(g.offer(new Line("alex", "@mod d", 2 + 2 * rules.refillMs()))) != null;
         c.that(first && others && again, "P3:under-budget-admitted");
         c.that(limited, "L5:rate-bounded");
+    }
+
+    /**
+     * P4: over seeded traffic from two principals under several bucket rules, {@code readyInMs} is never unknown or
+     * negative, asking twice changes nothing, 0 means the next addressed line is admitted, and a positive wait is
+     * exact: still limited a millisecond before it, admitted at it. A principal never seen is ready at once.
+     */
+    private void p4ReadyInIsExact(Check c) {
+        long[][] shapes = {{1, 1}, {1, 7}, {2, 1_000}, {3, 10_000}, {4, 13}};
+        boolean known = true;
+        boolean pure = true;
+        boolean zeroAdmits = true;
+        boolean exact = true;
+        boolean unseen = true;
+        int waits = 0;
+        int admits = 0;
+        for (int s = 0; s < shapes.length; s++) {
+            int burst = (int) shapes[s][0];
+            long refill = shapes[s][1];
+            Gate g = gates.apply(Rules.defaults().withBucket(burst, refill));
+            unseen &= g.readyInMs("nobody", 0) == 0;
+            Seeded r = new Seeded(0xA11EL + s);
+            String[] who = {"spam", "kim"};
+            long t = 0;
+            for (int i = 0; i < 200; i++) {
+                t += r.nextInt(0, (int) Math.min(2 * refill + 1, 100_000));
+                String p = who[r.nextInt(2)];
+                long w = g.readyInMs(p, t);
+                known &= w >= 0;
+                pure &= w == g.readyInMs(p, t);
+                if (w < 0) {
+                    continue;
+                }
+                if (w == 0) {
+                    zeroAdmits &= committed(g.offer(new Line(p, "@mod q" + i, t))) != null;
+                    admits++;
+                    continue;
+                }
+                waits++;
+                exact &= limited(g.offer(new Line(p, "@mod q" + i, t)));
+                exact &= limited(g.offer(new Line(p, "@mod q" + i, t + w - 1)));
+                exact &= g.readyInMs(p, t + w - 1) == 1;
+                exact &= committed(g.offer(new Line(p, "@mod q" + i, t + w))) != null;
+                t += w;
+                unseen &= g.readyInMs("nobody", t) == 0;
+            }
+        }
+        c.that(known && pure && zeroAdmits && exact && unseen && waits > 0 && admits > 0, "P4:ready-in-is-exact");
+    }
+
+    private static boolean limited(Outcome o) {
+        return o instanceof Outcome.Rejected r && r.reason() == Outcome.Reason.RATE_LIMITED;
     }
 }

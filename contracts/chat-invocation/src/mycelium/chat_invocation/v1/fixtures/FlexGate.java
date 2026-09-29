@@ -21,7 +21,7 @@ import java.util.Set;
  */
 public final class FlexGate implements Gate {
     /** The ways to be wrong. */
-    public enum Flaw { NONE, NO_OP, LEAKY, EAGER, UNBOUNDED, STALE, ECHO, GREEDY, DEAF, TRUNCATING, SHUFFLED, STINGY }
+    public enum Flaw { NONE, NO_OP, LEAKY, EAGER, UNBOUNDED, STALE, ECHO, GREEDY, DEAF, TRUNCATING, SHUFFLED, STINGY, MUTE_WAIT, EARLY_WAIT }
 
     private final Rules rules;
     private final Flaw flaw;
@@ -85,6 +85,36 @@ public final class FlexGate implements Gate {
     @Override
     public boolean optedOut(String principal) {
         return out.contains(principal);
+    }
+
+    /**
+     * The sliding log's exact wait: none while fewer than {@code burst} admissions fall inside the last
+     * {@code burst * refillMs}, otherwise until the oldest of them leaves it. MUTE_WAIT always says 0 (it never
+     * tells anyone to wait); EARLY_WAIT says one millisecond too little.
+     */
+    @Override
+    public long readyInMs(String principal, long now) {
+        if (flaw == Flaw.MUTE_WAIT) {
+            return 0;
+        }
+        List<Long> log = admitted.get(principal);
+        if (log == null) {
+            return 0;
+        }
+        long span = (long) rules.burst() * rules.refillMs();
+        long oldest = Long.MAX_VALUE;
+        int inside = 0;
+        for (long t : log) {
+            if (flaw == Flaw.STINGY || t > now - span) {
+                inside++;
+                oldest = Math.min(oldest, t);
+            }
+        }
+        if (inside < rules.burst()) {
+            return 0;
+        }
+        long wait = oldest + span - now;
+        return flaw == Flaw.EARLY_WAIT ? wait - 1 : wait;
     }
 
     private String eagerQuery(String text) {

@@ -65,6 +65,21 @@ public final class ChatGate implements Gate {
         return out.contains(principal);
     }
 
+    /** Exactly from the bucket: after the refills due by {@code now}, empty means the next refill instant is the wait. */
+    @Override
+    public long readyInMs(String principal, long now) {
+        long[] b = buckets.get(principal);
+        if (b == null) {
+            return 0;
+        }
+        long at = Math.max(now, last);
+        long refills = (at - b[1]) / rules.refillMs();
+        if (b[0] + refills > 0) {
+            return 0;
+        }
+        return b[1] + (refills + 1) * rules.refillMs() - at;
+    }
+
     /** Forget every held line (a server stopping). */
     public void clearWindow() {
         window.clear();

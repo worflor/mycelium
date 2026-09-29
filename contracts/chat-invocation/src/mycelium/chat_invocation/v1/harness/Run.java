@@ -38,7 +38,9 @@ public final class Run {
                         broken("DeafGate", Flaw.DEAF, "L6:opt-out-honoured"),
                         broken("TruncatingGate", Flaw.TRUNCATING, "L7:no-silent-truncation"),
                         broken("ShuffledGate", Flaw.SHUFFLED, "P2:snapshot-in-order"),
-                        broken("StingyGate", Flaw.STINGY, "P3:under-budget-admitted")
+                        broken("StingyGate", Flaw.STINGY, "P3:under-budget-admitted"),
+                        broken("MuteWaitGate", Flaw.MUTE_WAIT, "P4:ready-in-is-exact"),
+                        broken("EarlyWaitGate", Flaw.EARLY_WAIT, "P4:ready-in-is-exact")
                 ));
         System.exit(exit);
     }
