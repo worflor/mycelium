@@ -47,6 +47,10 @@ public abstract class PureCompileTask extends DefaultTask {
     @Input
     public abstract Property<String> getSuiteMain();
 
+    /** Every lint, and a warning is an error ({@link PureSpec#getStrict()}). */
+    @Input
+    public abstract Property<Boolean> getStrict();
+
     @Input
     public abstract Property<String> getBundleName();
 
@@ -69,7 +73,9 @@ public abstract class PureCompileTask extends DefaultTask {
         }
         tests.stream().filter(p -> !files.contains(p)).forEach(files::add);
 
-        List<String> args = new ArrayList<>(List.of("--release", String.valueOf(getRelease().get()), "-nowarn", "-d", classes.toString()));
+        List<String> args = new ArrayList<>(List.of("--release", String.valueOf(getRelease().get()), "-d", classes.toString()));
+        // strict: every lint, and a warning fails the build; otherwise the compile is only the purity proof
+        args.addAll(getStrict().get() ? List.of("-Xlint:all", "-Werror") : List.of("-nowarn"));
         files.forEach(p -> args.add(p.toString()));
         JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
         Path log = out.resolve("javac.log");
@@ -78,7 +84,8 @@ public abstract class PureCompileTask extends DefaultTask {
             exit = javac.run(null, err, err, args.toArray(String[]::new));
         }
         if (exit != 0) {
-            throw new GradleException("Mycelium: the pure layer does not compile on its own (no Minecraft on the path):\n"
+            throw new GradleException("Mycelium: the pure layer does not compile on its own (no Minecraft on the path"
+                    + (getStrict().get() ? "; strict: a warning is an error" : "") + "):\n"
                     + Files.readString(log, StandardCharsets.UTF_8));
         }
 

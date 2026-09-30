@@ -14,6 +14,7 @@ import org.gradle.api.provider.Property;
  *         sources.from(rootProject.file("kernels/src"))
  *         tests.from(rootProject.file("kernels/test"))
  *         release = 21
+ *         strict = true
  *     }
  * }
  * </pre>
@@ -30,6 +31,13 @@ public abstract class PureSpec {
 
     /** The simple name of a suite's main class. Default {@code Run}. */
     public abstract Property<String> getSuiteMain();
+
+    /**
+     * Whether the pure layer is held to every check the compiler has: {@code -Xlint:all}, and a warning fails the
+     * build ({@code -Werror}). The layer compiles on its own, so nothing outside it (a loader's deprecated API, a
+     * platform's raw types) can be what warns: every warning is the artifact's own. Default false.
+     */
+    public abstract Property<Boolean> getStrict();
 
     /**
      * Packages the pure layer must never mention, beyond the defaults (Minecraft, every loader, Mixin, each declared

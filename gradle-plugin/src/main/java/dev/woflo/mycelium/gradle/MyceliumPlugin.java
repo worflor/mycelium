@@ -52,6 +52,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         ext.getShadePrefix().convention(ext.getNamespace().map(n -> n.replace('.', '_') + "_jvmdg"));
         ext.getPure().getRelease().convention(VerifyContractsTask.RELEASE);
         ext.getPure().getSuiteMain().convention("Run");
+        ext.getPure().getStrict().convention(false);
         ext.getSurfaceFailOnGrowth().convention(false);
 
         // `-Pmycelium.contracts=a@1,b@1` overrides the selection for one invocation (useful while packages land).
@@ -157,6 +158,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getTests().from(ext.getPure().getTests());
             t.getRelease().set(ext.getPure().getRelease());
             t.getSuiteMain().set(ext.getPure().getSuiteMain());
+            t.getStrict().set(ext.getPure().getStrict());
             t.getBundleName().set(ext.getArtifactId().map(a -> a + " pure layer"));
             t.getBundleDir().set(pureBundle);
             t.dependsOn(purityTask, importTask);
