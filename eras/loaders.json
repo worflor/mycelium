@@ -15,6 +15,12 @@
     "source": "Mixin (org.spongepowered:mixin): bytecode injection into the game, platform by definition"
   },
   "loaders": {
+    "javaagent": {
+      "packages": [
+        "java.lang.instrument"
+      ],
+      "source": "Java Instrumentation API in the Java 8 platform, used as an exact-profile native entrance rather than a Minecraft mod loader"
+    },
     "fabric": {
       "packages": [
         "net.fabricmc"

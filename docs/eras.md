@@ -17,7 +17,7 @@ Three files hold what the plugin knows about versions. The repository check (`my
 | File | What it holds |
 |---|---|
 | `eras/minecraft.json` | Every version, by era: its Java, the loaders a mod can target, how its code is named, and the walls a port crosses. Ordered newest first. |
-| `eras/loaders.json` | Each loader's Java packages, and the game's own, each with where it was read. The pure layer may mention none of them (P1). |
+| `eras/loaders.json` | Each loader or native entrance's Java packages, and the game's own, each with where it was read. The pure layer may mention none of them (P1). |
 | `eras/versions.json` | Every real version, from Mojang's launcher manifest: releases, betas and alphas (snapshots are not targets). |
 
 **Bounds.** An era covers every version from `from` to `to`, both included. A bound is either a version as the

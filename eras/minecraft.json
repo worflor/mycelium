@@ -151,7 +151,8 @@
    "java": 8,
    "loaders": [
     "babric",
-    "ornithe"
+    "ornithe",
+    "bukkit"
    ],
    "names": "feather",
    "walls": [
@@ -165,11 +166,13 @@
    "to": "a1.2.6",
    "java": 8,
    "loaders": [
-    "ornithe"
+    "ornithe",
+    "javaagent"
    ],
    "names": "feather",
    "walls": [
-    "no registries, no events"
+    "no registries, no events",
+    "a1.2.6 javaagent profile is limited to the paired Alpha 0.2.8 server artifact"
    ]
   },
   {
