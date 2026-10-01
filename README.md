@@ -73,6 +73,11 @@ an era needs it (`docs/eras.md`); `integration(...)` declares an optional integr
 (`docs/integrations.md`); `ports(...)` names the mod's own packages that are meant to touch the platform, for
 `myceliumSurface` (`docs/eras.md`).
 
+`artifactJars("jar")` selects the Jar tasks that receive the artifact's private pure classes and evidence. This keeps
+independent probes and source archives separate. An empty selection preserves attachment to every Jar task; a
+nonempty selection must name distinct Jar tasks in that project. The project's contract, purity and era checks
+apply regardless of which archives receive the artifact.
+
 | Task | Effect |
 |---|---|
 | `myceliumImport` | Copies each selected contract's `model` into `build/generated/sources/mycelium/java` under the mod's namespace, and adds it to `main`. A model that reaches the harness is refused. |
@@ -85,7 +90,7 @@ an era needs it (`docs/eras.md`); `integration(...)` declares an optional integr
 | `myceliumPureShip` | Puts the pure layer's classes into this target's jar: downgraded and shaded (from the era gate's own output) when the era needs it, a no-op when it does not (`docs/eras.md`). |
 | `myceliumDowngradeJar` | The jar's own classes, not only the pure layer's, downgraded and shaded for an era older than the Java they were compiled for, then held to the era's Java: no call without a backport, every `java.*` reference present on a real JVM of it. Runs only when a consumer's loader step takes its output (`docs/eras.md`). |
 | `myceliumSurface` | Reports platform references per package of the mod's own sources, split into declared `ports(...)` and everything else: the cost the next rung would have to eat (`docs/eras.md`). |
-| `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into every jar: target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
+| `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (every Jar by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |
 

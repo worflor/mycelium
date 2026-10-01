@@ -28,7 +28,7 @@ import java.util.List;
  *   <li>{@code myceliumImport}: copies selected contract {@code model} packages into
  *       {@code build/generated/sources/mycelium/java} under the consumer's namespace and adds them to {@code main}.</li>
  *   <li>{@code myceliumVerify}: compiles and runs each selected contract harness; wired into {@code check}.</li>
- *   <li>{@code myceliumEvidence}: writes {@code META-INF/mycelium/evidence.json} into every jar.</li>
+ *   <li>{@code myceliumEvidence}: writes {@code META-INF/mycelium/evidence.json} into the selected artifact jars.</li>
  *   <li>{@code myceliumPurity} / {@code myceliumPureCompile}: the artifact's pure layer, its laws and its suites.</li>
  *   <li>{@code myceliumEras}: every era gate ({@code myceliumEraJava<N>}): the contracts and the pure layer on each era's
  *       Java. The eras come from {@code minecraft} (the target's own era) or {@code eras(...)} (docs/eras.md).</li>
@@ -48,6 +48,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         ext.getTargetProfile().convention(project.getName());
         ext.getArtifactId().convention(project.getName());
         ext.getArtifactVersion().convention(project.provider(() -> String.valueOf(project.getVersion())));
+        ext.getArtifactJars().convention(List.of());
         ext.getDowngraderVersion().convention("2.0.1");
         ext.getShadePrefix().convention(ext.getNamespace().map(n -> n.replace('.', '_') + "_jvmdg"));
         ext.getPure().getRelease().convention(VerifyContractsTask.RELEASE);
@@ -293,8 +294,6 @@ public final class MyceliumPlugin implements Plugin<Project> {
             project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
                     pureShip, surfaceTask));
             evidenceTask.configure(t -> t.dependsOn(usageTask, pureShip));
-            project.getTasks().withType(Jar.class).configureEach(jar ->
-                    jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium")));
 
             // Downgrading the jar's own classes (docs/decisions/0007). Nothing in `check` or in a jar runs it: a consumer whose
             // port is written for a newer Java than its era runs puts this task's output where its loader's tooling takes the
@@ -320,29 +319,51 @@ public final class MyceliumPlugin implements Plugin<Project> {
             // A consumer whose own main sourceSet also compiles the pure sources directly (as the substrate decision,
             // a downgrade — never the other way around, and never when no downgrade is needed (there, ship contributes
             // nothing, so nothing is excluded either; docs/decisions/0006).
-            project.getTasks().withType(Jar.class).configureEach(jar -> {
-                jar.dependsOn(pureShip);
-                jar.from(pureShip.flatMap(PureShipTask::getClassesDir));
-                Provider<java.io.File> shipClassesDir = pureShip.flatMap(t -> t.getClassesDir().getAsFile());
-                // Exactly what ship put in makes way: a class from anywhere else whose entry ship also supplies, or whose
-                // outermost class it supplies, is dropped. Decided per entry from ship's own output, so it holds however
-                // the build is ordered.
-                jar.exclude(element -> {
-                    if (!ext.getMinecraft().isPresent() || ext.getPure().getSources().isEmpty()) {
-                        return false;
+            project.afterEvaluate(p -> {
+                List<String> artifactJars = ext.getArtifactJars().get();
+                validateArtifactJars(artifactJars, p.getTasks().withType(Jar.class).getNames());
+                p.getTasks().withType(Jar.class).configureEach(jar -> {
+                    if (!isArtifactJar(artifactJars, jar.getName())) {
+                        return;
                     }
-                    int targetJava = ext.javaFor(ext.getMinecraft().get());
-                    if (targetJava >= ext.getPure().getRelease().get()) {
-                        return false; // no downgrade needed: ship contributed nothing, so nothing to make way for
-                    }
-                    java.nio.file.Path ship = shipClassesDir.get().toPath();
-                    if (element.getFile().toPath().startsWith(ship)) {
-                        return false; // never exclude the classes ship itself just added
-                    }
-                    return PureShipTask.makesWay(ship, element.getRelativePath().getPathString());
+                    jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium"));
+                    jar.dependsOn(pureShip);
+                    jar.from(pureShip.flatMap(PureShipTask::getClassesDir));
+                    Provider<java.io.File> shipClassesDir = pureShip.flatMap(t -> t.getClassesDir().getAsFile());
+                    // Exactly what ship put in makes way: a class from anywhere else whose entry ship also supplies, or whose
+                    // outermost class it supplies, is dropped. Decided per entry from ship's own output, so it holds however
+                    // the build is ordered.
+                    jar.exclude(element -> {
+                        if (!ext.getMinecraft().isPresent() || ext.getPure().getSources().isEmpty()) {
+                            return false;
+                        }
+                        int targetJava = ext.javaFor(ext.getMinecraft().get());
+                        if (targetJava >= ext.getPure().getRelease().get()) {
+                            return false; // no downgrade needed: ship contributed nothing, so nothing to make way for
+                        }
+                        java.nio.file.Path ship = shipClassesDir.get().toPath();
+                        if (element.getFile().toPath().startsWith(ship)) {
+                            return false; // never exclude the classes ship itself just added
+                        }
+                        return PureShipTask.makesWay(ship, element.getRelativePath().getPathString());
+                    });
                 });
             });
         });
+    }
+
+    static boolean isArtifactJar(List<String> taskNames, String name) {
+        return taskNames.isEmpty() || taskNames.contains(name);
+    }
+
+    static void validateArtifactJars(List<String> taskNames, java.util.Set<String> available) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String name : taskNames) {
+            if (name.isBlank() || !seen.add(name) || !available.contains(name)) {
+                throw new org.gradle.api.GradleException("Mycelium: artifactJars must name distinct Jar tasks in this project; '"
+                        + name + "' is invalid (available: " + available + ")");
+            }
+        }
     }
 
     /** The bundle directory of every contract this project verifies. */

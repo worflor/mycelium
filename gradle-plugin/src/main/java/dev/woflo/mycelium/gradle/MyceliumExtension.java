@@ -43,6 +43,13 @@ public abstract class MyceliumExtension {
     /** Artifact version recorded in the evidence manifest (defaults to the project version). */
     public abstract Property<String> getArtifactVersion();
 
+    /** Jar task names receiving this artifact's private code and evidence. Empty preserves attachment to every Jar. */
+    public abstract ListProperty<String> getArtifactJars();
+
+    public void artifactJars(String... taskNames) {
+        getArtifactJars().addAll(taskNames);
+    }
+
     /** Fail the build when an imported contract is never referenced by the artifact's own sources. Default false (warn). */
     public abstract Property<Boolean> getFailOnUnused();
 

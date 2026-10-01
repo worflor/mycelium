@@ -35,6 +35,7 @@ public final class SelfTest {
         evidence();
         loaders(root);
         shipping();
+        artifactJars();
         downgrading();
         surface();
         repository(root);
@@ -49,6 +50,21 @@ public final class SelfTest {
         assertions++;
         if (!ok) {
             FAILURES.add(label);
+        }
+    }
+
+    static void artifactJars() {
+        that(MyceliumPlugin.isArtifactJar(List.of(), "probeJar"), "artifact jars: default preserves existing attachment");
+        that(MyceliumPlugin.isArtifactJar(List.of("jar"), "jar"), "artifact jars: selected production jar receives code");
+        that(!MyceliumPlugin.isArtifactJar(List.of("jar"), "probeJar"), "artifact jars: independent probe receives no artifact code");
+        for (List<String> names : List.of(List.of("jar", "jar"), List.of(""), List.of("missing"))) {
+            boolean rejected = false;
+            try {
+                MyceliumPlugin.validateArtifactJars(names, Set.of("jar", "probeJar"));
+            } catch (org.gradle.api.GradleException expected) {
+                rejected = expected.getMessage().contains("artifactJars");
+            }
+            that(rejected, "artifact jars: invalid declaration rejected " + names);
         }
     }
 

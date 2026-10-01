@@ -105,7 +105,7 @@ mycelium/
 | Class | What it is |
 |---|---|
 | `MyceliumPlugin.java` | `dev.woflo.mycelium`, for consumers: registers the tasks and wires them into `check` and every jar |
-| `MyceliumExtension.java` | the `mycelium { }` block: contracts, namespace, target, eras, pure layer, integrations, ports |
+| `MyceliumExtension.java` | the `mycelium { }` block: contracts, namespace, target, eras, pure layer, integrations, ports, artifact Jar selection |
 | `PureSpec.java` | `mycelium { pure { } }`: the artifact's pure layer and its suites |
 | `ContractRegistry.java` | reads `contracts/registry.json`, strictly; resolves selections and `supersedes` |
 | `ImportContractsTask.java` | `myceliumImport`: copies each selected model under the consumer's namespace |
