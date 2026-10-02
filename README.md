@@ -88,7 +88,7 @@ apply regardless of which archives receive the artifact.
 | `myceliumPureCompile` | Compiles the pure layer alone. If it compiles there, it is pure in fact. |
 | `myceliumEraJava<N>` | One era's gate: every bundle on that Java's JVM (stubs, linkage P2, behaviour). `myceliumEras` runs every declared era. |
 | `myceliumPureShip` | Puts the pure layer's classes into this target's jar: downgraded and shaded (from the era gate's own output) when the era needs it, a no-op when it does not (`docs/eras.md`). |
-| `myceliumDowngradeJar` | The jar's own classes, not only the pure layer's, downgraded and shaded for an era older than the Java they were compiled for, then held to the era's Java: no call without a backport, every `java.*` reference present on a real JVM of it. Runs only when a consumer's loader step takes its output (`docs/eras.md`). |
+| `myceliumDowngradeJar` | Optionally isolates declared feature libraries and their callers under artifact-owned packages, then the jar's own classes, not only the pure layer's, are downgraded and shaded for an era older than the Java they were compiled for, then held to the era's Java: no call without a backport, every `java.*` reference present on a real JVM of it. Runs only when a consumer's loader step takes its output (`docs/eras.md`). |
 | `myceliumSurface` | Reports platform references per package of the mod's own sources, split into declared `ports(...)` and everything else: the cost the next rung would have to eat (`docs/eras.md`). |
 | `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (every Jar by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
@@ -110,3 +110,12 @@ harness catch it. Additive changes stay in `@N`; renaming a label or changing a 
   target.
 - That source portability implies save or protocol portability (`DESIGN.md` §8.6).
 - That every feature translates. Native work is first-class, and is tracked as native (`DESIGN.md` §4).
+
+Feature libraries that must coexist with a platform's different version can be carried privately by
+`myceliumDowngradeJar`. Declare a package translation with
+`mycelium { privateLibrary("library.api", "my.mod.privateapi") }` and add the exact library dependency to
+`myceliumPrivateLibraries`; the configuration also supplies the compile classpath. The task rewrites class identities,
+callers, reflection class names and service descriptors, preserves the library's license resources, and refuses
+conflicting entries or library classes outside a declared package. Its report records input jar hashes and relocated
+class counts. Explicit artifact module descriptors are refused rather than altered. Consumers take the task's output before their loader's remapping or capsule step, including when no Java
+downgrade is needed. Builds that declare no private libraries retain the existing behavior.

@@ -49,6 +49,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         ext.getArtifactId().convention(project.getName());
         ext.getArtifactVersion().convention(project.provider(() -> String.valueOf(project.getVersion())));
         ext.getArtifactJars().convention(List.of());
+        ext.getLibraryRelocations().convention(List.of());
         ext.getDowngraderVersion().convention("2.0.1");
         ext.getShadePrefix().convention(ext.getNamespace().map(n -> n.replace('.', '_') + "_jvmdg"));
         ext.getPure().getRelease().convention(VerifyContractsTask.RELEASE);
@@ -192,6 +193,10 @@ public final class MyceliumPlugin implements Plugin<Project> {
 
         // The era gates: JvmDowngrader (resolved only when a gate runs older bytecode) and a toolchain per era.
         project.getPluginManager().apply(JvmToolchainsPlugin.class);
+        Configuration privateLibraries = project.getConfigurations().create("myceliumPrivateLibraries", c -> {
+            c.setCanBeConsumed(false);
+            c.setTransitive(true);
+        });
         Configuration downgrader = project.getConfigurations().create("myceliumDowngrader", c -> {
             c.setCanBeConsumed(false);
             c.setTransitive(false);
@@ -253,6 +258,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         evidenceTask.configure(t -> t.mustRunAfter(erasTask));
 
         project.getPlugins().withType(JavaPlugin.class, javaPlugin -> {
+            project.getConfigurations().named("implementation", configuration -> configuration.extendsFrom(privateLibraries));
             SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
             sourceSets.getByName("main").getJava().srcDir(importTask.flatMap(ImportContractsTask::getOutputDir));
             // Every other main source is platform: the pure layer may not reach into its packages (P1).
@@ -304,6 +310,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.setDescription("Downgrades the jar's own classes to the Java this target's era runs on, and proves it.");
                 t.getInput().set(jarTask.flatMap(Jar::getArchiveFile));
                 t.getClasspath().from(sourceSets.getByName("main").getCompileClasspath());
+                t.getLibraryJars().from(privateLibraries);
+                t.getLibraryRelocations().set(ext.getLibraryRelocations());
                 t.getJava().set(ext.getMinecraft().map(ext::javaFor));
                 t.getShadePrefix().set(ext.getShadePrefix().map(p -> p + "_ports"));
                 t.getShippedShadePrefix().set(ext.getShadePrefix());

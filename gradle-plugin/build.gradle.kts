@@ -13,6 +13,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     // era gates: reads a bundle's outside references for the linkage law (docs/eras.md)
     implementation("org.ow2.asm:asm:9.10.1")
+    implementation("org.ow2.asm:asm-commons:9.10.1")
     // the self-tests load task classes, so they run with the Gradle API on their path (no test framework: see SelfTest)
     testImplementation(gradleApi())
 }

@@ -97,6 +97,13 @@ public abstract class MyceliumExtension {
     /** Package prefix for the downgrader's shaded Java API backports; unique per artifact so two mods never collide. */
     public abstract Property<String> getShadePrefix();
 
+    /** Feature library package relocations; the jars are declared in the myceliumPrivateLibraries configuration. */
+    public abstract ListProperty<String> getLibraryRelocations();
+
+    public void privateLibrary(String fromPackage, String ownedPackage) {
+        getLibraryRelocations().add(new PrivateLibraries.Relocation(fromPackage, ownedPackage).encode());
+    }
+
     /** The artifact's pure layer: the code the same on every version and loader (docs/eras.md). */
     @Nested
     public abstract PureSpec getPure();

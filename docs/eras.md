@@ -205,6 +205,21 @@ downgrader reads. `build/mycelium/downgrade/report/downgrade.json` records what 
 what `DESIGN.md` §11 allows: the bytes were downgraded and their Java references resolve on the era's Java, not that the
 game runs them.
 
+### Private feature libraries
+
+`privateLibrary("library.api", "my.mod.privateapi")` gives a feature library an artifact-owned package identity.
+Its dependencies are declared in the `myceliumPrivateLibraries` configuration, which also supplies the compile
+classpath. `myceliumDowngradeJar` merges those jars, rewrites the artifact's callers and the libraries' bytecode,
+reflection class names and service descriptors, then downgrades that result. Every library class must belong to a
+declared package; overlapping translations and conflicting jar entries fail. Library license resources are retained
+under `META-INF/private-libraries/<jar>/`. The downgrade report records input SHA-256 hashes, output identity and
+relocated class counts; these are build facts, not game evidence.
+
+Java 8 artifacts omit multi-release variants that their JVM ignores. Newer artifacts retain and relocate them.
+Explicit artifact module descriptors are refused: merging a named dependency into a named consumer needs its own
+module graph change. No private-library declaration means no relocation or merge, and existing artifacts retain
+that behavior. A consumer's loader step must take the task's output even when its source Java needs no downgrade.
+
 ## The portability surface (`myceliumSurface`)
 
 Per package of the artifact's own main sources (never the imported models, proven pure already), `myceliumSurface`

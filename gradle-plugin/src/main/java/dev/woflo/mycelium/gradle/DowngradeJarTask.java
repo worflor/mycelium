@@ -9,6 +9,7 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFile;
@@ -28,6 +29,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
@@ -59,6 +61,13 @@ public abstract class DowngradeJarTask extends DefaultTask {
     /** What the jar was compiled against: the downgrader reads its types (hierarchies, nest hosts) to rewrite calls. */
     @Classpath
     public abstract ConfigurableFileCollection getClasspath();
+
+    /** Feature library jars whose identities are made private before downgrade. Empty preserves existing artifacts. */
+    @Classpath
+    public abstract ConfigurableFileCollection getLibraryJars();
+
+    @Input
+    public abstract ListProperty<String> getLibraryRelocations();
 
     /** The Java feature version the result must run on (8, 16, 17...). */
     @Input
@@ -110,6 +119,40 @@ public abstract class DowngradeJarTask extends DefaultTask {
         r.addProperty("targetJava", java);
         r.addProperty("classVersionBefore", maxMajor(in));
         r.addProperty("shadePrefix", prefix);
+
+        List<String> declarations = getLibraryRelocations().get();
+        if (!declarations.isEmpty() || !getLibraryJars().isEmpty()) {
+            Path isolated = report.resolve("private-libraries.jar");
+            List<Path> libraries = getLibraryJars().getFiles().stream().map(File::toPath).toList();
+            Map<String, Integer> counts = PrivateLibraries.isolate(in, libraries, PrivateLibraries.declarations(declarations), isolated, java);
+            JsonObject privateLibraries = new JsonObject();
+            privateLibraries.addProperty("checked", true);
+            privateLibraries.addProperty("jarSha256", PrivateLibraries.sha256(isolated));
+            JsonArray packages = new JsonArray();
+            for (PrivateLibraries.Relocation relocation : PrivateLibraries.declarations(declarations)) {
+                JsonObject entry = new JsonObject();
+                entry.addProperty("from", relocation.from());
+                entry.addProperty("to", relocation.to());
+                entry.addProperty("classes", counts.get(relocation.from()));
+                packages.add(entry);
+            }
+            privateLibraries.add("packages", packages);
+            JsonArray inputs = new JsonArray();
+            for (Path library : libraries.stream().sorted(Comparator.comparing(path -> path.getFileName().toString())).toList()) {
+                JsonObject input = new JsonObject();
+                input.addProperty("jar", library.getFileName().toString());
+                input.addProperty("sha256", PrivateLibraries.sha256(library));
+                inputs.add(input);
+            }
+            privateLibraries.add("inputs", inputs);
+            r.add("privateLibraries", privateLibraries);
+            in = isolated;
+        } else {
+            JsonObject privateLibraries = new JsonObject();
+            privateLibraries.addProperty("checked", false);
+            privateLibraries.addProperty("why", "no private feature libraries declared");
+            r.add("privateLibraries", privateLibraries);
+        }
 
         if (maxMajor(in) <= 44 + java) {
             Files.copy(in, out, StandardCopyOption.REPLACE_EXISTING);

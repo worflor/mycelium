@@ -37,6 +37,7 @@ public final class SelfTest {
         shipping();
         artifactJars();
         downgrading();
+        privateLibraries();
         surface();
         repository(root);
         System.out.println();
@@ -65,6 +66,116 @@ public final class SelfTest {
                 rejected = expected.getMessage().contains("artifactJars");
             }
             that(rejected, "artifact jars: invalid declaration rejected " + names);
+        }
+    }
+
+    static void privateLibraries() throws Exception {
+        Path dir = Files.createTempDirectory("mycelium-private-libraries-");
+        try {
+            Path library = dir.resolve("library.jar");
+            Path conflict = dir.resolve("old-library.jar");
+            Path artifact = dir.resolve("artifact.jar");
+            Path output = dir.resolve("isolated.jar");
+            writePrivateJar(library, java.util.Map.of(
+                    "library/api/Value.class", privateConstant("library/api/Value", 42),
+                    "META-INF/LICENSE", "the feature library license".getBytes(StandardCharsets.UTF_8),
+                    "META-INF/services/library.api.Value", "library.api.Value\n".getBytes(StandardCharsets.UTF_8)));
+            writePrivateJar(conflict, java.util.Map.of("library/api/Value.class", privateConstant("library/api/Value", 13)));
+            org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+            cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, "consumer/Caller", null, "java/lang/Object", null);
+            org.objectweb.asm.MethodVisitor method = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC, "answer", "()I", null, null);
+            method.visitCode();
+            method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC, "library/api/Value", "answer", "()I", false);
+            method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+            method.visitMaxs(1, 0);
+            method.visitEnd();
+            cw.visitEnd();
+            writePrivateJar(artifact, java.util.Map.of("consumer/Caller.class", cw.toByteArray(),
+                    "library/apishim/Keep.class", privateConstant("library/apishim/Keep", 7)));
+            List<PrivateLibraries.Relocation> declarations = PrivateLibraries.declarations(List.of("library.api=owned.consumer.library"));
+            java.util.Map<String, Integer> counts = PrivateLibraries.isolate(artifact, List.of(library), declarations, output);
+            that(counts.equals(java.util.Map.of("library.api", 1)), "private libraries: exact relocated class count");
+            try (java.util.zip.ZipFile jar = new java.util.zip.ZipFile(output.toFile())) {
+                that(jar.getEntry("library/api/Value.class") == null && jar.getEntry("owned/consumer/library/Value.class") != null,
+                        "private libraries: public identity replaced by artifact-owned identity");
+                that(jar.getEntry("library/apishim/Keep.class") != null, "private libraries: package boundary preserves unrelated names");
+                that(jar.getEntry("META-INF/private-libraries/library.jar/LICENSE") != null, "private libraries: library license preserved");
+                java.util.zip.ZipEntry service = jar.getEntry("META-INF/services/owned.consumer.library.Value");
+                that(service != null && new String(jar.getInputStream(service).readAllBytes(), StandardCharsets.UTF_8).equals("owned.consumer.library.Value\n"),
+                        "private libraries: service type and provider identities both relocated");
+            }
+            try (java.net.URLClassLoader parent = new java.net.URLClassLoader(new java.net.URL[]{conflict.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
+                 java.net.URLClassLoader loader = new java.net.URLClassLoader(new java.net.URL[]{output.toUri().toURL()}, parent)) {
+                that(parent.loadClass("library.api.Value").getMethod("answer").invoke(null).equals(13), "private libraries: incompatible parent library really loaded");
+                that(loader.loadClass("consumer.Caller").getMethod("answer").invoke(null).equals(42), "private libraries: caller executes its own version despite incompatible parent");
+            }
+            Path again = dir.resolve("again.jar");
+            PrivateLibraries.isolate(artifact, List.of(library), declarations, again);
+            that(java.util.Arrays.equals(Files.readAllBytes(output), Files.readAllBytes(again)), "private libraries: repeated artifact is byte-identical");
+            for (List<String> bad : List.of(List.of("a.b=a.b"), List.of("a.b=java.foo"), List.of("bad"),
+                    List.of("a.b=owned.one", "a.b.c=owned.two"), List.of("a.b=owned.one", "c.d=owned.one.child"))) {
+                boolean rejected = false;
+                try { PrivateLibraries.declarations(bad); } catch (IllegalArgumentException expected) { rejected = true; }
+                that(rejected, "private libraries: malformed or overlapping declarations rejected " + bad);
+            }
+            Path multi = dir.resolve("multi.jar");
+            writePrivateJar(multi, java.util.Map.of("library/api/Value.class", privateConstant("library/api/Value", 42),
+                    "META-INF/versions/11/library/api/Value.class", privateConstant("library/api/Value", 99)));
+            PrivateLibraries.isolate(artifact, List.of(multi), declarations, again, 8);
+            try (java.util.zip.ZipFile jar = new java.util.zip.ZipFile(again.toFile())) {
+                that(jar.getEntry("META-INF/versions/11/owned/consumer/library/Value.class") == null,
+                        "private libraries: Java 8 artifact omits variants its JVM cannot use");
+            }
+            PrivateLibraries.isolate(artifact, List.of(multi), declarations, again, 17);
+            try (java.util.zip.ZipFile jar = new java.util.zip.ZipFile(again.toFile())) {
+                that(jar.getEntry("META-INF/versions/11/owned/consumer/library/Value.class") != null,
+                        "private libraries: newer artifact retains relocated multi-release variants");
+            }
+            Path modular = dir.resolve("modular.jar");
+            org.objectweb.asm.ClassWriter moduleWriter = new org.objectweb.asm.ClassWriter(0);
+            moduleWriter.visit(org.objectweb.asm.Opcodes.V9, org.objectweb.asm.Opcodes.ACC_MODULE, "module-info", null, null, null);
+            moduleWriter.visitModule("fixture.module", 0, null).visitEnd();
+            moduleWriter.visitEnd();
+            writePrivateJar(modular, java.util.Map.of("module-info.class", moduleWriter.toByteArray()));
+            boolean moduleRejected = false;
+            try { PrivateLibraries.isolate(modular, List.of(library), declarations, again, 17); }
+            catch (IOException expected) { moduleRejected = expected.getMessage().contains("explicit module descriptor"); }
+            that(moduleRejected, "private libraries: explicit artifact module is refused rather than silently altered");
+            boolean missing = false;
+            try { PrivateLibraries.isolate(artifact, List.of(library), PrivateLibraries.declarations(List.of("absent.api=owned.absent")), again); }
+            catch (IOException expected) { missing = expected.getMessage().contains("no declared relocation"); }
+            that(missing, "private libraries: undeclared library class cannot leak into artifact");
+            Path duplicate = dir.resolve("duplicate.jar");
+            writePrivateJar(duplicate, java.util.Map.of("library/api/Value.class", privateConstant("library/api/Value", 99)));
+            boolean clash = false;
+            try { PrivateLibraries.isolate(artifact, List.of(library, duplicate), declarations, again); }
+            catch (IOException expected) { clash = expected.getMessage().contains("conflicting jar entry"); }
+            that(clash, "private libraries: conflicting class bodies fail before shipping");
+        } finally {
+            Harness.deleteRecursively(dir);
+        }
+    }
+
+    private static byte[] privateConstant(String owner, int answer) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        org.objectweb.asm.MethodVisitor method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC, "answer", "()I", null, null);
+        method.visitCode();
+        method.visitLdcInsn(answer);
+        method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        method.visitMaxs(1, 0);
+        method.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static void writePrivateJar(Path path, java.util.Map<String, byte[]> entries) throws IOException {
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(path))) {
+            for (java.util.Map.Entry<String, byte[]> entry : new java.util.TreeMap<>(entries).entrySet()) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(entry.getKey()));
+                zip.write(entry.getValue());
+                zip.closeEntry();
+            }
         }
     }
 
