@@ -114,8 +114,13 @@ harness catch it. Additive changes stay in `@N`; renaming a label or changing a 
 Feature libraries that must coexist with a platform's different version can be carried privately by
 `myceliumDowngradeJar`. Declare a package translation with
 `mycelium { privateLibrary("library.api", "my.mod.privateapi") }` and add the exact library dependency to
-`myceliumPrivateLibraries`; the configuration also supplies the compile classpath. The task rewrites class identities,
+`myceliumPrivateLibraries`; the configuration supplies the compile classpath ahead of platform libraries, so an older
+library bundled in a platform aggregate cannot replace the feature's API during compilation. The task rewrites class identities,
 callers, reflection class names and service descriptors, preserves the library's license resources, and refuses
 conflicting entries or library classes outside a declared package. Its report records input jar hashes and relocated
 class counts. Explicit artifact module descriptors are refused rather than altered. Consumers take the task's output before their loader's remapping or capsule step, including when no Java
 downgrade is needed. Builds that declare no private libraries retain the existing behavior.
+
+`./gradlew -p gradle-plugin/src/test/fixtures/private-consumer check` proves compilation with an incompatible platform
+aggregate on the classpath and executes the isolated artifact on Java 8. The fixture references ASM 9 APIs absent from
+its compile-only ASM 4 aggregate.

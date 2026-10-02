@@ -13,6 +13,7 @@ import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.bundling.Jar;
+import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 
@@ -259,6 +260,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
 
         project.getPlugins().withType(JavaPlugin.class, javaPlugin -> {
             project.getConfigurations().named("implementation", configuration -> configuration.extendsFrom(privateLibraries));
+            project.afterEvaluate(p -> p.getTasks().withType(JavaCompile.class).configureEach(compile ->
+                    compile.setClasspath(privateLibraries.plus(compile.getClasspath()))));
             SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
             sourceSets.getByName("main").getJava().srcDir(importTask.flatMap(ImportContractsTask::getOutputDir));
             // Every other main source is platform: the pure layer may not reach into its packages (P1).
