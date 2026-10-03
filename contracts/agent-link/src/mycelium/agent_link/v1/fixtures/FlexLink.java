@@ -125,6 +125,7 @@ public final class FlexLink implements Link {
         return reply;
     }
 
+    @SuppressWarnings("removal")
     private static boolean fatal(Error error) {
         return error instanceof ThreadDeath
                 || error instanceof VirtualMachineError && !(error instanceof StackOverflowError);
