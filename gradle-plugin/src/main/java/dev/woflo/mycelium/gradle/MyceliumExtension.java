@@ -153,4 +153,12 @@ public abstract class MyceliumExtension {
 
     /** A checked-in {@code surface.json} (schema in {@link SurfaceTask}) to compare against. Optional. */
     public abstract RegularFileProperty getSurfaceBaseline();
+
+    /** Optional scanner/runtime linkage profile for a capsule artifact; absent for ordinary jars. */
+    @Nested
+    public abstract CapsuleSpec getCapsule();
+
+    public void capsule(Action<? super CapsuleSpec> action) {
+        action.execute(getCapsule());
+    }
 }

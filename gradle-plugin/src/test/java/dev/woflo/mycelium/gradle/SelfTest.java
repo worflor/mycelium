@@ -9,10 +9,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The plugin's self-tests, in the repository's own dependency-free style (a main, labelled checks, exit code = failures;
@@ -38,6 +44,9 @@ public final class SelfTest {
         artifactJars();
         downgrading();
         privateLibraries();
+        runtimeBootClasspath();
+        runtimeBootCapture();
+        capsuleLinkage();
         surface();
         repository(root);
         System.out.println();
@@ -67,6 +76,787 @@ public final class SelfTest {
             }
             that(rejected, "artifact jars: invalid declaration rejected " + names);
         }
+    }
+
+    static void capsuleLinkage() throws Exception {
+        Path dir = Files.createTempDirectory("mycelium-capsule-linkage-");
+        try {
+            Path runtime = dir.resolve("runtime.jar");
+            Path archive = dir.resolve("capsule.jar");
+            Path nested = dir.resolve("payload.jar");
+            writePrivateJar(runtime, java.util.Map.of(
+                    "java/lang/Object.class", objectClass(),
+                    "java/lang/String.class", emptyClass("java/lang/String", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC),
+                    "runtime/Base.class", baseClass(),
+                    "runtime/Child.class", childClass(),
+                    "runtime/Face.class", interfaceClass(),
+                    "runtime/FaceChild.class", interfaceChildClass()));
+            writePrivateJar(nested, java.util.Map.of("consumer/Caller.class", inheritedCaller("consumer/Caller", "runtime/Child", "answer", "()I", org.objectweb.asm.Opcodes.INVOKEVIRTUAL),
+                    "consumer/FieldCaller.class", fieldCaller("consumer/FieldCaller", "runtime/Child", "answerField", org.objectweb.asm.Opcodes.GETFIELD),
+                    "consumer/InterfaceCaller.class", inheritedCaller("consumer/InterfaceCaller", "runtime/FaceChild", "value", "()I", org.objectweb.asm.Opcodes.INVOKEINTERFACE),
+                    "consumer/ObjectMethodCaller.class", interfaceObjectMethodCaller(),
+                    "consumer/ArrayOwnerCaller.class", arrayOwnerCalls()));
+            writePrivateJar(archive, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(nested)));
+            Linkage.CapsuleResult valid = Linkage.verifyCapsule(archive, 50, java.util.Map.of("recon-payload/payload.jar", 52),
+                    List.of(runtime), null, "", "", List.of());
+            that(valid.classFiles() == 6 && valid.memberReferences() >= 6,
+                    "capsule: inherited class and interface methods, fields, Object methods, and array-owner methods resolve");
+            that(valid.runtimeRootHashes().get(0).contains("="), "capsule: exact runtime root hash is recorded");
+            Path conflictingRoot = dir.resolve("conflicting-runtime.jar");
+            writePrivateJar(conflictingRoot, java.util.Map.of("runtime/Base.class", baseClassWithStaticAnswer()));
+            Linkage.CapsuleResult ordered = Linkage.verifyCapsule(archive, 50, java.util.Map.of("recon-payload/payload.jar", 52),
+                    List.of(runtime, conflictingRoot), null, "", "", List.of());
+            that(ordered.shadowedRuntimeClasses().stream().anyMatch(line -> line.startsWith("runtime/Base: ")),
+                    "capsule: classpath order is honored and shadowed definitions are reported");
+            boolean reversedRejected = false;
+            try { Linkage.verifyCapsule(archive, 50, java.util.Map.of("recon-payload/payload.jar", 52),
+                    List.of(conflictingRoot, runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { reversedRejected = e.getMessage().contains("access for static member"); }
+            that(reversedRejected, "capsule: reversing overlapping roots changes the selected runtime definition");
+
+            Path badMember = dir.resolve("bad-member.jar");
+            Path badPayload = dir.resolve("bad-payload.jar");
+            writePrivateJar(badPayload, java.util.Map.of("consumer/Caller.class", inheritedCaller("consumer/Caller", "runtime/Child", "missing", "()I", org.objectweb.asm.Opcodes.INVOKEVIRTUAL)));
+            writePrivateJar(badMember, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(badPayload)));
+            that(rejectedCapsule(badMember, runtime, null, "absent runtime method"),
+                    "capsule: absent inherited runtime member is rejected");
+
+            Path badField = dir.resolve("bad-field.jar");
+            Path badFieldPayload = dir.resolve("bad-field-payload.jar");
+            writePrivateJar(badFieldPayload, java.util.Map.of("consumer/FieldCaller.class",
+                    fieldCaller("consumer/FieldCaller", "runtime/Child", "missingField", org.objectweb.asm.Opcodes.GETFIELD)));
+            writePrivateJar(badField, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(badFieldPayload)));
+            that(rejectedCapsule(badField, runtime, null, "absent runtime field"),
+                    "capsule: absent inherited runtime field is rejected");
+
+            Path badStatic = dir.resolve("bad-static.jar");
+            Path staticPayload = dir.resolve("static-payload.jar");
+            writePrivateJar(staticPayload, java.util.Map.of("consumer/Caller.class", inheritedCaller("consumer/Caller", "runtime/Base", "staticValue", "()I", org.objectweb.asm.Opcodes.INVOKEVIRTUAL)));
+            writePrivateJar(badStatic, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(staticPayload)));
+            that(rejectedCapsule(badStatic, runtime, null, "access for static member"),
+                    "capsule: staticness mismatch is rejected");
+
+            Path badOpcode = dir.resolve("bad-opcode.jar");
+            Path badOpcodePayload = dir.resolve("bad-opcode-payload.jar");
+            writePrivateJar(badOpcodePayload, java.util.Map.of("consumer/Caller.class",
+                    inheritedCaller("consumer/Caller", "runtime/Base", "answer", "()I", org.objectweb.asm.Opcodes.INVOKEINTERFACE)));
+            writePrivateJar(badOpcode, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(badOpcodePayload)));
+            that(rejectedCapsule(badOpcode, runtime, null, "wrong owner kind"),
+                    "capsule: invokeinterface cannot target a class owner");
+
+            Path privateRuntime = dir.resolve("private-runtime.jar");
+            writePrivateJar(privateRuntime, java.util.Map.of("java/lang/Object.class", objectClass(),
+                    "runtime/Base.class", baseClassWithPrivateAnswer()));
+            Path privateAccess = dir.resolve("private-access.jar");
+            Path privateAccessPayload = dir.resolve("private-access-payload.jar");
+            writePrivateJar(privateAccessPayload, java.util.Map.of("consumer/Caller.class",
+                    inheritedCaller("consumer/Caller", "runtime/Base", "privateAnswer", "()I", org.objectweb.asm.Opcodes.INVOKEVIRTUAL)));
+            writePrivateJar(privateAccess, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(privateAccessPayload)));
+            that(rejectedCapsule(privateAccess, privateRuntime, null, "cannot access private member"),
+                    "capsule: private runtime members are inaccessible from another caller");
+            Path samePackagePrivate = dir.resolve("same-package-private.jar");
+            Path samePackagePayload = dir.resolve("same-package-private-payload.jar");
+            writePrivateJar(samePackagePayload, java.util.Map.of("runtime/PrivateCaller.class",
+                    inheritedCaller("runtime/PrivateCaller", "runtime/Base", "privateAnswer", "()I", org.objectweb.asm.Opcodes.INVOKEVIRTUAL)));
+            writePrivateJar(samePackagePrivate, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(samePackagePayload)));
+            that(rejectedCapsule(samePackagePrivate, privateRuntime, null, "cannot access private member"),
+                    "capsule: package equality does not grant private access");
+
+            Path ownPrivate = dir.resolve("own-private.jar");
+            writePrivateJar(ownPrivate, java.util.Map.of("capsule/Entry.class", ownPrivateCaller()));
+            boolean ownPrivatePassed = true;
+            try { Linkage.verifyCapsule(ownPrivate, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { ownPrivatePassed = false; }
+            that(ownPrivatePassed, "capsule: a class may access its own private member");
+
+            Path nestmates = dir.resolve("nestmates.jar");
+            writePrivateJar(nestmates, java.util.Map.of("capsule/Host.class", nestHost(true),
+                    "capsule/Neighbor.class", nestNeighbor()));
+            boolean nestmatePassed = true;
+            try { Linkage.verifyCapsule(nestmates, 55, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { nestmatePassed = false; }
+            that(nestmatePassed, "capsule: reciprocal Java 11 nest membership grants private access");
+            Path unlistedNestmate = dir.resolve("unlisted-nestmate.jar");
+            writePrivateJar(unlistedNestmate, java.util.Map.of("capsule/Host.class", nestHost(false),
+                    "capsule/Neighbor.class", nestNeighbor()));
+            boolean unlistedRejected = false;
+            try { Linkage.verifyCapsule(unlistedNestmate, 55, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { unlistedRejected = e.getMessage().contains("cannot access private member"); }
+            that(unlistedRejected, "capsule: a NestHost claim without reciprocal NestMembers does not grant private access");
+
+            Path protectedRuntime = dir.resolve("protected-runtime.jar");
+            writePrivateJar(protectedRuntime, java.util.Map.of("java/lang/Object.class", objectClass(),
+                    "runtime/Base.class", baseClassWithProtectedStatic()));
+            Path protectedAccess = dir.resolve("protected-access.jar");
+            writePrivateJar(protectedAccess, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "consumer/Child.class", protectedStaticCaller()));
+            boolean protectedStaticPassed = true;
+            try { Linkage.verifyCapsule(protectedAccess, 50, java.util.Map.of(), List.of(protectedRuntime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { protectedStaticPassed = false; }
+            that(protectedStaticPassed, "capsule: a subclass may use an inherited protected static method");
+
+            Path protectedInstanceRuntime = dir.resolve("protected-instance-runtime.jar");
+            writePrivateJar(protectedInstanceRuntime, java.util.Map.of("java/lang/Object.class", objectClass(),
+                    "runtime/Base.class", baseClassWithProtectedInstance()));
+            Path protectedInstanceAccess = dir.resolve("protected-instance-access.jar");
+            writePrivateJar(protectedInstanceAccess, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "consumer/Child.class", protectedInstanceCaller("consumer/Child", "consumer/Child")));
+            boolean protectedInstancePassed = true;
+            try { Linkage.verifyCapsule(protectedInstanceAccess, 50, java.util.Map.of(), List.of(protectedInstanceRuntime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { protectedInstancePassed = false; }
+            that(protectedInstancePassed, "capsule: a subclass receiver may use an inherited protected instance method");
+            Path unrelatedProtectedAccess = dir.resolve("unrelated-protected-access.jar");
+            writePrivateJar(unrelatedProtectedAccess, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "consumer/Other.class", protectedInstanceCaller("consumer/Other", "runtime/Base")));
+            boolean unrelatedProtectedRejected = false;
+            try { Linkage.verifyCapsule(unrelatedProtectedAccess, 50, java.util.Map.of(), List.of(protectedInstanceRuntime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { unrelatedProtectedRejected = e.getMessage().contains("cannot prove package/protected access"); }
+            that(unrelatedProtectedRejected, "capsule: unrelated callers cannot use a protected instance method");
+
+            Path crossLoaderPackage = dir.resolve("cross-loader-package.jar");
+            Path crossLoaderPayload = dir.resolve("cross-loader-package-payload.jar");
+            writePrivateJar(crossLoaderPayload, java.util.Map.of("capsule/PackageCaller.class", packagePrivateCaller()));
+            writePrivateJar(crossLoaderPackage, java.util.Map.of(
+                    "capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "capsule/PackageOwner.class", packagePrivateOwner(),
+                    "recon-payload/payload.jar", Files.readAllBytes(crossLoaderPayload)));
+            boolean crossLoaderRejected = false;
+            try { Linkage.verifyCapsule(crossLoaderPackage, 50, java.util.Map.of("recon-payload/payload.jar", 52),
+                    List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { crossLoaderRejected = e.getMessage().contains("cannot prove package/protected access"); }
+            that(crossLoaderRejected, "capsule: matching package names do not grant access across the nested loader boundary");
+
+            Path badConstructor = dir.resolve("bad-constructor.jar");
+            Path constructorPayload = dir.resolve("constructor-payload.jar");
+            writePrivateJar(constructorPayload, java.util.Map.of("consumer/Caller.class", constructorCaller()));
+            writePrivateJar(badConstructor, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(constructorPayload)));
+            that(rejectedCapsule(badConstructor, runtime, null, "absent runtime method"),
+                    "capsule: constructor lookup never inherits a superclass constructor");
+
+            Path badArrayMethod = dir.resolve("bad-array-owner-method.jar");
+            Path badArrayMethodPayload = dir.resolve("bad-array-owner-method-payload.jar");
+            writePrivateJar(badArrayMethodPayload, java.util.Map.of("consumer/Caller.class",
+                    arrayOwnerCaller("[I", "missing", "()V", org.objectweb.asm.Opcodes.INVOKEVIRTUAL, false)));
+            writePrivateJar(badArrayMethod, java.util.Map.of("capsule/Entry.class",
+                    emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(badArrayMethodPayload)));
+            that(rejectedCapsule(badArrayMethod, runtime, null, "absent runtime array method"),
+                    "capsule: array-owner invokevirtual names must resolve to clone or an Object method");
+
+            Path missingArrayComponent = dir.resolve("missing-array-owner-component.jar");
+            Path missingArrayComponentPayload = dir.resolve("missing-array-owner-component-payload.jar");
+            writePrivateJar(missingArrayComponentPayload, java.util.Map.of("consumer/Caller.class",
+                    arrayOwnerCaller("[Lmissing/ArrayElement;", "clone", "()Ljava/lang/Object;",
+                            org.objectweb.asm.Opcodes.INVOKEVIRTUAL, false)));
+            writePrivateJar(missingArrayComponent, java.util.Map.of("capsule/Entry.class",
+                    emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(missingArrayComponentPayload)));
+            that(rejectedCapsule(missingArrayComponent, runtime, null, "absent runtime class missing/ArrayElement"),
+                    "capsule: array-owner components still resolve through declared runtime roots");
+
+            Path staticArrayMethod = dir.resolve("static-array-owner-method.jar");
+            Path staticArrayMethodPayload = dir.resolve("static-array-owner-method-payload.jar");
+            writePrivateJar(staticArrayMethodPayload, java.util.Map.of("consumer/Caller.class",
+                    arrayOwnerCaller("[I", "toString", "()Ljava/lang/String;", org.objectweb.asm.Opcodes.INVOKESTATIC, false)));
+            writePrivateJar(staticArrayMethod, java.util.Map.of("capsule/Entry.class",
+                    emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(staticArrayMethodPayload)));
+            that(rejectedCapsule(staticArrayMethod, runtime, null, "invalid member operation for array owner"),
+                    "capsule: array-owner virtual methods cannot be invoked statically");
+
+            Path interfaceArrayMethod = dir.resolve("interface-array-owner-method.jar");
+            Path interfaceArrayMethodPayload = dir.resolve("interface-array-owner-method-payload.jar");
+            writePrivateJar(interfaceArrayMethodPayload, java.util.Map.of("consumer/Caller.class",
+                    arrayOwnerCaller("[I", "toString", "()Ljava/lang/String;", org.objectweb.asm.Opcodes.INVOKEVIRTUAL, true)));
+            writePrivateJar(interfaceArrayMethod, java.util.Map.of("capsule/Entry.class",
+                    emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(interfaceArrayMethodPayload)));
+            that(rejectedCapsule(interfaceArrayMethod, runtime, null, "invalid member operation for array owner"),
+                    "capsule: array-owner method references cannot use an interface constant");
+
+            Path tooNew = dir.resolve("too-new.jar");
+            Path newerPayload = dir.resolve("newer-payload.jar");
+            writePrivateJar(newerPayload, java.util.Map.of("consumer/Newer.class", emptyClassMajor("consumer/Newer", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 53)));
+            writePrivateJar(tooNew, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(newerPayload)));
+            boolean ceilingRejected = false;
+            try { Linkage.verifyCapsule(tooNew, 50, java.util.Map.of("recon-payload/payload.jar", 52), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { ceilingRejected = e.getMessage().contains("nested ceiling is 52"); }
+            that(ceilingRejected, "capsule: a class above the nested Java ceiling is rejected");
+
+            boolean emptyRuntimeRejected = false;
+            try { Linkage.verifyCapsule(archive, 50, java.util.Map.of("recon-payload/payload.jar", 52), List.of(), null, "", "", List.of()); }
+            catch (IllegalStateException e) { emptyRuntimeRejected = e.getMessage().contains("no declared runtimeArtifacts"); }
+            that(emptyRuntimeRejected, "capsule: an empty runtime profile cannot pass vacuously");
+
+            Path undeclaredNested = dir.resolve("undeclared-nested.jar");
+            writePrivateJar(undeclaredNested, java.util.Map.of("capsule/Entry.class",
+                    emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "hidden/payload.jar", Files.readAllBytes(nested)));
+            boolean undeclaredNestedRejected = false;
+            try { Linkage.verifyCapsule(undeclaredNested, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { undeclaredNestedRejected = e.getMessage().contains("undeclared nested archive"); }
+            that(undeclaredNestedRejected, "capsule: every nested archive must have a declared Java ceiling");
+
+            Path duplicateClass = dir.resolve("duplicate-class.jar");
+            Path duplicatePayload = dir.resolve("duplicate-class-payload.jar");
+            writePrivateJar(duplicatePayload, java.util.Map.of("capsule/Duplicate.class", constantClass("capsule/Duplicate", 2)));
+            writePrivateJar(duplicateClass, java.util.Map.of(
+                    "capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "capsule/Duplicate.class", constantClass("capsule/Duplicate", 1),
+                    "recon-payload/payload.jar", Files.readAllBytes(duplicatePayload)));
+            boolean duplicateClassRejected = false;
+            try { Linkage.verifyCapsule(duplicateClass, 50, java.util.Map.of("recon-payload/payload.jar", 52),
+                    List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { duplicateClassRejected = e.getMessage().contains("more than one archive or entry"); }
+            that(duplicateClassRejected, "capsule: duplicate class identity across outer and nested archives is rejected");
+
+            Path badEntryName = dir.resolve("bad-entry-name.jar");
+            writePrivateJar(badEntryName, java.util.Map.of("capsule/Other.class",
+                    emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50)));
+            boolean badEntryNameRejected = false;
+            try { Linkage.verifyCapsule(badEntryName, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { badEntryNameRejected = e.getMessage().contains("entry name does not match"); }
+            that(badEntryNameRejected, "capsule: outer class entries must match their declared class identity");
+
+            Path metadataClass = dir.resolve("metadata-class.jar");
+            writePrivateJar(metadataClass, java.util.Map.of("META-INF/Hidden.class",
+                    emptyClassMajor("META-INF/Hidden", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 53)));
+            boolean metadataClassRejected = false;
+            try { Linkage.verifyCapsule(metadataClass, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { metadataClassRejected = e.getMessage().contains("has class major 53"); }
+            that(metadataClassRejected, "capsule: metadata-path class files still obey the outer Java ceiling");
+
+            Path collision = dir.resolve("runtime-collision.jar");
+            writePrivateJar(collision, java.util.Map.of("capsule/Entry.class",
+                    emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "runtime/Base.class", baseClassWithStaticAnswer()));
+            boolean collisionRejected = false;
+            try { Linkage.verifyCapsule(collision, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { collisionRejected = e.getMessage().contains("collides with a different runtime definition"); }
+            that(collisionRejected, "capsule: artifact classes cannot shadow a different runtime definition");
+
+            Path badDescriptor = dir.resolve("bad-descriptor.jar");
+            writePrivateJar(badDescriptor, java.util.Map.of("capsule/Entry.class", typedClass("capsule/Entry", "missing/DescriptorType")));
+            boolean descriptorRejected = false;
+            try { Linkage.verifyCapsule(badDescriptor, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { descriptorRejected = e.getMessage().contains("absent runtime class missing/DescriptorType"); }
+            that(descriptorRejected, "capsule: method descriptors are checked against runtime roots");
+
+            Path badHandle = dir.resolve("bad-handle.jar");
+            writePrivateJar(badHandle, java.util.Map.of("capsule/Entry.class", handleCaller("runtime/Base", "missingHandle")));
+            boolean handleRejected = false;
+            try { Linkage.verifyCapsule(badHandle, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { handleRejected = e.getMessage().contains("absent runtime method runtime/Base.missingHandle"); }
+            that(handleRejected, "capsule: method handles are checked against runtime members");
+
+            Path badArray = dir.resolve("bad-array.jar");
+            writePrivateJar(badArray, java.util.Map.of("capsule/Entry.class", arrayCheckcastCaller("missing/ArrayComponent")));
+            boolean arrayRejected = false;
+            try { Linkage.verifyCapsule(badArray, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { arrayRejected = e.getMessage().contains("absent runtime class missing/ArrayComponent"); }
+            that(arrayRejected, "capsule: array type instructions retain component class references");
+
+            Path mappings = dir.resolve("names.tiny");
+            Files.writeString(mappings, "tiny\t2\t0\tmcp\truntime\nc\tnet/minecraft/Foo\truntime/Foo\n", StandardCharsets.UTF_8);
+            Path unmapped = dir.resolve("unmapped.jar");
+            Path unmappedPayload = dir.resolve("unmapped-payload.jar");
+            writePrivateJar(unmappedPayload, java.util.Map.of("consumer/Caller.class", inheritedCaller("consumer/Caller", "net/minecraft/Foo", "answer", "()I", org.objectweb.asm.Opcodes.INVOKEVIRTUAL)));
+            writePrivateJar(unmapped, java.util.Map.of("capsule/Entry.class", emptyClassMajor("capsule/Entry", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50),
+                    "recon-payload/payload.jar", Files.readAllBytes(unmappedPayload)));
+            boolean mappingRejected = false;
+            try { Linkage.verifyCapsule(unmapped, 50, java.util.Map.of("recon-payload/payload.jar", 52), List.of(runtime), mappings, "mcp", "runtime", List.of("net/minecraft/")); }
+            catch (IllegalStateException e) { mappingRejected = e.getMessage().contains("retains source-namespace class"); }
+            that(mappingRejected, "capsule: a mapped source class retained in final bytecode is rejected");
+
+            Path unmappedDefinition = dir.resolve("unmapped-definition.jar");
+            writePrivateJar(unmappedDefinition, java.util.Map.of(
+                    "net/minecraft/Foo.class", emptyClassMajor("net/minecraft/Foo", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC, 50)));
+            boolean definitionMappingRejected = false;
+            try { Linkage.verifyCapsule(unmappedDefinition, 50, java.util.Map.of(), List.of(runtime), mappings,
+                    "mcp", "runtime", List.of("net/minecraft/")); }
+            catch (IllegalStateException e) { definitionMappingRejected = e.getMessage().contains("retains source-namespace class net/minecraft/Foo"); }
+            that(definitionMappingRejected, "capsule: a class definition retained in the source namespace is rejected even without external references");
+
+            Path runtimeWithMappedClass = dir.resolve("runtime-with-mapped-class.jar");
+            writePrivateJar(runtimeWithMappedClass, java.util.Map.of(
+                    "java/lang/Object.class", emptyClass("java/lang/Object", null, org.objectweb.asm.Opcodes.ACC_PUBLIC),
+                    "net/minecraft/Foo.class", emptyClass("net/minecraft/Foo", "java/lang/Object", org.objectweb.asm.Opcodes.ACC_PUBLIC)));
+            Path mappingWithoutFoo = dir.resolve("mapping-without-foo.tiny");
+            Files.writeString(mappingWithoutFoo, "tiny\t2\t0\tmcp\truntime\n", StandardCharsets.UTF_8);
+            Path typed = dir.resolve("typed.jar");
+            writePrivateJar(typed, java.util.Map.of("capsule/Entry.class", typedClass("capsule/Entry", "net/minecraft/Foo")));
+            boolean missingMappingRejected = false;
+            try { Linkage.verifyCapsule(typed, 50, java.util.Map.of(), List.of(runtimeWithMappedClass), mappingWithoutFoo,
+                    "mcp", "runtime", List.of("net/minecraft/")); }
+            catch (IllegalStateException e) { missingMappingRejected = e.getMessage().contains("absent from the declared Tiny mapping"); }
+            that(missingMappingRejected, "capsule: a runtime-resolvable source class without a Tiny row is rejected");
+
+            Path validFrame = dir.resolve("valid-frame.jar");
+            writePrivateJar(validFrame, java.util.Map.of("capsule/Frame.class", framedClass("capsule/Frame", "java/lang/String")));
+            boolean validFramePassed = true;
+            try { Linkage.verifyCapsule(validFrame, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { validFramePassed = false; }
+            that(validFramePassed, "capsule: a valid StackMapTable frame type resolves against runtime roots");
+
+            Path missingFrame = dir.resolve("missing-frame.jar");
+            writePrivateJar(missingFrame, java.util.Map.of("capsule/Frame.class", framedClass("capsule/Frame", "missing/FrameOnly")));
+            boolean missingFrameRejected = false;
+            try { Linkage.verifyCapsule(missingFrame, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { missingFrameRejected = e.getMessage().contains("absent runtime class missing/FrameOnly"); }
+            that(missingFrameRejected, "capsule: a class used only by a StackMapTable frame is required at runtime");
+
+            Path missingFrameArray = dir.resolve("missing-frame-array.jar");
+            writePrivateJar(missingFrameArray, java.util.Map.of("capsule/FrameArray.class",
+                    framedClass("capsule/FrameArray", "[Lmissing/FrameArrayElement;")));
+            boolean missingFrameArrayRejected = false;
+            try { Linkage.verifyCapsule(missingFrameArray, 50, java.util.Map.of(), List.of(runtime), null, "", "", List.of()); }
+            catch (IllegalStateException e) { missingFrameArrayRejected = e.getMessage().contains("absent runtime class missing/FrameArrayElement"); }
+            that(missingFrameArrayRejected, "capsule: array component types used only by frames are required at runtime");
+        } finally {
+            delete(dir);
+        }
+    }
+
+    static void runtimeBootClasspath() throws Exception {
+        Path dir = Files.createTempDirectory("mycelium-boot-classpath-");
+        try {
+            String windows = "Property settings:\r\n"
+                    + "    sun.boot.class.path = C:\\jdk8\\jre\\lib\\resources.jar\r\n"
+                    + "        C:\\jdk8\\jre\\lib\\rt.jar\r\n"
+                    + "        C:\\jdk8\\jre\\lib\\jce.jar\r\n"
+                    + "        C:\\jdk8\\jre\\classes\r\n"
+                    + "    java.class.path = unrelated.jar\r\n";
+            that(RuntimeBootClasspath.parseEntries(windows, ';').equals(List.of("C:\\jdk8\\jre\\lib\\resources.jar",
+                    "C:\\jdk8\\jre\\lib\\rt.jar", "C:\\jdk8\\jre\\lib\\jce.jar", "C:\\jdk8\\jre\\classes")),
+                    "Java 8 boot classpath: exact wrapped Windows property retains archive order");
+            String mixed = "sun.boot.class.path = C:\\jdk8\\jre\\lib\\resources.jar;C:\\jdk8\\jre\\lib\\rt.jar;\r\n"
+                    + "        C:\\jdk8\\jre\\lib\\jce.jar;C:\\jdk8\\jre\\classes\r\n";
+            that(RuntimeBootClasspath.parseEntries(mixed, ';').equals(List.of("C:\\jdk8\\jre\\lib\\resources.jar",
+                    "C:\\jdk8\\jre\\lib\\rt.jar", "C:\\jdk8\\jre\\lib\\jce.jar", "C:\\jdk8\\jre\\classes")),
+                    "Java 8 boot classpath: mixed single-line and wrapped values retain order");
+            String unix = "Property settings:\n    sun.boot.class.path = /opt/jdk8/lib/resources.jar:/opt/jdk8/lib/rt.jar\n"
+                    + "    java.class.path = ignored.jar\n";
+            that(RuntimeBootClasspath.parseEntries(unix, ':').equals(List.of("/opt/jdk8/lib/resources.jar", "/opt/jdk8/lib/rt.jar")),
+                    "Java 8 boot classpath: Unix path separator splits ordered archives");
+
+            Path installation = dir.resolve("jdk8");
+            Path classes = installation.resolve("jre/classes");
+            Path a = installation.resolve("jre/lib/resources.jar");
+            Path b = installation.resolve("jre/lib/rt.jar");
+            Path rsaPlaceholder = installation.resolve("jre/lib/sunrsasign.jar");
+            Files.createDirectories(a.getParent());
+            Files.write(a, new byte[] { 1 });
+            Files.write(b, new byte[] { 2 });
+            String property = "sun.boot.class.path = " + a + ";" + b + ";" + rsaPlaceholder + ";" + classes;
+            RuntimeBootClasspath.Resolution absent = RuntimeBootClasspath.parse(property, ';', installation);
+            that(absent.archives().equals(List.of(a.toFile(), b.toFile())) && absent.omittedRoots().size() == 2
+                    && absent.omittedRoots().get(0).contains("sunrsasign.jar") && absent.omittedRoots().get(0).contains("ignored")
+                    && absent.omittedRoots().get(1).contains("classes"),
+                    "Java 8 boot classpath: absent standard template entry and classes directory are explicitly recorded");
+            Files.createDirectories(classes);
+            RuntimeBootClasspath.Resolution empty = RuntimeBootClasspath.parse(property, ';', installation);
+            that(empty.omittedRoots().size() == 2 && empty.omittedRoots().get(1).contains("empty"),
+                    "Java 8 boot classpath: empty expected classes directory is explicitly recorded");
+            Files.write(classes.resolve("Unexpected.class"), new byte[] { 0 });
+            boolean nonemptyRejected = false;
+            try { RuntimeBootClasspath.parse(property, ';', installation); }
+            catch (org.gradle.api.GradleException e) { nonemptyRejected = e.getMessage().contains("non-empty Java 8 classes directory"); }
+            that(nonemptyRejected, "Java 8 boot classpath: non-empty classes directory is not silently omitted");
+            boolean missingRejected = false;
+            try { RuntimeBootClasspath.parse("sun.boot.class.path = " + a + ";" + installation.resolve("jre/lib/missing.jar"), ';', installation); }
+            catch (org.gradle.api.GradleException e) { missingRejected = e.getMessage().contains("missing or not a JAR file"); }
+            that(missingRejected, "Java 8 boot classpath: unrelated missing archive fails");
+            boolean missingRtRejected = false;
+            try { RuntimeBootClasspath.parse("sun.boot.class.path = " + a, ';', installation); }
+            catch (org.gradle.api.GradleException e) { missingRtRejected = e.getMessage().contains("omitted mandatory rt.jar"); }
+            that(missingRtRejected, "Java 8 boot classpath: rt.jar remains mandatory");
+            boolean emptyRootRejected = false;
+            try { RuntimeBootClasspath.parseEntries("sun.boot.class.path = one.jar;\n", ';'); }
+            catch (org.gradle.api.GradleException e) { emptyRootRejected = e.getMessage().contains("empty root"); }
+            that(emptyRootRejected, "Java 8 boot classpath: an unexplained trailing separator is rejected");
+            boolean wrongFeatureRejected = false;
+            try { RuntimeBootClasspath.checkFeature(21, 8); }
+            catch (org.gradle.api.GradleException e) { wrongFeatureRejected = e.getMessage().contains("expected Java 8"); }
+            that(wrongFeatureRejected, "Java 8 boot classpath: wrong launcher feature fails");
+        } finally {
+            delete(dir);
+        }
+    }
+
+    static void runtimeBootCapture() throws Exception {
+        Process invalid = launcherFixture("sleep");
+        boolean invalidRejected = false;
+        try { RuntimeBootClasspath.capture(invalid, Duration.ZERO, 1024); }
+        catch (IllegalArgumentException e) { invalidRejected = e.getMessage().contains("positive timeout"); }
+        that(invalidRejected && !invalid.isAlive(), "Java 8 boot classpath: invalid capture request still cleans up owned child");
+
+        Process oversized = launcherFixture("output");
+        boolean outputRejected = false;
+        try { RuntimeBootClasspath.capture(oversized, Duration.ofSeconds(5), 1024); }
+        catch (org.gradle.api.GradleException e) { outputRejected = e.getMessage().contains("output exceeded 1024 bytes"); }
+        that(outputRejected && !oversized.isAlive(), "Java 8 boot classpath: oversized launcher output is bounded and child is reaped");
+
+        Process slow = launcherFixture("sleep");
+        long start = System.nanoTime();
+        boolean timeoutRejected = false;
+        try { RuntimeBootClasspath.capture(slow, Duration.ofMillis(250), 4096); }
+        catch (org.gradle.api.GradleException e) { timeoutRejected = e.getMessage().contains("exceeded 250 ms"); }
+        that(timeoutRejected && !slow.isAlive() && System.nanoTime() - start < TimeUnit.SECONDS.toNanos(5),
+                "Java 8 boot classpath: launcher timeout terminates and reaps child");
+
+        AtomicReference<Process> interruptedProcess = new AtomicReference<>();
+        AtomicReference<Throwable> interruptedFailure = new AtomicReference<>();
+        AtomicBoolean interruptRestored = new AtomicBoolean();
+        CountDownLatch started = new CountDownLatch(1);
+        Thread worker = new Thread(() -> {
+            Process process = null;
+            try {
+                process = launcherFixture("sleep");
+                interruptedProcess.set(process);
+                started.countDown();
+                RuntimeBootClasspath.capture(process, Duration.ofSeconds(20), 4096);
+            } catch (Throwable e) {
+                interruptedFailure.set(e);
+                interruptRestored.set(Thread.currentThread().isInterrupted());
+            }
+        }, "mycelium-launcher-interrupt-test");
+        worker.start();
+        that(started.await(5, TimeUnit.SECONDS), "Java 8 boot classpath: interrupt fixture process starts");
+        worker.interrupt();
+        worker.join(5000);
+        Process terminated = interruptedProcess.get();
+        that(!worker.isAlive() && interruptedFailure.get() instanceof org.gradle.api.GradleException
+                        && interruptedFailure.get().getMessage().contains("interrupted") && interruptRestored.get()
+                        && terminated != null && !terminated.isAlive(),
+                "Java 8 boot classpath: interruption restores thread state and reaps launcher child");
+    }
+
+    private static Process launcherFixture(String mode) throws IOException {
+        Path java = Path.of(System.getProperty("java.home"), "bin", "java.exe");
+        return new ProcessBuilder(java.toString(), "-cp", System.getProperty("java.class.path"),
+                LauncherProcessFixture.class.getName(), mode).redirectErrorStream(true).start();
+    }
+
+    public static final class LauncherProcessFixture {
+        public static void main(String[] args) throws Exception {
+            if (args[0].equals("output")) {
+                System.out.write(new byte[4096]);
+                System.out.flush();
+                Thread.sleep(30000);
+            } else {
+                Thread.sleep(30000);
+            }
+        }
+    }
+
+    private static boolean rejectedCapsule(Path archive, Path runtime, Path mappings, String expected) throws Exception {
+        try {
+            Linkage.verifyCapsule(archive, 50, java.util.Map.of("recon-payload/payload.jar", 52), List.of(runtime), mappings, "", "", List.of());
+            return false;
+        } catch (IllegalStateException e) {
+            return e.getMessage().contains(expected);
+        }
+    }
+
+    private static byte[] emptyClass(String name, String parent, int access) {
+        return emptyClassMajor(name, parent, access, 52);
+    }
+
+    private static byte[] emptyClassMajor(String name, String parent, int access, int major) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(major, access, name, null, parent, null);
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] typedClass(String name, String returnType) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_ABSTRACT,
+                name, null, "java/lang/Object", null);
+        writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_ABSTRACT,
+                "value", "()L" + returnType + ";", null, null).visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] framedClass(String name, String frameType) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "frameOnly", "()V", null, null);
+        method.visitCode();
+        method.visitInsn(org.objectweb.asm.Opcodes.ACONST_NULL);
+        method.visitVarInsn(org.objectweb.asm.Opcodes.ASTORE, 0);
+        org.objectweb.asm.Label target = new org.objectweb.asm.Label();
+        method.visitLabel(target);
+        method.visitFrame(org.objectweb.asm.Opcodes.F_FULL, 1, new Object[]{frameType}, 0, new Object[0]);
+        method.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        method.visitInsn(org.objectweb.asm.Opcodes.POP);
+        method.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        method.visitMaxs(1, 1);
+        method.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] constantClass(String name, int value) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "value", "()I", null, null);
+        method.visitCode(); method.visitInsn(value == 1 ? org.objectweb.asm.Opcodes.ICONST_1 : org.objectweb.asm.Opcodes.ICONST_2);
+        method.visitInsn(org.objectweb.asm.Opcodes.IRETURN); method.visitMaxs(1, 0); method.visitEnd(); writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] baseClass() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, "runtime/Base", null, "java/lang/Object", null);
+        writer.visitField(org.objectweb.asm.Opcodes.ACC_PUBLIC, "answerField", "I", null, null).visitEnd();
+        var init = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode(); init.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        init.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(org.objectweb.asm.Opcodes.RETURN); init.visitMaxs(1, 1); init.visitEnd();
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "answer", "()I", null, null);
+        method.visitCode(); method.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        method.visitMaxs(1, 1); method.visitEnd();
+        var staticMethod = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC, "staticValue", "()I", null, null);
+        staticMethod.visitCode(); staticMethod.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); staticMethod.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        staticMethod.visitMaxs(1, 0); staticMethod.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] objectClass() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "java/lang/Object", null, null, null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "toString", "()Ljava/lang/String;", null, null);
+        method.visitCode(); method.visitInsn(org.objectweb.asm.Opcodes.ACONST_NULL); method.visitInsn(org.objectweb.asm.Opcodes.ARETURN);
+        method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] baseClassWithPrivateAnswer() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "runtime/Base", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PRIVATE, "privateAnswer", "()I", null, null);
+        method.visitCode(); method.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] baseClassWithProtectedStatic() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "runtime/Base", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PROTECTED | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "protectedValue", "()I", null, null);
+        method.visitCode(); method.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        method.visitMaxs(1, 0); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] baseClassWithProtectedInstance() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "runtime/Base", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PROTECTED, "protectedValue", "()I", null, null);
+        method.visitCode(); method.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] protectedStaticCaller() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, "consumer/Child", null, "runtime/Base", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "()I", null, null);
+        method.visitCode(); method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC,
+                "runtime/Base", "protectedValue", "()I", false);
+        method.visitInsn(org.objectweb.asm.Opcodes.IRETURN); method.visitMaxs(1, 0); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] protectedInstanceCaller(String caller, String owner) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        String parent = caller.equals("consumer/Child") ? "runtime/Base" : "java/lang/Object";
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, caller, null, parent, null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "(L" + owner + ";)I", null, null);
+        method.visitCode(); method.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKEVIRTUAL, owner, "protectedValue", "()I", false);
+        method.visitInsn(org.objectweb.asm.Opcodes.IRETURN); method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] ownPrivateCaller() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, "capsule/Entry", null, "java/lang/Object", null);
+        var secret = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PRIVATE | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "secret", "()I", null, null);
+        secret.visitCode(); secret.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); secret.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        secret.visitMaxs(1, 0); secret.visitEnd();
+        var caller = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "()I", null, null);
+        caller.visitCode(); caller.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC, "capsule/Entry", "secret", "()I", false);
+        caller.visitInsn(org.objectweb.asm.Opcodes.IRETURN); caller.visitMaxs(1, 0); caller.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] packagePrivateOwner() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, "capsule/PackageOwner", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_STATIC, "secret", "()I", null, null);
+        method.visitCode(); method.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        method.visitMaxs(1, 0); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] packagePrivateCaller() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "capsule/PackageCaller", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "()I", null, null);
+        method.visitCode(); method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC,
+                "capsule/PackageOwner", "secret", "()I", false);
+        method.visitInsn(org.objectweb.asm.Opcodes.IRETURN); method.visitMaxs(1, 0); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] nestHost(boolean listsNeighbor) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(55, org.objectweb.asm.Opcodes.ACC_PUBLIC, "capsule/Host", null, "java/lang/Object", null);
+        if (listsNeighbor) writer.visitNestMember("capsule/Neighbor");
+        var secret = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PRIVATE | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "secret", "()I", null, null);
+        secret.visitCode(); secret.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); secret.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        secret.visitMaxs(1, 0); secret.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] nestNeighbor() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(55, org.objectweb.asm.Opcodes.ACC_PUBLIC, "capsule/Neighbor", null, "java/lang/Object", null);
+        writer.visitNestHost("capsule/Host");
+        var caller = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "()I", null, null);
+        caller.visitCode(); caller.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC, "capsule/Host", "secret", "()I", false);
+        caller.visitInsn(org.objectweb.asm.Opcodes.IRETURN); caller.visitMaxs(1, 0); caller.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] baseClassWithStaticAnswer() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, "runtime/Base", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC, "answer", "()I", null, null);
+        method.visitCode(); method.visitInsn(org.objectweb.asm.Opcodes.ICONST_1); method.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+        method.visitMaxs(1, 0); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] childClass() { return emptyClass("runtime/Child", "runtime/Base", org.objectweb.asm.Opcodes.ACC_PUBLIC); }
+
+    private static byte[] interfaceClass() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_INTERFACE | org.objectweb.asm.Opcodes.ACC_ABSTRACT,
+                "runtime/Face", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_ABSTRACT, "value", "()I", null, null);
+        method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] interfaceChildClass() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_INTERFACE | org.objectweb.asm.Opcodes.ACC_ABSTRACT,
+                "runtime/FaceChild", null, "java/lang/Object", new String[]{"runtime/Face"});
+        writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] inheritedCaller(String caller, String owner, String methodName, String descriptor, int opcode) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, caller, null, "java/lang/Object", null);
+        String methodDescriptor = opcode == org.objectweb.asm.Opcodes.INVOKEINTERFACE ? "(L" + owner + ";)I" : "(L" + owner + ";)I";
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC, "call", methodDescriptor, null, null);
+        method.visitCode(); method.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        method.visitMethodInsn(opcode, owner, methodName, descriptor, opcode == org.objectweb.asm.Opcodes.INVOKEINTERFACE);
+        method.visitInsn(org.objectweb.asm.Opcodes.IRETURN); method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] fieldCaller(String caller, String owner, String fieldName, int opcode) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, caller, null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "(L" + owner + ";)I", null, null);
+        method.visitCode(); method.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        method.visitFieldInsn(opcode, owner, fieldName, "I");
+        method.visitInsn(org.objectweb.asm.Opcodes.IRETURN); method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] interfaceObjectMethodCaller() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "consumer/ObjectMethodCaller", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "(Lruntime/Face;)Ljava/lang/String;", null, null);
+        method.visitCode(); method.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKEINTERFACE, "runtime/Face", "toString", "()Ljava/lang/String;", true);
+        method.visitInsn(org.objectweb.asm.Opcodes.ARETURN); method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] arrayOwnerCalls() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "consumer/ArrayOwnerCaller", null, "java/lang/Object", null);
+        var clone = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "cloneArray", "([Ljava/lang/String;)Ljava/lang/Object;", null, null);
+        clone.visitCode(); clone.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        clone.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKEVIRTUAL, "[Ljava/lang/String;", "clone", "()Ljava/lang/Object;", false);
+        clone.visitInsn(org.objectweb.asm.Opcodes.ARETURN); clone.visitMaxs(1, 1); clone.visitEnd();
+        var string = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "arrayString", "([Ljava/lang/String;)Ljava/lang/String;", null, null);
+        string.visitCode(); string.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        string.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKEVIRTUAL, "[Ljava/lang/String;", "toString", "()Ljava/lang/String;", false);
+        string.visitInsn(org.objectweb.asm.Opcodes.ARETURN); string.visitMaxs(1, 1); string.visitEnd();
+        writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] arrayOwnerCaller(String owner, String name, String descriptor, int opcode, boolean itf) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "consumer/Caller", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "([I)V", null, null);
+        method.visitCode();
+        if (opcode != org.objectweb.asm.Opcodes.INVOKESTATIC) method.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        method.visitMethodInsn(opcode, owner, name, descriptor, itf);
+        int returnSort = org.objectweb.asm.Type.getReturnType(descriptor).getSort();
+        if (returnSort != org.objectweb.asm.Type.VOID) {
+            method.visitInsn(returnSort == org.objectweb.asm.Type.LONG || returnSort == org.objectweb.asm.Type.DOUBLE
+                    ? org.objectweb.asm.Opcodes.POP2 : org.objectweb.asm.Opcodes.POP);
+        }
+        method.visitInsn(org.objectweb.asm.Opcodes.RETURN); method.visitMaxs(2, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] handleCaller(String owner, String methodName) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, "capsule/Entry", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "()V", null, null);
+        method.visitCode(); method.visitLdcInsn(new org.objectweb.asm.Handle(org.objectweb.asm.Opcodes.H_INVOKEVIRTUAL,
+                owner, methodName, "()I", false));
+        method.visitInsn(org.objectweb.asm.Opcodes.POP); method.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        method.visitMaxs(1, 0); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] arrayCheckcastCaller(String component) {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(50, org.objectweb.asm.Opcodes.ACC_PUBLIC, "capsule/Entry", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "call", "(Ljava/lang/Object;)V", null, null);
+        method.visitCode(); method.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+        method.visitTypeInsn(org.objectweb.asm.Opcodes.CHECKCAST, "[L" + component + ";");
+        method.visitInsn(org.objectweb.asm.Opcodes.POP); method.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
+    }
+
+    private static byte[] constructorCaller() {
+        org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+        writer.visit(52, org.objectweb.asm.Opcodes.ACC_PUBLIC, "consumer/Caller", null, "java/lang/Object", null);
+        var method = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC, "call", "()V", null, null);
+        method.visitCode(); method.visitTypeInsn(org.objectweb.asm.Opcodes.NEW, "runtime/Child");
+        method.visitInsn(org.objectweb.asm.Opcodes.DUP);
+        method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, "runtime/Child", "<init>", "()V", false);
+        method.visitInsn(org.objectweb.asm.Opcodes.POP); method.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        method.visitMaxs(2, 0); method.visitEnd(); writer.visitEnd(); return writer.toByteArray();
     }
 
     static void privateLibraries() throws Exception {
@@ -396,9 +1186,246 @@ public final class SelfTest {
             that(refs.containsKey("M java/lang/ClassLoader getDefinedPackage (Ljava/lang/String;)Ljava/lang/Package;"),
                     "downgrade:a method the jar's class inherits from a class outside is traced to it (Java 9's getDefinedPackage on Java 8)");
             that(refs.keySet().stream().noneMatch(r -> r.contains(" declared ")), "downgrade:a method the jar's class declares is not");
+
+            downgradedMetadata(dir);
         } finally {
             delete(dir);
         }
+    }
+
+    private static void downgradedMetadata(Path dir) throws IOException {
+        String api = "xyz/wagyourtail/jvmdg/j16/RecordComponents";
+        String nested = api + "$Value";
+        String kind = api + "$Kind";
+        String codeMark = api + "$CodeMark";
+        String codeDefault = api + "$CodeDefault";
+        String codeDependency = api + "$CodeDependency";
+        String privateDependency = api + "$PrivateDependency";
+        Path artifact = dir.resolve("metadata-in.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(artifact))) {
+            entry(z, "fixture/Record.class", recordMetadata(api, nested, kind, codeMark));
+        }
+        Path apiJar = dir.resolve("api-downgraded-52.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(apiJar))) {
+            entry(z, api + ".class", annotationType(api, new String[][] {
+                    {"value", "[L" + nested + ";"}, {"kind", "L" + kind + ";"}, {"type", "Ljava/lang/Class;"}}));
+            entry(z, nested + ".class", annotationType(nested, new String[][] {{"name", "Ljava/lang/String;"}}));
+            entry(z, kind + ".class", enumType(kind));
+            entry(z, codeMark + ".class", annotationType(codeMark, new String[][] {{"classRef", "Ljava/lang/Class;", codeDefault}}));
+            entry(z, codeDefault + ".class", classUsing(codeDefault, codeDependency));
+            entry(z, codeDependency + ".class", plainClass(codeDependency));
+        }
+        DowngradedMetadata.Result result = DowngradedMetadata.relocate(artifact, apiJar, apiJar, "fixture_private", 8);
+        that(result.classes() == 6 && result.names().containsAll(List.of(api, nested, kind, codeMark, codeDefault, codeDependency)),
+                "downgrade:annotation, nested annotation, enum, default class literal and bytecode dependency closure is selected");
+        String privateRoot = "fixture_private/";
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(artifact.toFile())) {
+            that(zip.getEntry(privateRoot + api + ".class") != null && zip.getEntry(privateRoot + nested + ".class") != null
+                    && zip.getEntry(privateRoot + kind + ".class") != null && zip.getEntry(privateRoot + codeMark + ".class") != null
+                    && zip.getEntry(privateRoot + codeDefault + ".class") != null && zip.getEntry(privateRoot + codeDependency + ".class") != null,
+                    "downgrade:annotation API closure is carried under the artifact-owned prefix");
+            that(zip.getEntry(api + ".class") == null && zip.getEntry(nested + ".class") == null && zip.getEntry(kind + ".class") == null,
+                    "downgrade:original shared JvmDowngrader annotation names are not shipped");
+            byte[] rewritten = zip.getInputStream(zip.getEntry("fixture/Record.class")).readAllBytes();
+            Set<String> annotations = new HashSet<>();
+            Set<String> instructionAnnotations = new HashSet<>();
+            new org.objectweb.asm.ClassReader(rewritten).accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9) {
+                @Override public org.objectweb.asm.AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                    annotations.add(descriptor);
+                    return null;
+                }
+                @Override public org.objectweb.asm.MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
+                    return new org.objectweb.asm.MethodVisitor(org.objectweb.asm.Opcodes.ASM9) {
+                        @Override public org.objectweb.asm.AnnotationVisitor visitInsnAnnotation(int typeRef,
+                                org.objectweb.asm.TypePath typePath, String descriptor, boolean visible) {
+                            instructionAnnotations.add(descriptor);
+                            return null;
+                        }
+                    };
+                }
+            }, org.objectweb.asm.ClassReader.SKIP_FRAMES);
+            that(annotations.contains("L" + privateRoot + api + ";"),
+                    "downgrade:record runtime annotation descriptor points to the private annotation class");
+            that(instructionAnnotations.contains("L" + privateRoot + codeMark + ";"),
+                    "downgrade:method-body type-use annotation references are remapped too");
+        }
+        try (java.net.URLClassLoader loader = new java.net.URLClassLoader(new java.net.URL[] {artifact.toUri().toURL()}, null)) {
+            Class<?> recordClass = Class.forName("fixture.Record", true, loader);
+            java.lang.annotation.Annotation annotation = recordClass.getAnnotations()[0];
+            Object[] values = (Object[]) annotation.annotationType().getMethod("value").invoke(annotation);
+            that(annotation.annotationType().getName().equals("fixture_private.xyz.wagyourtail.jvmdg.j16.RecordComponents"),
+                    "downgrade:record annotation interface resolves from the private prefix");
+            that(values.length == 1 && ((java.lang.annotation.Annotation) values[0]).annotationType().getName().equals(
+                            "fixture_private.xyz.wagyourtail.jvmdg.j16.RecordComponents$Value"),
+                    "downgrade:the Java runtime resolves the record and nested annotations from the private archive classes");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("downgrade:private annotation closure did not resolve at runtime", e);
+        }
+
+        String frameOnly = api + "$FrameOnly";
+        Path frameArtifact = dir.resolve("metadata-frame-array-in.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(frameArtifact))) {
+            entry(z, "fixture/FrameArray.class", framedClass("fixture/FrameArray", "[L" + frameOnly + ";"));
+        }
+        Path frameApi = dir.resolve("api-frame-array.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(frameApi))) {
+            entry(z, frameOnly + ".class", plainClass(frameOnly));
+        }
+        DowngradedMetadata.Result frameClosure = DowngradedMetadata.relocate(frameArtifact, frameApi, frameApi, "fixture_private", 8);
+        that(frameClosure.classes() == 1 && frameClosure.names().contains(frameOnly),
+                "downgrade:array component used only by a stack-map frame enters the private metadata closure");
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(frameArtifact.toFile())) {
+            that(zip.getEntry("fixture_private/" + frameOnly + ".class") != null
+                            && zip.getEntry(frameOnly + ".class") == null,
+                    "downgrade:frame-only metadata class is shipped privately with no original namespace entry");
+        }
+
+        Path incomplete = dir.resolve("api-missing-annotation-class.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(incomplete))) {
+            entry(z, api + ".class", annotationType(api, new String[][] {{"value", "[L" + nested + ";"}}));
+        }
+        Path brokenArtifact = dir.resolve("metadata-missing-class.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(brokenArtifact))) {
+            entry(z, "fixture/Record.class", recordMetadata(api, nested, kind, null));
+        }
+        boolean rejected = false;
+        try {
+            DowngradedMetadata.relocate(brokenArtifact, incomplete, incomplete, "fixture_private", 8);
+        } catch (org.gradle.api.GradleException expected) {
+            rejected = expected.getMessage().contains(nested);
+        }
+        that(rejected, "downgrade:missing nested annotation API class fails instead of leaving unresolved metadata");
+
+        Path tooNewTool = dir.resolve("api-tool-class-too-new.jar");
+        byte[] tooNewNested = annotationType(nested, new String[][] {{"name", "Ljava/lang/String;"}});
+        tooNewNested[6] = 0;
+        tooNewNested[7] = 61;
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(tooNewTool))) {
+            entry(z, nested + ".class", tooNewNested);
+            entry(z, kind + ".class", enumType(kind));
+        }
+        String tooNewReason = null;
+        try {
+            DowngradedMetadata.relocate(brokenArtifact, incomplete, tooNewTool, "fixture_private", 8);
+        } catch (org.gradle.api.GradleException expected) {
+            tooNewReason = expected.getMessage();
+        }
+        that(tooNewReason != null && tooNewReason.contains("class version 61"),
+                "downgrade:a metadata class above the target floor fails even when supplied by the pinned tool jar"
+                        + (tooNewReason == null ? " (no rejection)" : " (" + tooNewReason + ")"));
+
+        Path existingSupport = dir.resolve("metadata-with-existing-private-type.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(existingSupport))) {
+            entry(z, "fixture/Record.class", recordMetadata(api, nested, kind, codeMark));
+            entry(z, "fixture_private/" + codeDependency + ".class",
+                    classUsing("fixture_private/" + codeDependency, "fixture_private/" + privateDependency));
+            entry(z, "fixture_private/" + privateDependency + ".class", plainClass("fixture_private/" + privateDependency));
+        }
+        DowngradedMetadata.Result withExisting = DowngradedMetadata.relocate(existingSupport, apiJar, apiJar, "fixture_private", 8);
+        that(withExisting.artifactClasses().containsAll(List.of(codeDependency, privateDependency)),
+                "downgrade:the existing same-identity artifact class and its recursively scanned private dependency win");
+        Path missingPrivate = dir.resolve("metadata-missing-private-dependency.jar");
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(Files.newOutputStream(missingPrivate))) {
+            entry(z, "fixture/Record.class", recordMetadata(api, nested, kind, codeMark));
+            entry(z, "fixture_private/" + codeDependency + ".class",
+                    classUsing("fixture_private/" + codeDependency, "fixture_private/" + privateDependency));
+        }
+        rejected = false;
+        try {
+            DowngradedMetadata.relocate(missingPrivate, apiJar, apiJar, "fixture_private", 8);
+        } catch (org.gradle.api.GradleException expected) {
+            rejected = expected.getMessage().contains(privateDependency);
+        }
+        that(rejected, "downgrade:an existing private closure class with a missing transitive type fails");
+    }
+
+    private static byte[] annotationType(String name, String[][] methods) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_INTERFACE
+                | org.objectweb.asm.Opcodes.ACC_ABSTRACT | org.objectweb.asm.Opcodes.ACC_ANNOTATION,
+                name, null, "java/lang/Object", new String[] {"java/lang/annotation/Annotation"});
+        org.objectweb.asm.AnnotationVisitor retention = cw.visitAnnotation("Ljava/lang/annotation/Retention;", true);
+        retention.visitEnum("value", "Ljava/lang/annotation/RetentionPolicy;", "RUNTIME");
+        retention.visitEnd();
+        org.objectweb.asm.AnnotationVisitor target = cw.visitAnnotation("Ljava/lang/annotation/Target;", true);
+        org.objectweb.asm.AnnotationVisitor targets = target.visitArray("value");
+        targets.visitEnum(null, "Ljava/lang/annotation/ElementType;", "TYPE");
+        targets.visitEnum(null, "Ljava/lang/annotation/ElementType;", "TYPE_USE");
+        targets.visitEnd();
+        target.visitEnd();
+        for (String[] method : methods) {
+            org.objectweb.asm.MethodVisitor visitor = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_ABSTRACT,
+                    method[0], "()" + method[1], null, null);
+            if (method.length > 2) {
+                org.objectweb.asm.AnnotationVisitor defaultValue = visitor.visitAnnotationDefault();
+                defaultValue.visit(null, org.objectweb.asm.Type.getObjectType(method[2]));
+                defaultValue.visitEnd();
+            }
+            visitor.visitEnd();
+        }
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static byte[] enumType(String name) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_FINAL
+                | org.objectweb.asm.Opcodes.ACC_ENUM, name, null, "java/lang/Enum", null);
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static byte[] recordMetadata(String api, String nested, String kind, String codeMark) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, "fixture/Record", null, "java/lang/Object", null);
+        org.objectweb.asm.AnnotationVisitor record = cw.visitAnnotation("L" + api + ";", true);
+        org.objectweb.asm.AnnotationVisitor values = record.visitArray("value");
+        org.objectweb.asm.AnnotationVisitor value = values.visitAnnotation(null, "L" + nested + ";");
+        value.visit("name", "field");
+        value.visitEnd();
+        values.visitEnd();
+        record.visitEnum("kind", "L" + kind + ";", "VALUE");
+        record.visit("type", org.objectweb.asm.Type.getObjectType(nested));
+        record.visitEnd();
+        if (codeMark != null) {
+            org.objectweb.asm.MethodVisitor method = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "withTypeUse", "()V", null, null);
+            method.visitCode();
+            method.visitTypeInsn(org.objectweb.asm.Opcodes.NEW, "java/lang/Object");
+            method.visitInsnAnnotation(org.objectweb.asm.TypeReference.newTypeReference(org.objectweb.asm.TypeReference.NEW).getValue(),
+                    null, "L" + codeMark + ";", true).visitEnd();
+            method.visitInsn(org.objectweb.asm.Opcodes.DUP);
+            method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+            method.visitInsn(org.objectweb.asm.Opcodes.POP);
+            method.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+            method.visitMaxs(2, 1);
+            method.visitEnd();
+        }
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static byte[] plainClass(String name) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static byte[] classUsing(String name, String dependency) {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(org.objectweb.asm.Opcodes.V1_8, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+        org.objectweb.asm.MethodVisitor method = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+                "use", "()V", null, null);
+        method.visitCode();
+        method.visitTypeInsn(org.objectweb.asm.Opcodes.NEW, dependency);
+        method.visitInsn(org.objectweb.asm.Opcodes.DUP);
+        method.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, dependency, "<init>", "()V", false);
+        method.visitInsn(org.objectweb.asm.Opcodes.POP);
+        method.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+        method.visitMaxs(2, 0);
+        method.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
     }
 
     /** A class extending {@code superName} that declares one static method {@code declared()V}. */

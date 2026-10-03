@@ -48,6 +48,7 @@ public final class Run {
                         link("GluttonLink", Flaw.GLUTTON, "L5:oversize-refused"),
                         link("GuessingLink", Flaw.GUESSING, "L6:unknown-refused"),
                         link("RetryingLink", Flaw.RETRYING, "L7:failure-is-remembered"),
+                        link("OpaqueFailureLink", Flaw.OPAQUE_FAILURE, "L9:failure-has-diagnostic"),
                         // a correct link in every other way that keeps its own memory whatever ledger it is given:
                         // the replaced consumer's requests in flight run twice
                         new ContractRun.Broken("ParochialLink", () -> new AgentLinkContractTests(

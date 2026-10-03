@@ -47,6 +47,13 @@ Within 3:
   failure here (a jar of a game's size reaches corners of a backport it never calls; the era gate over a small bundle
   still names them). Every `java.*` and `javax.*` class, method and field the result reaches exists on a real JVM of the
   era, by the same probe the era gate uses, over the whole jar and with the inherited-member fix above.
+- **Backport metadata.** JvmDowngrader can leave runtime-visible and runtime-invisible annotations in downgraded class
+  files, and generated backport classes can retain references to JvmDowngrader's metadata API. These classfile, nested
+  annotation, enum, class-valued, default-value and erased bytecode references preserve an existing private definition
+  first, then use the target-major API archive, then the pinned JvmDowngrader tool archive for types neither provides. The selected
+  closure is copied under the artifact's private prefix and all references are remapped. Each selected class must fit
+  the target class-file floor; a missing or too-new closure class fails. Both exact input hashes and per-class source
+  lists are recorded in `downgrade.json`.
 - **What it does not hold it to.** That the game runs it. The report says what ran (`downgrade.json`), and the evidence
   claim stays where `DESIGN.md` §11 puts it.
 

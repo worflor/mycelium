@@ -19,7 +19,7 @@ import java.util.Set;
  * second correct implementation.
  */
 public final class FlexLink implements Link {
-    public enum Flaw { NONE, NO_OP, FORGETFUL, RACING, AMNESIAC, TRUSTING, HOARDING, GLUTTON, GUESSING, RETRYING, MISROUTED, STALE_READS }
+    public enum Flaw { NONE, NO_OP, FORGETFUL, RACING, AMNESIAC, TRUSTING, HOARDING, GLUTTON, GUESSING, RETRYING, MISROUTED, STALE_READS, OPAQUE_FAILURE }
 
     private final String token;
     private final Handler handler;
@@ -88,7 +88,10 @@ public final class FlexLink implements Link {
         try {
             reply = new Reply.Answered(id, handler.handle(r.method(), r.params()), false);
         } catch (Exception e) {
-            reply = new Reply.Refused(id, Reply.Refusal.FAILED, String.valueOf(e.getMessage()));
+            String message = e.getMessage();
+            String detail = flaw == Flaw.OPAQUE_FAILURE ? String.valueOf(message)
+                    : message == null || message.isBlank() ? e.getClass().getName() : message;
+            reply = new Reply.Refused(id, Reply.Refusal.FAILED, detail);
         }
         if (handed) {
             shared.finish(id, reply);

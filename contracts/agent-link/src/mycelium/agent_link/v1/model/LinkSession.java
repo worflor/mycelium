@@ -69,7 +69,9 @@ public final class LinkSession implements Link {
         try {
             reply = new Reply.Answered(id, handler.handle(r.method(), r.params()), false);
         } catch (Exception | LinkageError | AssertionError e) {
-            reply = new Reply.Refused(id, Reply.Refusal.FAILED, String.valueOf(e.getMessage()));
+            String message = e.getMessage();
+            reply = new Reply.Refused(id, Reply.Refusal.FAILED,
+                    message == null || message.isBlank() ? e.getClass().getName() : message);
         } catch (Error e) { // out of memory and the like: nothing is remembered, and the id is free to retry
             if (r.mutating()) {
                 ledger.abandon(id);

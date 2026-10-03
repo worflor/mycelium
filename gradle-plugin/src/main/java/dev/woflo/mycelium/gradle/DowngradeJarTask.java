@@ -185,6 +185,29 @@ public abstract class DowngradeJarTask extends DefaultTask {
         if (!tool(report, log, hostJava, "-jar", tool, "shade", "--prefix", prefix, "--target", down.toString(), out.toString())) {
             throw new GradleException("Mycelium: could not shade the backports of " + in.getFileName() + " (" + log + ")");
         }
+        Path metadataApi = downgradedApi(report.resolve(".jvmdg"), 44 + java);
+        Path metadataTool = getDowngrader().getSingleFile().toPath();
+        DowngradedMetadata.Result metadata = DowngradedMetadata.relocate(out, metadataApi, metadataTool, prefix, java);
+        JsonObject metadataReport = new JsonObject();
+        metadataReport.addProperty("checked", true);
+        metadataReport.addProperty("apiJarSha256", PrivateLibraries.sha256(metadataApi));
+        metadataReport.addProperty("pinnedToolJarSha256", PrivateLibraries.sha256(metadataTool));
+        metadataReport.addProperty("targetClassMajor", 44 + java);
+        metadataReport.addProperty("relocatedClasses", metadata.classes());
+        metadataReport.addProperty("pinnedToolClosureClassMajorMaximum", metadata.toolClassMajorMaximum());
+        JsonArray metadataClasses = new JsonArray();
+        metadata.names().forEach(metadataClasses::add);
+        metadataReport.add("classes", metadataClasses);
+        JsonArray artifactClasses = new JsonArray();
+        metadata.artifactClasses().forEach(artifactClasses::add);
+        metadataReport.add("artifactClasses", artifactClasses);
+        JsonArray apiClasses = new JsonArray();
+        metadata.apiClasses().forEach(apiClasses::add);
+        metadataReport.add("apiClasses", apiClasses);
+        JsonArray toolClasses = new JsonArray();
+        metadata.toolClasses().forEach(toolClasses::add);
+        metadataReport.add("pinnedToolClasses", toolClasses);
+        r.add("backportMetadata", metadataReport);
         r.addProperty("classVersionAfter", maxMajor(out));
         r.addProperty("downgraded", true);
         r.addProperty("classesSha256", Fingerprint.ofDirectory(out));
@@ -241,6 +264,22 @@ public abstract class DowngradeJarTask extends DefaultTask {
             }
         }
         return max;
+    }
+
+    private static Path downgradedApi(Path directory, int targetMajor) throws IOException {
+        if (!Files.isDirectory(directory)) {
+            throw new GradleException("Mycelium: JvmDowngrader did not produce its target API archive in " + directory);
+        }
+        List<Path> matches;
+        try (var files = Files.list(directory)) {
+            matches = files.filter(path -> path.getFileName().toString().endsWith("-downgraded-" + targetMajor + ".jar"))
+                    .sorted().toList();
+        }
+        if (matches.size() != 1) {
+            throw new GradleException("Mycelium: expected one JvmDowngrader API archive downgraded to class version "
+                    + targetMajor + " in " + directory + ", found " + matches.size());
+        }
+        return matches.get(0);
     }
 
     private void write(Path dir, JsonObject report) throws IOException {

@@ -57,6 +57,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
         ext.getPure().getSuiteMain().convention("Run");
         ext.getPure().getStrict().convention(false);
         ext.getSurfaceFailOnGrowth().convention(false);
+        ext.getCapsule().getOuterJava().convention(8);
+        ext.getCapsule().getNestedJars().convention(List.of());
+        ext.getCapsule().getMappedPrefixes().convention(List.of());
 
         // `-Pmycelium.contracts=a@1,b@1` overrides the selection for one invocation (useful while packages land).
         List<String> contractOverride = listProperty(project, "mycelium.contracts");
@@ -132,6 +135,21 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getErasReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/eras"));
             t.getOutputDir().set(evidenceDir);
             t.dependsOn(verifyTask);
+        });
+
+        TaskProvider<CapsuleTask> capsuleTask = project.getTasks().register("myceliumCapsule", CapsuleTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Checks capsule class ceilings and final runtime class/member linkage against declared artifacts.");
+            t.getArchive().set(ext.getCapsule().getArchive());
+            t.getOuterJava().set(ext.getCapsule().getOuterJava());
+            t.getRuntimeArtifacts().from(ext.getCapsule().getRuntimeArtifacts());
+            t.getMappings().set(ext.getCapsule().getMappings());
+            t.getMappingFrom().set(ext.getCapsule().getMappingFrom());
+            t.getMappingTo().set(ext.getCapsule().getMappingTo());
+            t.getMappedPrefixes().set(ext.getCapsule().getMappedPrefixes());
+            t.getNestedJars().set(ext.getCapsule().getNestedJars());
+            t.getReportFile().set(project.getLayout().getBuildDirectory().file("mycelium/capsule/capsule.json"));
+            t.onlyIf(spec -> ext.getCapsule().getArchive().isPresent());
         });
 
         // The pure layer (docs/eras.md): its laws on the source, then compiled on its own into a bundle.
@@ -301,7 +319,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             });
             project.getTasks().named("compileJava", c -> c.dependsOn(isolationTask, purityTask));
             project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
-                    pureShip, surfaceTask));
+                    pureShip, surfaceTask, capsuleTask));
             evidenceTask.configure(t -> t.dependsOn(usageTask, pureShip));
 
             // Downgrading the jar's own classes (docs/decisions/0007). Nothing in `check` or in a jar runs it: a consumer whose

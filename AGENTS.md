@@ -119,8 +119,12 @@ mycelium/
 | `Loaders.java` | `eras/loaders.json`: the platform packages P1 forbids |
 | `EraTask.java` | `myceliumEraJava<N>` (and `myceliumEras`, all of them): every bundle on an era's JVM |
 | `Linkage.java` | law P2: every outside reference in a bundle exists on the era's Java |
+| `CapsuleSpec.java` | the declarative scanner ceiling, nested jars, runtime roots, and mapping profile for a capsule |
+| `CapsuleTask.java` | `myceliumCapsule`: bytecode ceilings and final class/member linkage for nested capsules |
+| `RuntimeBootClasspath.java` | Optional buildscript helper that resolves and validates ordered Java 8 bootstrap archive roots from a selected toolchain launcher |
 | `PureShipTask.java` | `myceliumPureShip`: puts the pure layer's classes (downgraded, shaded, or as compiled) into the target's jar |
 | `DowngradeJarTask.java` | `myceliumDowngradeJar`: the jar's own classes downgraded to the Java the era runs on, and proven (stubs, Java linkage); a consumer's loader step takes its output |
+| `DowngradedMetadata.java` | Carries only the required, target-compatible JvmDowngrader annotation API closure under the artifact's private prefix and remaps its metadata references |
 | `PrivateLibraries.java` | Package relocation for declared feature libraries and their callers, before downgrade; preserves resources and refuses conflicting identities |
 | `SurfaceTask.java` | `myceliumSurface`: platform references per package, outside declared ports (`docs/eras.md`) |
 | `EvidenceTask.java` | `myceliumEvidence`: `META-INF/mycelium/evidence.json`, what ran and what was not checked |

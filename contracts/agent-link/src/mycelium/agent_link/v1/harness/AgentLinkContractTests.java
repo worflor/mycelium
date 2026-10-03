@@ -59,6 +59,7 @@ public final class AgentLinkContractTests {
         l6Unknown(c);
         l7FailureRemembered(c);
         l8SurvivesHandover(c);
+        l9FailureDiagnostic(c);
         p1ExecutesAndAnswers(c);
         p2Correlates(c);
         p3ReadsFresh(c);
@@ -247,6 +248,31 @@ public final class AgentLinkContractTests {
         h.link = l;
         l.hello(TOKEN);
         return l;
+    }
+
+    private void l9FailureDiagnostic(Check c) {
+        for (String message : new String[]{null, "", " \t", "the source read failed"}) {
+            int[] runs = {0};
+            Handler handler = new Handler() {
+                @Override public boolean knows(String method) { return true; }
+                @Override public String handle(String method, String params) throws Exception {
+                    runs[0]++;
+                    throw new java.util.concurrent.TimeoutException(message);
+                }
+            };
+            Link link = links.make(TOKEN, handler, Limits.defaults());
+            link.hello(TOKEN);
+            Request request = new Request("diagnostic", "read", true, 5, "{}");
+            Reply first = link.receive(request);
+            link.dropped();
+            link.hello(TOKEN);
+            Reply retry = link.receive(request);
+            String expected = message == null || message.isBlank()
+                    ? "java.util.concurrent.TimeoutException" : message;
+            c.that(first instanceof Reply.Refused failed && failed.refusal() == Reply.Refusal.FAILED
+                            && expected.equals(failed.detail()) && first.equals(retry) && runs[0] == 1,
+                    "L9:failure-has-diagnostic");
+        }
     }
 
     /** P1: after a good hello, a known in-size request runs once and returns the handler's result. */

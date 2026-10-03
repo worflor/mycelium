@@ -13,7 +13,8 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 - `Request(id, method, mutating, bytes, params)`: one inbound call. `mutating` is the caller's declaration that running
   it twice would be wrong. `bytes` is the frame's size on the wire.
 - `Reply`: `Answered(id, result, replayed)` or `Refused(id, refusal, detail)`, with `Refusal` one of `UNAUTHENTICATED`,
-  `TOO_LARGE`, `UNKNOWN_METHOD`, `INVALID`, `FAILED` (the handler threw: the detail is its message), `BUSY` (a
+  `TOO_LARGE`, `UNKNOWN_METHOD`, `INVALID`, `FAILED` (the handler threw: the detail is its nonblank message, or its
+  exception class name when it has none), `BUSY` (a
   retry arrived while the first is still running).
 - `Handler`: `knows(method)`, `handle(method, params)`. The world-touching side, supplied by the consumer.
 - `Limits(maxFrameBytes, rememberReplies)`.
@@ -36,6 +37,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | L1 | `L1:no-concurrent-twin` | A mutating request whose id is still running is refused `BUSY`, not run a second time |
 | L7 | `L7:failure-is-remembered` | A mutating request whose handler threw is answered `FAILED`, and a retry gets the same refusal without running again (it may have half-happened) |
 | L8 | `L8:dedup-survives-handover` | Two links over one `Ledger` (a consumer replaced while the server runs): a mutating request the first answered is not run by the second (replayed), one the first is still running is refused `BUSY` by the second and not run beside it, and one whose handler threw is not run again |
+| L9 | `L9:failure-has-diagnostic` | A handler failure preserves its nonblank message; a null, empty or blank message is replaced by the exception's fully qualified class name. A remembered failure retains that detail across reconnects |
 | B1 | `B1:delay-within-bounds` | Every delay is at least 1 ms and at most `capMs`, for every attempt and every `u` |
 | B2 | `B2:envelope-grows-to-cap` | The largest possible delay never shrinks as attempts grow, and reaches `capMs` |
 | B3 | `B3:never-gives-up` | A delay exists for every attempt up to `Integer.MAX_VALUE`, without overflow |
@@ -62,6 +64,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | `GluttonLink` | No frame limit | `L5:oversize-refused` |
 | `GuessingLink` | Passes unknown methods to the handler | `L6:unknown-refused` |
 | `RetryingLink` | Forgets failures, so a half-done mutation is run again | `L7:failure-is-remembered` |
+| `OpaqueFailureLink` | Serializes a missing exception message as "null", or returns an empty diagnostic | `L9:failure-has-diagnostic` |
 | `ParochialLink` | Keeps its own memory whatever ledger it is given: the request in flight when its consumer is replaced runs twice | `L8:dedup-survives-handover` |
 | `MisroutedLink` | Replies under the wrong id | `P2:reply-correlates` |
 | `StaleReadLink` | Remembers reads too | `P3:reads-are-fresh` |
@@ -78,6 +81,8 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 - The caller decides what is mutating. A caller that marks a `give` as a read gets reads' semantics.
 - A request with a remembered id but a different method or parameters still gets the remembered reply: an id names one
   intent. Callers must not reuse ids.
+- Exceptions without messages still identify their type (L9). Learned in Recon's Java 8 source-reading qualification
+  on 2026-10-02: a timed-out read reported only "null", concealing the failure that needed diagnosis.
 
 ## Using it
 
