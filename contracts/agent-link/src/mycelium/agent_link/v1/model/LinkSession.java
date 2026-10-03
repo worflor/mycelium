@@ -72,16 +72,23 @@ public final class LinkSession implements Link {
             String message = e.getMessage();
             reply = new Reply.Refused(id, Reply.Refusal.FAILED,
                     message == null || message.isBlank() ? e.getClass().getName() : message);
-        } catch (Error e) { // out of memory and the like: nothing is remembered, and the id is free to retry
-            if (r.mutating()) {
-                ledger.abandon(id);
+        } catch (Error e) {
+            if (fatal(e)) {
+                throw e;
             }
-            throw e;
+            String message = e.getMessage();
+            reply = new Reply.Refused(id, Reply.Refusal.FAILED,
+                    message == null || message.isBlank() ? e.getClass().getName() : message);
         }
         if (r.mutating()) {
             ledger.finish(id, reply);
         }
         return reply;
+    }
+
+    private static boolean fatal(Error error) {
+        return error instanceof ThreadDeath
+                || error instanceof VirtualMachineError && !(error instanceof StackOverflowError);
     }
 
     @Override

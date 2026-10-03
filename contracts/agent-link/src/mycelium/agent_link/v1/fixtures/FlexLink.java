@@ -19,7 +19,7 @@ import java.util.Set;
  * second correct implementation.
  */
 public final class FlexLink implements Link {
-    public enum Flaw { NONE, NO_OP, FORGETFUL, RACING, AMNESIAC, TRUSTING, HOARDING, GLUTTON, GUESSING, RETRYING, MISROUTED, STALE_READS, OPAQUE_FAILURE }
+    public enum Flaw { NONE, NO_OP, FORGETFUL, RACING, AMNESIAC, TRUSTING, HOARDING, GLUTTON, GUESSING, RETRYING, ABANDON_ERROR, MISROUTED, STALE_READS, OPAQUE_FAILURE }
 
     private final String token;
     private final Handler handler;
@@ -69,7 +69,7 @@ public final class FlexLink implements Link {
             return new Reply.Answered(id, "ok", false);
         }
         boolean remember = (r.mutating() || flaw == Flaw.STALE_READS) && flaw != Flaw.FORGETFUL;
-        boolean handed = remember && shared != null && flaw == Flaw.NONE;
+        boolean handed = remember && shared != null && (flaw == Flaw.NONE || flaw == Flaw.ABANDON_ERROR);
         if (handed) {
             Reply seen = shared.enter(id);
             if (seen != null) {
@@ -92,14 +92,29 @@ public final class FlexLink implements Link {
             String detail = flaw == Flaw.OPAQUE_FAILURE ? String.valueOf(message)
                     : message == null || message.isBlank() ? e.getClass().getName() : message;
             reply = new Reply.Refused(id, Reply.Refusal.FAILED, detail);
+        } catch (Error e) {
+            if (flaw == Flaw.ABANDON_ERROR) {
+                if (handed) {
+                    shared.abandon(id);
+                } else {
+                    running.remove(id);
+                }
+                throw e;
+            }
+            if (fatal(e)) {
+                throw e;
+            }
+            String message = e.getMessage();
+            reply = new Reply.Refused(id, Reply.Refusal.FAILED,
+                    message == null || message.isBlank() ? e.getClass().getName() : message);
         }
         if (handed) {
             shared.finish(id, reply);
         } else if (remember) {
-            running.remove(id);
             if (!(flaw == Flaw.RETRYING && reply instanceof Reply.Refused)) {
                 replies.put(id, reply);
             }
+            running.remove(id);
             if (flaw != Flaw.HOARDING) {
                 List<String> keys = new ArrayList<>(replies.keySet());
                 for (int i = 0; i < keys.size() - limits.rememberReplies(); i++) {
@@ -108,6 +123,11 @@ public final class FlexLink implements Link {
             }
         }
         return reply;
+    }
+
+    private static boolean fatal(Error error) {
+        return error instanceof ThreadDeath
+                || error instanceof VirtualMachineError && !(error instanceof StackOverflowError);
     }
 
     @Override

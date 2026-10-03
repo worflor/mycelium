@@ -13,13 +13,13 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 - `Request(id, method, mutating, bytes, params)`: one inbound call. `mutating` is the caller's declaration that running
   it twice would be wrong. `bytes` is the frame's size on the wire.
 - `Reply`: `Answered(id, result, replayed)` or `Refused(id, refusal, detail)`, with `Refusal` one of `UNAUTHENTICATED`,
-  `TOO_LARGE`, `UNKNOWN_METHOD`, `INVALID`, `FAILED` (the handler threw: the detail is its nonblank message, or its
-  exception class name when it has none), `BUSY` (a
-  retry arrived while the first is still running).
+  `TOO_LARGE`, `UNKNOWN_METHOD`, `INVALID`, `FAILED` (a recoverable handler failure: the detail is its nonblank message,
+  or its fully qualified class name when it has none), `BUSY` (a retry arrived while the first is still running or an
+  unrecoverable failure left its outcome indeterminate).
 - `Handler`: `knows(method)`, `handle(method, params)`. The world-touching side, supplied by the consumer.
 - `Limits(maxFrameBytes, rememberReplies)`.
 - `Link`: `hello(token)`, `receive(request)`, `dropped()`, `remembered()`.
-- `Ledger`: what is remembered about mutating requests, apart from the session: `enter(id)` (the remembered reply, or `BUSY` if running, or null and now running), `finish(id, reply)`, `abandon(id)`, `size()`. `MemoryLedger` is the reference.
+- `Ledger`: what is remembered about mutating requests, apart from the session: `enter(id)` (the remembered reply, or `BUSY` if running/indeterminate, or null and now running), `finish(id, reply)` (store before releasing the claim), `abandon(id)` (release only when retry is known safe), `size()`. `MemoryLedger` is the reference.
 - `LinkSession`: the reference. `LinkSession(token, handler, limits)` keeps a ledger of its own; `LinkSession(token, handler, limits, ledger)` remembers in the ledger the caller keeps.
 - `Backoff(baseMs, capMs)`: `delay(attempt, u)` for reconnect attempt `attempt >= 0` and a caller-supplied uniform
   `u` in `[0, 1)` (the model draws no randomness; the consumer passes its own).
@@ -35,8 +35,8 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | L5 | `L5:oversize-refused` | A request larger than `maxFrameBytes` is refused `TOO_LARGE` and does not run |
 | L6 | `L6:unknown-refused` | A method the handler does not know is refused `UNKNOWN_METHOD` and does not run; a blank id is refused `INVALID` |
 | L1 | `L1:no-concurrent-twin` | A mutating request whose id is still running is refused `BUSY`, not run a second time |
-| L7 | `L7:failure-is-remembered` | A mutating request whose handler threw is answered `FAILED`, and a retry gets the same refusal without running again (it may have half-happened) |
-| L8 | `L8:dedup-survives-handover` | Two links over one `Ledger` (a consumer replaced while the server runs): a mutating request the first answered is not run by the second (replayed), one the first is still running is refused `BUSY` by the second and not run beside it, and one whose handler threw is not run again |
+| L7 | `L7:failure-is-remembered` | A mutating request whose handler throws a recoverable `Exception` or `Error` is answered `FAILED`, and a retry gets the same refusal without running again (it may have half-happened). A fatal `ThreadDeath` or `VirtualMachineError` other than `StackOverflowError` propagates without releasing the claim; retries are refused `BUSY` and are not run again because a reply may be impossible to construct safely |
+| L8 | `L8:dedup-survives-handover` | Two links over one `Ledger` (a consumer replaced while the server runs): a mutating request the first answered is not run by the second (replayed), one the first is still running or left indeterminate by a fatal error is refused `BUSY` by the second and not run beside it, and one whose handler failed recoverably is not run again |
 | L9 | `L9:failure-has-diagnostic` | A handler failure preserves its nonblank message; a null, empty or blank message is replaced by the exception's fully qualified class name. A remembered failure retains that detail across reconnects |
 | B1 | `B1:delay-within-bounds` | Every delay is at least 1 ms and at most `capMs`, for every attempt and every `u` |
 | B2 | `B2:envelope-grows-to-cap` | The largest possible delay never shrinks as attempts grow, and reaches `capMs` |
@@ -63,7 +63,8 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | `HoardingLink` | Remembers every reply forever | `L4:memory-bounded` |
 | `GluttonLink` | No frame limit | `L5:oversize-refused` |
 | `GuessingLink` | Passes unknown methods to the handler | `L6:unknown-refused` |
-| `RetryingLink` | Forgets failures, so a half-done mutation is run again | `L7:failure-is-remembered` |
+| `RetryingLink` | Forgets checked failures, so a half-done mutation is run again | `L7:failure-is-remembered` |
+| `AbandoningErrorLink` | Abandons after a recoverable `Error`, so the half-done mutation runs again | `L7:failure-is-remembered`, `L8:dedup-survives-handover` |
 | `OpaqueFailureLink` | Serializes a missing exception message as "null", or returns an empty diagnostic | `L9:failure-has-diagnostic` |
 | `ParochialLink` | Keeps its own memory whatever ledger it is given: the request in flight when its consumer is replaced runs twice | `L8:dedup-survives-handover` |
 | `MisroutedLink` | Replies under the wrong id | `P2:reply-correlates` |
@@ -81,8 +82,14 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 - The caller decides what is mutating. A caller that marks a `give` as a read gets reads' semantics.
 - A request with a remembered id but a different method or parameters still gets the remembered reply: an id names one
   intent. Callers must not reuse ids.
-- Exceptions without messages still identify their type (L9). Learned in Recon's Java 8 source-reading qualification
-  on 2026-10-02: a timed-out read reported only "null", concealing the failure that needed diagnosis.
+- Recoverable `Exception` and `Error` failures without messages still identify their type (L9). A remembered failure
+  retains that detail across reconnects (L9). Learned in Recon's Java 8 source-reading qualification on 2026-10-02: a
+  timed-out read reported only "null", concealing the failure that needed diagnosis.
+- `ThreadDeath` and `VirtualMachineError` other than `StackOverflowError` are allowed to escape because constructing a
+  failure reply may itself be unsafe. Their mutating id remains claimed and yields `BUSY` on retry or handover; it is
+  intentionally not made available for replay.
+- `abandon(id)` is for a run known not to have started its effect. Once the handler has begun, a throw must either be
+  remembered as `FAILED` or leave the id claimed when a fatal error prevents a reply.
 
 ## Using it
 

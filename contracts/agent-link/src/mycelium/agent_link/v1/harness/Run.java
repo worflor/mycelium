@@ -13,11 +13,11 @@ public final class Run {
     private Run() {
     }
 
-    /** A flawed link; handed a ledger by the harness, it builds its own private one and ignores it. */
+    /** A flawed link, configured to violate one law whether it keeps its own memory or uses the handed ledger. */
     private static ContractRun.Broken link(String name, Flaw flaw, String label) {
         return new ContractRun.Broken(name, () -> new AgentLinkContractTests(
                 (t, h, l) -> new FlexLink(t, h, l, flaw), AgentLinkContractTests::reference,
-                (t, h, l, ledger) -> new FlexLink(t, h, l, flaw)).run(), label);
+                (t, h, l, ledger) -> new FlexLink(t, h, l, flaw, ledger)).run(), label);
     }
 
     private static ContractRun.Broken backoff(String name, AgentLinkContractTests.Delays delays, String label) {
@@ -48,6 +48,8 @@ public final class Run {
                         link("GluttonLink", Flaw.GLUTTON, "L5:oversize-refused"),
                         link("GuessingLink", Flaw.GUESSING, "L6:unknown-refused"),
                         link("RetryingLink", Flaw.RETRYING, "L7:failure-is-remembered"),
+                        link("AbandoningErrorLink", Flaw.ABANDON_ERROR, "L7:failure-is-remembered"),
+                        link("AbandoningErrorHandoverLink", Flaw.ABANDON_ERROR, "L8:dedup-survives-handover"),
                         link("OpaqueFailureLink", Flaw.OPAQUE_FAILURE, "L9:failure-has-diagnostic"),
                         // a correct link in every other way that keeps its own memory whatever ledger it is given:
                         // the replaced consumer's requests in flight run twice

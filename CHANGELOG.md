@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-03 - Handler error replay
+
+Mutating handler failures retain their request identity across reconnects and payload replacement. Recoverable
+errors receive a remembered diagnostic; fatal VM errors retain a no-retry claim. Reply storage precedes claim
+release, and rejection fixtures exercise both error replay and shared-ledger handover.
+
 ## 2026-10-03 - Capsule runtime linkage
 
 Added the opt-in `myceliumCapsule` gate for loader-scanned outer jars and nested payloads. It enforces declared Java

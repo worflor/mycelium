@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-/** The reference ledger: an insertion-ordered map trimmed from the oldest end, and the set of ids running. */
+/** The reference ledger: bounded insertion-ordered replies and ids running or held after an indeterminate fatal error. */
 public final class MemoryLedger implements Ledger {
     private final int capacity;
     private final Map<String, Reply> replies = new LinkedHashMap<>();
@@ -32,8 +32,8 @@ public final class MemoryLedger implements Ledger {
 
     @Override
     public synchronized void finish(String id, Reply reply) {
-        running.remove(id);
         replies.put(id, reply);
+        running.remove(id);
         while (replies.size() > capacity) {
             replies.remove(replies.keySet().iterator().next());
         }

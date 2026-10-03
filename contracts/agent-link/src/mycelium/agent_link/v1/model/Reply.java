@@ -14,7 +14,7 @@ public sealed interface Reply permits Reply.Answered, Reply.Refused {
         }
     }
 
-    /** Not answered, and why. {@code FAILED} means the handler ran and threw: {@code detail} is its message. */
+    /** Not answered, and why. {@code FAILED} is a recoverable handler failure; fatal failures can leave retries {@code BUSY}. */
     record Refused(String id, Refusal refusal, String detail) implements Reply {
     }
 }

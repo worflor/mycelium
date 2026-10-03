@@ -85,6 +85,15 @@ public final class AgentLinkContractTests {
             if (method.equals("boom")) {
                 throw new IllegalStateException("half done");
             }
+            if (method.equals("stack")) {
+                throw new StackOverflowError();
+            }
+            if (method.equals("error")) {
+                throw new Error("recoverable error");
+            }
+            if (method.equals("fatal")) {
+                throw new OutOfMemoryError("simulated fatal error");
+            }
             if (method.equals("retry") && reentry != null) {
                 Request again = reentry;
                 reentry = null;
@@ -206,6 +215,55 @@ public final class AgentLinkContractTests {
         c.that(refused(first, Reply.Refusal.FAILED) && refused(again, Reply.Refusal.FAILED) && h.runs("boom") == 1,
                 "L7:failure-is-remembered");
         c.that(first instanceof Reply.Refused f && "half done".equals(f.detail()), "L7:failure-carries-its-message");
+
+        Counting errors = new Counting();
+        Link errorLink = fresh(errors, Limits.defaults());
+        Request stack = new Request("stack", "stack", true, 5, "{}");
+        Reply stackFirst = receiveError(errorLink, stack);
+        Reply stackAgain = receiveError(errorLink, stack);
+        c.that(stackFirst instanceof Reply.Refused f && f.refusal() == Reply.Refusal.FAILED
+                        && "java.lang.StackOverflowError".equals(f.detail()) && stackFirst.equals(stackAgain)
+                        && errors.runs("stack") == 1,
+                "L7:failure-is-remembered recoverable-error");
+
+        Request plain = new Request("plain-error", "error", true, 5, "{}");
+        Reply plainFirst = receiveError(errorLink, plain);
+        Reply plainAgain = receiveError(errorLink, plain);
+        c.that(plainFirst instanceof Reply.Refused f && f.refusal() == Reply.Refusal.FAILED
+                        && "recoverable error".equals(f.detail()) && plainFirst.equals(plainAgain)
+                        && errors.runs("error") == 1,
+                "L7:failure-is-remembered nonfatal-error");
+
+        Request fatal = new Request("fatal", "fatal", true, 5, "{}");
+        boolean escaped = receiveOutOfMemory(errorLink, fatal);
+        Reply afterFatal = retryOutOfMemory(errorLink, fatal);
+        c.that(escaped && refused(afterFatal, Reply.Refusal.BUSY) && errors.runs("fatal") == 1,
+                "L7:fatal-error-retains-claim");
+    }
+
+    private static Reply receiveError(Link link, Request request) {
+        try {
+            return link.receive(request);
+        } catch (Error escaped) {
+            return null;
+        }
+    }
+
+    private static boolean receiveOutOfMemory(Link link, Request request) {
+        try {
+            link.receive(request);
+            return false;
+        } catch (OutOfMemoryError escaped) {
+            return true;
+        }
+    }
+
+    private static Reply retryOutOfMemory(Link link, Request request) {
+        try {
+            return link.receive(request);
+        } catch (OutOfMemoryError escaped) {
+            return null;
+        }
     }
 
     /**
@@ -240,7 +298,21 @@ public final class AgentLinkContractTests {
         Reply failed = b.receive(new Request("h3", "boom", true, 5, "{}"));
         boolean refused = second.runs("boom") == 0 && refused(failed, Reply.Refusal.FAILED);
 
-        c.that(answered && busy && finished && refused, "L8:dedup-survives-handover");
+        Request stack = new Request("h4", "stack", true, 5, "{}");
+        Reply stackFailed = receiveError(a, stack);
+        Reply stackRetry = receiveError(b, stack);
+        boolean stackRemembered = stackFailed instanceof Reply.Refused f && f.refusal() == Reply.Refusal.FAILED
+                && stackFailed.equals(stackRetry) && first.runs("stack") == 1 && second.runs("stack") == 0;
+
+        Request fatal = new Request("h5", "fatal", true, 5, "{}");
+        boolean fatalEscaped = receiveOutOfMemory(a, fatal);
+        Reply sameSession = retryOutOfMemory(a, fatal);
+        Reply replacement = retryOutOfMemory(b, fatal);
+        boolean fatalHeld = fatalEscaped && refused(sameSession, Reply.Refusal.BUSY)
+                && refused(replacement, Reply.Refusal.BUSY) && first.runs("fatal") == 1;
+
+        c.that(answered && busy && finished && refused && stackRemembered && fatalHeld,
+                "L8:dedup-survives-handover");
     }
 
     private Link handover(Counting h, Ledger ledger) {
