@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-04 - Chat coverage ledger
+
+Added `chat.coverage@1`, an immutable sequence ledger for explicitly established public-event runs. Durable commits
+must be contiguous; open/write/flush/cap/fallback loss is sticky through later commits and restores, and late ownership
+starts incomplete. Its design-time harness passes the positive empty-run/commit reference and catches all eight named
+rejection fixtures. This models the coverage claim only; it does not prove source delivery or crash durability.
+
+Verification: `run-contracts.ps1 chat-coverage` passes both shared harness checks, the reference, and all eight
+rejection entries. The complete `./gradlew check` passes all 18 contracts, 125 rejection fixtures, 274 plugin
+self-test assertions, repository checks and era gates on Java 8, 16, 17, 21 and 25. Target-provider evidence belongs
+to consumers and is not claimed by this contract run.
+
 ## 2026-10-03 - Handler error replay
 
 Mutating handler failures retain their request identity across reconnects and payload replacement. Recoverable

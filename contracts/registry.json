@@ -86,6 +86,13 @@
       "package": "mycelium.chat_invocation.v1",
       "status": "reference",
       "provenance": "written for Recon"
+    },
+    {
+      "id": "chat.coverage@1",
+      "path": "chat-coverage",
+      "package": "mycelium.chat_coverage.v1",
+      "status": "reference",
+      "provenance": "written for Recon"
     }
   ]
 }

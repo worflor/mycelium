@@ -1,0 +1,17 @@
+package mycelium.chat_coverage.v1.model;
+
+public enum Cause {
+    NONE,
+    UNKNOWN_START,
+    OPEN_FAILED,
+    INITIAL_WRITE_FAILED,
+    APPEND_FAILED,
+    FLUSH_FAILED,
+    CLOSE_FAILED,
+    OVERSIZE_PUBLIC_LINE,
+    CAPACITY_REACHED,
+    PUBLIC_FALLBACK,
+    SEQUENCE_GAP,
+    INVALID_SEQUENCE,
+    REOPEN_UNVERIFIED
+}
