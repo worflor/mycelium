@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-04 - Bounded agent-link admission
+
+`agent.link@1` supplies an additive request admission budget. One lease reserves a retained job and its encoded UTF-8
+frame bytes atomically; invalid costs and full budgets refuse without consuming capacity. Closing a lease releases
+the reservation once. Consumers retain the lease while work is queued or running and refuse overload before entering
+the link session, preserving an unclaimed mutating id for a later retry.
+
+Verification: the complete repository check passes all 18 contracts, 132 rejection fixtures, 274 plugin assertions
+and Java 8, 16, 17, 21 and 25 era gates. Six new fixtures cover no-op admission, job and byte overbooking, rejected-cost
+leaks, unreleased leases and concurrent overbooking. Consumer queues and live transports require their own evidence.
+
 ## 2026-10-04 - Agent-link refusal replay provenance
 
 `agent.link@1` records whether a refusal came from the remembered ledger. A recoverable mutating failure is first returned

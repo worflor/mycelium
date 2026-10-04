@@ -1,8 +1,10 @@
 package mycelium.agent_link.v1.harness;
 
+import mycelium.agent_link.v1.fixtures.AdmissionFixtures;
 import mycelium.agent_link.v1.fixtures.BadBackoffs;
 import mycelium.agent_link.v1.fixtures.FlexLink;
 import mycelium.agent_link.v1.fixtures.FlexLink.Flaw;
+import mycelium.agent_link.v1.model.AdmissionBudget;
 import mycelium.agent_link.v1.model.LinkSession;
 import mycelium.harness.Check;
 import mycelium.harness.ContractRun;
@@ -24,21 +26,42 @@ public final class Run {
         return new ContractRun.Broken(name, () -> new AgentLinkContractTests(LinkSession::new, delays, LinkSession::new).run(), label);
     }
 
+    private static ContractRun.Broken admission(String name, AdmissionContractTests.Budgets budgets, String label) {
+        return new ContractRun.Broken(name, () -> new AdmissionContractTests(budgets).run(), label);
+    }
+
+    private static Check reference() {
+        Check result = new AgentLinkContractTests(LinkSession::new, AgentLinkContractTests::reference,
+                LinkSession::new).run();
+        Check independent = new AgentLinkContractTests((t, h, l) -> new FlexLink(t, h, l, Flaw.NONE),
+                AgentLinkContractTests::reference,
+                (t, h, l, ledger) -> new FlexLink(t, h, l, Flaw.NONE, ledger)).run();
+        for (String failure : independent.failures()) {
+            result.fail("FlexLink(NONE) " + failure);
+        }
+        Check admission = new AdmissionContractTests(AdmissionBudget::new).run();
+        for (String failure : admission.failures()) {
+            result.fail("AdmissionBudget " + failure);
+        }
+        return result;
+    }
+
     public static void main(String[] args) {
         int exit = ContractRun.run("agent.link@1",
-                () -> {
-                    // two independent correct links: the model's reference and FlexLink with no flaw
-                    Check reference = new AgentLinkContractTests(LinkSession::new, AgentLinkContractTests::reference,
-                            LinkSession::new).run();
-                    Check second = new AgentLinkContractTests((t, h, l) -> new FlexLink(t, h, l, Flaw.NONE),
-                            AgentLinkContractTests::reference,
-                            (t, h, l, ledger) -> new FlexLink(t, h, l, Flaw.NONE, ledger)).run();
-                    for (String f : second.failures()) {
-                        reference.fail("FlexLink(NONE) " + f);
-                    }
-                    return reference;
-                },
+                Run::reference,
                 Arrays.asList(
+                        admission("NoOpAdmission", (jobs, bytes) -> new AdmissionFixtures.NoOp(),
+                                "P5:admits-available-work"),
+                        admission("JobOverbookAdmission", AdmissionFixtures.JobOverbook::new,
+                                "L11:bounded-admission"),
+                        admission("ByteOverbookAdmission", AdmissionFixtures.ByteOverbook::new,
+                                "L11:bounded-admission"),
+                        admission("RejectedCostLeakAdmission", AdmissionFixtures.RejectedCostLeak::new,
+                                "L12:admission-release"),
+                        admission("LeakyLeaseAdmission", AdmissionFixtures.LeakyLease::new,
+                                "L12:admission-release"),
+                        admission("RacingAdmission", AdmissionFixtures.Racing::new,
+                                "L11:bounded-admission"),
                         link("NoOpLink", Flaw.NO_OP, "P1:executes-and-answers"),
                         link("ForgetfulLink", Flaw.FORGETFUL, "L1:at-most-once"),
                         link("RacingLink", Flaw.RACING, "L1:no-concurrent-twin"),

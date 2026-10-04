@@ -18,6 +18,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
   unrecoverable failure left its outcome indeterminate). The three-argument `Refused` constructor means `replayed = false`.
 - `Handler`: `knows(method)`, `handle(method, params)`. The world-touching side, supplied by the consumer.
 - `Limits(maxFrameBytes, rememberReplies)`.
+- `Admission`: `tryAcquire(frameBytes)` reserves one retained request and its exact encoded-byte charge, or returns an empty `Optional`. A `Lease` releases the reservation once when closed. `AdmissionBudget(maxJobs, maxBytes)` is the reference implementation; its ceilings are supplied by the consumer's queue policy.
 - `Link`: `hello(token)`, `receive(request)`, `dropped()`, `remembered()`.
 - `Ledger`: what is remembered about mutating requests, apart from the session: `enter(id)` (the remembered reply, or `BUSY` if running/indeterminate, or null and now running), `finish(id, reply)` (store before releasing the claim), `abandon(id)` (release only when retry is known safe), `size()`. `MemoryLedger` is the reference.
 - `LinkSession`: the reference. `LinkSession(token, handler, limits)` keeps a ledger of its own; `LinkSession(token, handler, limits, ledger)` remembers in the ledger the caller keeps.
@@ -39,6 +40,8 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | L8 | `L8:dedup-survives-handover` | Two links over one `Ledger` (a consumer replaced while the server runs): a mutating request the first answered is not run by the second (replayed), one the first is still running or left indeterminate by a fatal error is refused `BUSY` by the second and not run beside it, and one whose handler failed recoverably is not run again |
 | L9 | `L9:failure-has-diagnostic` | A handler failure preserves its nonblank message; a null, empty or blank message is replaced by the exception's fully qualified class name. A remembered failure retains that detail across reconnects |
 | L10 | `L10:failed-refusal-replayed` | The first recoverable `FAILED` refusal has `replayed = false`; when that mutating request is retried from the ledger after reconnect or handover, the refusal has `replayed = true`. A live `BUSY` refusal is never marked replayed |
+| L11 | `L11:bounded-admission` | An admission permits no more than its job ceiling or aggregate encoded-byte ceiling, even under concurrent acquisition. Nonpositive, over-ceiling, or overflowing costs fail closed and consume no capacity |
+| L12 | `L12:admission-release` | A refused acquisition consumes nothing. Closing an acquired lease releases exactly its job and byte reservation once; closing it again changes nothing |
 | B1 | `B1:delay-within-bounds` | Every delay is at least 1 ms and at most `capMs`, for every attempt and every `u` |
 | B2 | `B2:envelope-grows-to-cap` | The largest possible delay never shrinks as attempts grow, and reaches `capMs` |
 | B3 | `B3:never-gives-up` | A delay exists for every attempt up to `Integer.MAX_VALUE`, without overflow |
@@ -51,6 +54,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | P2 | `P2:reply-correlates` | Every reply carries its request's id |
 | P3 | `P3:reads-are-fresh` | A non-mutating request runs every time it is asked, so a read never returns a remembered answer |
 | P4 | `P4:first-retry-prompt` | The first retry waits at most `baseMs` |
+| P5 | `P5:admits-available-work` | A valid request is admitted when both ceilings have room; an admission that always refuses is not conforming |
 
 ## Rejection matrix
 
@@ -75,6 +79,12 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | `GiveUpBackoff` | Stops (a negative delay) after 20 attempts | `B3:never-gives-up` |
 | `UncappedBackoff` | No ceiling | `B1:delay-within-bounds` |
 | `SlowStartBackoff` | First retry waits the cap | `P4:first-retry-prompt` |
+| `NoOpAdmission` | Refuses every request, even when capacity is available | `P5:admits-available-work` |
+| `JobOverbookAdmission` | Admits more requests than its job ceiling | `L11:bounded-admission` |
+| `ByteOverbookAdmission` | Admits aggregate frame bytes over its byte ceiling | `L11:bounded-admission` |
+| `RejectedCostLeakAdmission` | Charges capacity before refusing an invalid or over-ceiling cost | `L12:admission-release` |
+| `LeakyLeaseAdmission` | Closing a lease does not reopen capacity | `L12:admission-release` |
+| `RacingAdmission` | Concurrent callers both take the last slot | `L11:bounded-admission` |
 
 ## Edge semantics
 
@@ -92,6 +102,14 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
   intentionally not made available for replay.
 - `abandon(id)` is for a run known not to have started its effect. Once the handler has begun, a throw must either be
   remembered as `FAILED` or leave the id claimed when a fatal error prevents a reply.
+- A consumer with an asynchronous queue acquires admission before retaining or enqueueing a parsed request, keeps the
+  lease for the queued and running lifetime, and closes it after success, handler failure, cancellation, or queue
+  rejection. A saturated valid request is answered `BUSY` before `Link.receive`, so no mutating id is claimed; the
+  caller can retry that id when capacity returns. A consumer checks `maxFrameBytes` and basic request validity before
+  mapping an empty admission result to `BUSY`.
+- `frameBytes` is the exact encoded UTF-8 frame-byte charge under the consumer's frame-size convention, never a Java
+  `String.length()`. Admission stores only counts; it stores no request, id, params, or payload text. The model does not
+  prescribe a transport, queue implementation, or the consumer's chosen ceilings.
 
 ## Using it
 
@@ -117,5 +135,5 @@ New `Refusal` values and new methods on `Link` with defaults stay in `@1`. Chang
 
 ## Not claimed
 
-Anything about the transport, the wire format, or whether a handler's effect happened in the world. The reply says what
-the handler returned.
+Anything about a particular transport or queue implementation, or whether a handler's effect happened in the world.
+The reply says what the handler returned; admission only bounds work the consumer has not yet handed to its handler.
