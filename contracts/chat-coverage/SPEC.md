@@ -20,7 +20,7 @@ general to any consumer that keeps an ordered public event ledger.
   copies every field; it never upgrades a state.
 - `Status`: `COMPLETE` or `INCOMPLETE`.
 - `Cause`: `NONE`, `UNKNOWN_START`, `OPEN_FAILED`, `INITIAL_WRITE_FAILED`, `APPEND_FAILED`, `FLUSH_FAILED`,
-  `CLOSE_FAILED`, `OVERSIZE_PUBLIC_LINE`, `CAPACITY_REACHED`, `PUBLIC_FALLBACK`, `SEQUENCE_GAP`,
+  `CLOSE_FAILED`, `OVERSIZE_PUBLIC_LINE`, `CAPACITY_REACHED`, `DIGEST_UNAVAILABLE`, `PUBLIC_FALLBACK`, `SEQUENCE_GAP`,
   `INVALID_SEQUENCE`, or `REOPEN_UNVERIFIED`.
 - `CoverageLedger`: the reference implementation shipped in `model/`.
 
