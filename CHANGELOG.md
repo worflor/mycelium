@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-04 - Agent-link refusal replay provenance
+
+`agent.link@1` records whether a refusal came from the remembered ledger. A recoverable mutating failure is first returned
+with `replayed = false`; retries after reconnect or handover return the cached `FAILED` refusal with `replayed = true`
+without invoking the handler again. Fresh refusals and live `BUSY` refusals remain unmarked. The three-argument
+`Refused` constructor remains available and defaults to `false`.
+
+Verification: the direct agent-link harness passes 27 reference assertions and catches all 20 rejection entries,
+including a fixture that remembers the failure but omits replay provenance. The complete repository check passes
+all 18 contracts and 126 rejection fixtures, 274 plugin assertions and Java 8, 16, 17, 21 and 25 era gates.
+
 ## 2026-10-04 - Chat coverage ledger
 
 Added `chat.coverage@1`, an immutable sequence ledger for explicitly established public-event runs. Durable commits

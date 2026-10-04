@@ -50,6 +50,7 @@ public final class Run {
                         link("RetryingLink", Flaw.RETRYING, "L7:failure-is-remembered"),
                         link("AbandoningErrorLink", Flaw.ABANDON_ERROR, "L7:failure-is-remembered"),
                         link("AbandoningErrorHandoverLink", Flaw.ABANDON_ERROR, "L8:dedup-survives-handover"),
+                        link("MissingRefusalReplayLink", Flaw.NO_REFUSAL_REPLAY, "L10:failed-refusal-replayed"),
                         link("OpaqueFailureLink", Flaw.OPAQUE_FAILURE, "L9:failure-has-diagnostic"),
                         // a correct link in every other way that keeps its own memory whatever ledger it is given:
                         // the replaced consumer's requests in flight run twice

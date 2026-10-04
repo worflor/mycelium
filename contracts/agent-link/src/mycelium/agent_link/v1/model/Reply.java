@@ -14,7 +14,20 @@ public sealed interface Reply permits Reply.Answered, Reply.Refused {
         }
     }
 
-    /** Not answered, and why. {@code FAILED} is a recoverable handler failure; fatal failures can leave retries {@code BUSY}. */
-    record Refused(String id, Refusal refusal, String detail) implements Reply {
+    /** Not answered, and why. {@code replayed} marks a remembered refusal returned for a mutating retry. */
+    record Refused(String id, Refusal refusal, String detail, boolean replayed) implements Reply {
+        public Refused {
+            if (refusal == Refusal.BUSY && replayed) {
+                throw new IllegalArgumentException("a live BUSY refusal is not a remembered reply");
+            }
+        }
+
+        public Refused(String id, Refusal refusal, String detail) {
+            this(id, refusal, detail, false);
+        }
+
+        public Refused replay() {
+            return refusal == Refusal.BUSY ? this : new Refused(id, refusal, detail, true);
+        }
     }
 }

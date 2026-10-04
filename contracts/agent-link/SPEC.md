@@ -12,10 +12,10 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 
 - `Request(id, method, mutating, bytes, params)`: one inbound call. `mutating` is the caller's declaration that running
   it twice would be wrong. `bytes` is the frame's size on the wire.
-- `Reply`: `Answered(id, result, replayed)` or `Refused(id, refusal, detail)`, with `Refusal` one of `UNAUTHENTICATED`,
+- `Reply`: `Answered(id, result, replayed)` or `Refused(id, refusal, detail, replayed)`, with `Refusal` one of `UNAUTHENTICATED`,
   `TOO_LARGE`, `UNKNOWN_METHOD`, `INVALID`, `FAILED` (a recoverable handler failure: the detail is its nonblank message,
   or its fully qualified class name when it has none), `BUSY` (a retry arrived while the first is still running or an
-  unrecoverable failure left its outcome indeterminate).
+  unrecoverable failure left its outcome indeterminate). The three-argument `Refused` constructor means `replayed = false`.
 - `Handler`: `knows(method)`, `handle(method, params)`. The world-touching side, supplied by the consumer.
 - `Limits(maxFrameBytes, rememberReplies)`.
 - `Link`: `hello(token)`, `receive(request)`, `dropped()`, `remembered()`.
@@ -38,6 +38,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | L7 | `L7:failure-is-remembered` | A mutating request whose handler throws a recoverable `Exception` or `Error` is answered `FAILED`, and a retry gets the same refusal without running again (it may have half-happened). A fatal `ThreadDeath` or `VirtualMachineError` other than `StackOverflowError` propagates without releasing the claim; retries are refused `BUSY` and are not run again because a reply may be impossible to construct safely |
 | L8 | `L8:dedup-survives-handover` | Two links over one `Ledger` (a consumer replaced while the server runs): a mutating request the first answered is not run by the second (replayed), one the first is still running or left indeterminate by a fatal error is refused `BUSY` by the second and not run beside it, and one whose handler failed recoverably is not run again |
 | L9 | `L9:failure-has-diagnostic` | A handler failure preserves its nonblank message; a null, empty or blank message is replaced by the exception's fully qualified class name. A remembered failure retains that detail across reconnects |
+| L10 | `L10:failed-refusal-replayed` | The first recoverable `FAILED` refusal has `replayed = false`; when that mutating request is retried from the ledger after reconnect or handover, the refusal has `replayed = true`. A live `BUSY` refusal is never marked replayed |
 | B1 | `B1:delay-within-bounds` | Every delay is at least 1 ms and at most `capMs`, for every attempt and every `u` |
 | B2 | `B2:envelope-grows-to-cap` | The largest possible delay never shrinks as attempts grow, and reaches `capMs` |
 | B3 | `B3:never-gives-up` | A delay exists for every attempt up to `Integer.MAX_VALUE`, without overflow |
@@ -65,6 +66,7 @@ Written for Recon (`dev.woflo.recon`), whose mod dials its core and serves the c
 | `GuessingLink` | Passes unknown methods to the handler | `L6:unknown-refused` |
 | `RetryingLink` | Forgets checked failures, so a half-done mutation is run again | `L7:failure-is-remembered` |
 | `AbandoningErrorLink` | Abandons after a recoverable `Error`, so the half-done mutation runs again | `L7:failure-is-remembered`, `L8:dedup-survives-handover` |
+| `MissingRefusalReplayLink` | Remembers a failed mutation and avoids re-execution but returns its cached refusal with `replayed = false` | `L10:failed-refusal-replayed` |
 | `OpaqueFailureLink` | Serializes a missing exception message as "null", or returns an empty diagnostic | `L9:failure-has-diagnostic` |
 | `ParochialLink` | Keeps its own memory whatever ledger it is given: the request in flight when its consumer is replaced runs twice | `L8:dedup-survives-handover` |
 | `MisroutedLink` | Replies under the wrong id | `P2:reply-correlates` |

@@ -60,7 +60,11 @@ public final class LinkSession implements Link {
             if (r.mutating()) {
                 Reply seen = ledger.enter(id);
                 if (seen != null) {
-                    return seen instanceof Reply.Answered a ? a.replay() : seen;
+                    if (seen instanceof Reply.Answered answered) return answered.replay();
+                    if (seen instanceof Reply.Refused refused && refused.refusal() != Reply.Refusal.BUSY) {
+                        return refused.replay();
+                    }
+                    return seen;
                 }
             }
         }

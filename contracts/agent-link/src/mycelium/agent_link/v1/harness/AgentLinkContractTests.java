@@ -59,6 +59,7 @@ public final class AgentLinkContractTests {
         l6Unknown(c);
         l7FailureRemembered(c);
         l8SurvivesHandover(c);
+        l10FailedRefusalReplay(c);
         l9FailureDiagnostic(c);
         p1ExecutesAndAnswers(c);
         p2Correlates(c);
@@ -136,7 +137,8 @@ public final class AgentLinkContractTests {
         Request r = new Request("r9", "retry", true, 10, "{}");
         h.reentry = r;
         l.receive(r);
-        boolean ok = h.runs("retry") == 1 && h.inner instanceof Reply.Refused f && f.refusal() == Reply.Refusal.BUSY;
+        boolean ok = h.runs("retry") == 1 && h.inner instanceof Reply.Refused f
+                && f.refusal() == Reply.Refusal.BUSY && !f.replayed();
         c.that(ok, "L1:no-concurrent-twin");
         Reply after = l.receive(r);
         c.that(after instanceof Reply.Answered a && a.replayed() && h.runs("retry") == 1, "L1:at-most-once");
@@ -168,8 +170,14 @@ public final class AgentLinkContractTests {
         boolean ok = bad && good && h.runs("give") == 1
                 && refused(before, Reply.Refusal.UNAUTHENTICATED)
                 && refused(afterBad, Reply.Refusal.UNAUTHENTICATED)
-                && refused(afterDrop, Reply.Refusal.UNAUTHENTICATED);
-        boolean nullHello = !l.hello(null) && refused(l.receive(give("e")), Reply.Refusal.UNAUTHENTICATED);
+                && refused(afterDrop, Reply.Refusal.UNAUTHENTICATED)
+                && before instanceof Reply.Refused beforeHello && !beforeHello.replayed()
+                && afterBad instanceof Reply.Refused badHello && !badHello.replayed()
+                && afterDrop instanceof Reply.Refused dropped && !dropped.replayed();
+        boolean nullAccepted = !l.hello(null);
+        Reply nullHelloReply = l.receive(give("e"));
+        boolean nullHello = nullAccepted && refused(nullHelloReply, Reply.Refusal.UNAUTHENTICATED)
+                && nullHelloReply instanceof Reply.Refused refusedNull && !refusedNull.replayed();
         c.that(ok && nullHello, "L3:no-work-before-hello");
     }
 
@@ -192,7 +200,8 @@ public final class AgentLinkContractTests {
         Link l = fresh(h, new Limits(100, 8));
         Reply big = l.receive(new Request("big", "give", true, 101, "{}"));
         Reply edge = l.receive(new Request("edge", "give", true, 100, "{}"));
-        c.that(refused(big, Reply.Refusal.TOO_LARGE) && edge instanceof Reply.Answered && h.runs("give") == 1,
+        c.that(refused(big, Reply.Refusal.TOO_LARGE) && big instanceof Reply.Refused oversized && !oversized.replayed()
+                        && edge instanceof Reply.Answered && h.runs("give") == 1,
                 "L5:oversize-refused");
     }
 
@@ -202,8 +211,12 @@ public final class AgentLinkContractTests {
         Link l = fresh(h, Limits.defaults());
         Reply unknown = l.receive(new Request("u1", "nope", false, 5, "{}"));
         Reply blank = l.receive(new Request("  ", "give", true, 5, "{}"));
-        c.that(refused(unknown, Reply.Refusal.UNKNOWN_METHOD) && h.runs("nope") == 0, "L6:unknown-refused");
-        c.that(refused(blank, Reply.Refusal.INVALID) && h.runs("give") == 0, "L6:unknown-refused");
+        c.that(refused(unknown, Reply.Refusal.UNKNOWN_METHOD)
+                        && unknown instanceof Reply.Refused unknownRefusal && !unknownRefusal.replayed()
+                        && h.runs("nope") == 0, "L6:unknown-refused");
+        c.that(refused(blank, Reply.Refusal.INVALID)
+                        && blank instanceof Reply.Refused invalidRefusal && !invalidRefusal.replayed()
+                        && h.runs("give") == 0, "L6:unknown-refused");
     }
 
     /** L7: a mutation that threw may have half-happened: its retry gets the same refusal and does not run. */
@@ -222,7 +235,9 @@ public final class AgentLinkContractTests {
         Reply stackFirst = receiveError(errorLink, stack);
         Reply stackAgain = receiveError(errorLink, stack);
         c.that(stackFirst instanceof Reply.Refused f && f.refusal() == Reply.Refusal.FAILED
-                        && "java.lang.StackOverflowError".equals(f.detail()) && stackFirst.equals(stackAgain)
+                        && "java.lang.StackOverflowError".equals(f.detail())
+                        && stackAgain instanceof Reply.Refused retryStack && f.id().equals(retryStack.id())
+                        && f.refusal() == retryStack.refusal() && f.detail().equals(retryStack.detail())
                         && errors.runs("stack") == 1,
                 "L7:failure-is-remembered recoverable-error");
 
@@ -230,7 +245,9 @@ public final class AgentLinkContractTests {
         Reply plainFirst = receiveError(errorLink, plain);
         Reply plainAgain = receiveError(errorLink, plain);
         c.that(plainFirst instanceof Reply.Refused f && f.refusal() == Reply.Refusal.FAILED
-                        && "recoverable error".equals(f.detail()) && plainFirst.equals(plainAgain)
+                        && "recoverable error".equals(f.detail())
+                        && plainAgain instanceof Reply.Refused retryError && f.id().equals(retryError.id())
+                        && f.refusal() == retryError.refusal() && f.detail().equals(retryError.detail())
                         && errors.runs("error") == 1,
                 "L7:failure-is-remembered nonfatal-error");
 
@@ -302,7 +319,9 @@ public final class AgentLinkContractTests {
         Reply stackFailed = receiveError(a, stack);
         Reply stackRetry = receiveError(b, stack);
         boolean stackRemembered = stackFailed instanceof Reply.Refused f && f.refusal() == Reply.Refusal.FAILED
-                && stackFailed.equals(stackRetry) && first.runs("stack") == 1 && second.runs("stack") == 0;
+                && stackRetry instanceof Reply.Refused replayed && f.id().equals(replayed.id())
+                && f.refusal() == replayed.refusal() && f.detail().equals(replayed.detail())
+                && first.runs("stack") == 1 && second.runs("stack") == 0;
 
         Request fatal = new Request("h5", "fatal", true, 5, "{}");
         boolean fatalEscaped = receiveOutOfMemory(a, fatal);
@@ -313,6 +332,37 @@ public final class AgentLinkContractTests {
 
         c.that(answered && busy && finished && refused && stackRemembered && fatalHeld,
                 "L8:dedup-survives-handover");
+    }
+
+    /** L10: cached failed mutations carry replay provenance after reconnect and consumer handover. */
+    private void l10FailedRefusalReplay(Check c) {
+        Counting reconnectHandler = new Counting();
+        Link reconnect = fresh(reconnectHandler, Limits.defaults());
+        Request reconnectRequest = new Request("failed-reconnect", "boom", true, 5, "{}");
+        Reply reconnectInitial = reconnect.receive(reconnectRequest);
+        reconnect.dropped();
+        reconnect.hello(TOKEN);
+        Reply reconnectRetry = reconnect.receive(reconnectRequest);
+        boolean reconnected = reconnectInitial instanceof Reply.Refused freshFailure
+                && freshFailure.refusal() == Reply.Refusal.FAILED && !freshFailure.replayed()
+                && reconnectRetry instanceof Reply.Refused cachedFailure
+                && cachedFailure.refusal() == Reply.Refusal.FAILED && cachedFailure.replayed()
+                && reconnectHandler.runs("boom") == 1;
+
+        Ledger ledger = new MemoryLedger(16);
+        Counting original = new Counting();
+        Counting replacement = new Counting();
+        Link first = handover(original, ledger);
+        Link second = handover(replacement, ledger);
+        Request request = new Request("failed-handover", "boom", true, 5, "{}");
+        Reply initial = first.receive(request);
+        first.dropped();
+        Reply retry = second.receive(request);
+        boolean ok = initial instanceof Reply.Refused fresh && fresh.refusal() == Reply.Refusal.FAILED
+                && !fresh.replayed() && retry instanceof Reply.Refused cached
+                && cached.refusal() == Reply.Refusal.FAILED && cached.replayed()
+                && original.runs("boom") == 1 && replacement.runs("boom") == 0;
+        c.that(reconnected && ok, "L10:failed-refusal-replayed");
     }
 
     private Link handover(Counting h, Ledger ledger) {
@@ -342,7 +392,9 @@ public final class AgentLinkContractTests {
             String expected = message == null || message.isBlank()
                     ? "java.util.concurrent.TimeoutException" : message;
             c.that(first instanceof Reply.Refused failed && failed.refusal() == Reply.Refusal.FAILED
-                            && expected.equals(failed.detail()) && first.equals(retry) && runs[0] == 1,
+                    && expected.equals(failed.detail())
+                    && retry instanceof Reply.Refused replayed
+                    && expected.equals(replayed.detail()) && runs[0] == 1,
                     "L9:failure-has-diagnostic");
         }
     }

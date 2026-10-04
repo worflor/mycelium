@@ -19,7 +19,7 @@ import java.util.Set;
  * second correct implementation.
  */
 public final class FlexLink implements Link {
-    public enum Flaw { NONE, NO_OP, FORGETFUL, RACING, AMNESIAC, TRUSTING, HOARDING, GLUTTON, GUESSING, RETRYING, ABANDON_ERROR, MISROUTED, STALE_READS, OPAQUE_FAILURE }
+    public enum Flaw { NONE, NO_OP, FORGETFUL, RACING, AMNESIAC, TRUSTING, HOARDING, GLUTTON, GUESSING, RETRYING, ABANDON_ERROR, NO_REFUSAL_REPLAY, MISROUTED, STALE_READS, OPAQUE_FAILURE }
 
     private final String token;
     private final Handler handler;
@@ -69,16 +69,17 @@ public final class FlexLink implements Link {
             return new Reply.Answered(id, "ok", false);
         }
         boolean remember = (r.mutating() || flaw == Flaw.STALE_READS) && flaw != Flaw.FORGETFUL;
-        boolean handed = remember && shared != null && (flaw == Flaw.NONE || flaw == Flaw.ABANDON_ERROR);
+        boolean handed = remember && shared != null
+                && (flaw == Flaw.NONE || flaw == Flaw.ABANDON_ERROR || flaw == Flaw.NO_REFUSAL_REPLAY);
         if (handed) {
             Reply seen = shared.enter(id);
             if (seen != null) {
-                return seen instanceof Reply.Answered a ? a.replay() : seen;
+                return replay(seen);
             }
         } else if (remember) {
             Reply seen = replies.get(id);
             if (seen != null) {
-                return seen instanceof Reply.Answered a ? a.replay() : seen;
+                return replay(seen);
             }
             if (flaw != Flaw.RACING && !running.add(id)) {
                 return new Reply.Refused(id, Reply.Refusal.BUSY, "");
@@ -123,6 +124,13 @@ public final class FlexLink implements Link {
             }
         }
         return reply;
+    }
+
+    private Reply replay(Reply seen) {
+        if (seen instanceof Reply.Answered answered) return answered.replay();
+        if (flaw != Flaw.NO_REFUSAL_REPLAY && seen instanceof Reply.Refused refused
+                && refused.refusal() != Reply.Refusal.BUSY) return refused.replay();
+        return seen;
     }
 
     @SuppressWarnings("removal")
