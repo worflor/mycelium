@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "note": "Design-time registry of contract packages: the one place a contract's id, path and package are declared together. Every Mycelium task reads it; the runner scripts find packages on disk; the repository check proves the two agree, both ways. Every field is read by code and no other field may appear (ContractRegistry refuses unknown fields). 'supersedes' names the contract this one replaces: a build may import one of the two, never both. 'provenance' is history for a reader (who a contract was written for, where it was promoted from): it is not checked and says nothing about the present. Which artifacts carry a contract today is in each artifact's own evidence manifest (META-INF/mycelium/evidence.json), not here. Status 'reference' means: pure reference implementation and rejection matrix exist; no game-target evidence is implied (DESIGN §11).",
+  "note": "Design-time registry of contract packages: the one place a contract's id, path and package are declared together. Every Mycelium task reads it; the runner scripts find packages on disk; the repository check proves the two agree, both ways. Every field is read by code and no other field may appear (ContractRegistry refuses unknown fields). 'supersedes' names the contract this one replaces: a build may import one of the two, never both. 'provenance' is history for a reader (who a contract was written for, where it was promoted from): it is not checked and says nothing about the present. Which artifacts carry a contract today is in each artifact's own evidence manifest (META-INF/mycelium/evidence.json), not here. Status 'reference' means: pure reference implementation and rejection matrix exist; no game-target evidence is implied (DESIGN §11). Status 'retired' means: no known consumer carries the contract any more and none should start; the package and its harness stay so an older build still resolves it, and its SPEC says why it was retired.",
   "contracts": [
     {
       "id": "inventory.transfer@1",
@@ -91,7 +91,7 @@
       "id": "chat.coverage@1",
       "path": "chat-coverage",
       "package": "mycelium.chat_coverage.v1",
-      "status": "reference",
+      "status": "retired",
       "provenance": "written for Recon"
     }
   ]

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-05 - Chat coverage retired
+
+`chat.coverage@1` has registry status `retired`, and its SPEC says so. Recon, the only consumer, redacts the logs it
+reads instead of withholding them until a coverage witness proves every public line was recorded, so nothing carries the
+contract. The package, its harness and its rejection matrix are unchanged and still run, so an older build keeps
+resolving it. The registry's note defines the new status value.
+
+Verification: the complete repository check passes all 18 packages, 132 rejection-matrix entries, 274 plugin assertions
+and the Java 8, 16, 17, 21 and 25 era gates, with `chat.coverage@1` still resolving and passing under its `retired` status.
+
 ## 2026-10-04 - Bounded agent-link admission
 
 `agent.link@1` supplies an additive request admission budget. One lease reserves a retained job and its encoded UTF-8

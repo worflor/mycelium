@@ -1,5 +1,10 @@
 # chat.coverage@1
 
+**Retired.** No consumer carries this contract. Recon, the consumer it was written for, redacts what it reads instead
+of withholding it for want of a coverage claim, so it keeps no ledger whose completeness must be proven. The package
+stays: its laws still hold for the reference implementation, its harness still runs, and a build that imports it still
+resolves it. A new consumer should not start from it. The registry's status for the package is `retired`.
+
 Tracking whether an owned public-chat stream is complete at explicitly acknowledged storage boundaries. A host can
 miss a line when opening or writing its fingerprint ledger fails, when a line exceeds a cap, or when a fallback path
 silently drops it. A later diagnostic must not treat that partial history as healthy. This contract models the coverage
