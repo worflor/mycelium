@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-06 - myceliumRange runs after compileJava
+
+`myceliumRange` depends on `compileJava` as well as `processResources`. ForgeGradle (Forge 1.21 and later) writes classes
+and processed resources into one directory, and Gradle refuses a task that reads a directory another task writes without
+a declared order. The `range-consumer` fixture takes `-PsharedOutput` to lay its output out that way; the build is refused
+without the order and passes with it.
+
 ## 2026-10-06 - chat.invocation@1: a gate that has been told nothing, and settings that change it
 
 `Gate.settings(Rules)` (a `default` method that ignores its argument) and `new ChatGate()` (the default rules) are added,

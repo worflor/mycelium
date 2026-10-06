@@ -131,4 +131,5 @@ its compile-only ASM 4 aggregate.
 
 `./gradlew -p gradle-plugin/src/test/fixtures/range-consumer check` proves a Fabric artifact's metadata written from
 its range and its evidence manifest carrying the claim; `-PrangeBreak=wall` and `-PrangeBreak=metadata` each plant a
-break `myceliumRange` must refuse by name.
+break `myceliumRange` must refuse by name, and `-PsharedOutput` puts classes and resources in one directory, as
+ForgeGradle does, which the task must order itself after `compileJava` to read.

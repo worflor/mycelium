@@ -318,7 +318,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
             });
             // The range gate (docs/decisions/0009): only for an artifact that declares one. It reads the processed resources, which
-            // do not depend on the jar, so the evidence it feeds can go into the jar.
+            // do not depend on the jar, so the evidence it feeds can go into the jar. It also runs after compileJava because
+            // ForgeGradle (Forge 1.21 and later) writes classes and resources into one directory.
             project.afterEvaluate(p -> {
                 if (!ext.getRange().isDeclared()) {
                     return;
@@ -333,7 +334,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.getResources().from(sourceSets.getByName("main").getOutput().getResourcesDir());
                     t.getResourcesDir().set(sourceSets.getByName("main").getOutput().getResourcesDir());
                     t.getReportFile().set(p.getLayout().getBuildDirectory().file("mycelium/range/range.json"));
-                    t.dependsOn(p.getTasks().named("processResources"));
+                    t.dependsOn(p.getTasks().named("processResources"), p.getTasks().named("compileJava"));
                 });
                 p.getTasks().named("check", check -> check.dependsOn(rangeTask));
                 evidenceTask.configure(t -> {

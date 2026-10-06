@@ -31,6 +31,16 @@ mycelium {
 
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
 
+// `-PsharedOutput` puts compiled classes and processed resources in one directory, as ForgeGradle does for Forge 1.21 and
+// later: `myceliumRange` reads resources from a directory compileJava also writes, so it must run after compileJava.
+if (providers.gradleProperty("sharedOutput").isPresent) {
+    val shared = layout.buildDirectory.dir("sourceSets/main")
+    sourceSets.main {
+        java.destinationDirectory.set(shared)
+        output.setResourcesDir(shared)
+    }
+}
+
 tasks.processResources {
     val minecraft = if (broken == "metadata") "1.21.1" else mycelium.compat()
     inputs.property("minecraft", minecraft)
