@@ -1204,6 +1204,8 @@ public final class SelfTest {
         java.util.function.Predicate<String> api = CompatExpr.parse("api-version", "1.20");
         that(!api.test("1.19.4") && api.test("1.20") && api.test("1.20.1") && api.test("26.1"),
                 "compat:an api-version accepts that version and every newer one, which is what a server enforces");
+        that(api.test("1.12.2") && api.test("1.8.8") && !api.test("1.13.2"),
+                "compat:an api-version is not read before 1.13, so a server there accepts the plugin whatever it says");
         for (String bad : List.of("", ">=", "[1.20", "[1.20,1.21,1.22]", "1.20.q", "(1.20)", "(,)")) {
             for (String syntax : List.of("semver", "maven")) {
                 that(refuses(() -> CompatExpr.parse(syntax, bad), ""), "compat:" + syntax + " refuses '" + bad + "' rather than accept something");
@@ -1224,8 +1226,11 @@ public final class SelfTest {
             }
         }
         that("1.20".equals(CompatExpr.render("api-version", "1.20", "1.21.x")) && "1.21".equals(CompatExpr.render("api-version", "1.21.4", "1.21.x"))
-                        && CompatExpr.render("api-version", "1.8.8", "1.12.2") == null,
-                "compat:a plugin's api-version is the range's major.minor, and none before 1.13 where the plugin is a legacy one");
+                        && CompatExpr.render("api-version", "1.8.8", "1.12.2") == null
+                        && "1.13".equals(CompatExpr.render("api-version", "1.8.8", "26.3.x"))
+                        && "1.13".equals(CompatExpr.render("api-version", "1.12.2", "1.13.2"))
+                        && "1.13".equals(CompatExpr.render("api-version", "1.13.2", "1.21.x")),
+                "compat:a plugin's api-version is the range's major.minor, 1.13 where the range reaches back before it, and none where the plugin is a legacy one");
     }
 
     // --- the range gate (docs/decisions/0009) --------------------------------------------------------------------------

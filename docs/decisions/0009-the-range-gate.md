@@ -35,7 +35,8 @@ stated once.
   segment holds a proof: a wall in a range needs a proof on each side. A wall at the range's first version cuts nothing;
 - the metadata the built artifact declares to its loader (`CompatMetadata`, read from the processed resources as
   `eras/loaders.json` describes the loader) accepts every version in the range. A plugin with no `api-version` is a
-  legacy plugin and is refused where the range includes 1.13 or later. Metadata that accepts versions beyond the range
+  legacy plugin and is refused where the range includes 1.13 or later; a server before 1.13 reads no `api-version`, so
+  a plugin that declares `1.13` holds a range that begins earlier. Metadata that accepts versions beyond the range
   (a plugin's `api-version` is a floor) is recorded, not refused;
 - pins name proof versions, and a version marked `pending` is a proof.
 

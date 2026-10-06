@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-06 - A plugin's api-version across the flattening
+
+A server before 1.13 reads no `api-version`, so the key is a floor only where it is read. `CompatExpr.parse("api-version", v)`
+accepts every version before 1.13 as well as every version from `v` on, and `render` writes a range that reaches 1.13 or
+later as `1.13` at the earliest (a range that ends before 1.13 is still written as no version). A plugin that declares
+`1.13` holds a claimed range from 1.8.8 to 26.x: a server from 1.13 on runs it as a modern plugin, with no legacy
+material support, and an older one ignores the key. A plugin that declares none is still refused wherever the range reaches
+1.13 or later, and one that declares a version newer than the range's start is still refused where it would not load.
+Self-tests: `compat:` for the predicate and the rendering.
+
 ## 2026-10-06 - myceliumRange runs after compileJava
 
 `myceliumRange` depends on `compileJava` as well as `processResources`. ForgeGradle (Forge 1.21 and later) writes classes

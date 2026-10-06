@@ -19,12 +19,16 @@ import java.util.function.Predicate;
  *       and {@code [a]} (exactly), joined by commas. A bare version is read as exactly it, not as Maven's soft preference
  *       (so a range wider than it is found, never hidden).</li>
  *   <li>{@code api-version} (Bukkit): {@code 1.20} means every version from 1.20 on, which is what a server enforces
- *       (it refuses a plugin built for a newer API than its own, and accepts older ones). No value at all is a legacy
- *       plugin, which every server accepts; the caller says so.</li>
+ *       (it refuses a plugin built for a newer API than its own, and accepts older ones), and every version before 1.13,
+ *       which reads no such key. No value at all is a legacy plugin, which every server accepts, and which a server from
+ *       1.13 on runs with legacy material support; the caller says so.</li>
  * </ul>
  * Versions order as {@link Eras#compare} orders them, so {@code 1.21} and {@code 1.21.0} are one version.
  */
 public final class CompatExpr {
+    /** The first version whose server reads a plugin's {@code api-version}; an older one ignores the key. */
+    private static final String FLATTENING = "1.13";
+
     private CompatExpr() {
     }
 
@@ -39,7 +43,7 @@ public final class CompatExpr {
             case "api-version" -> {
                 String floor = text.strip();
                 version(floor, syntax);
-                yield v -> Eras.compare(v, floor) >= 0;
+                yield v -> Eras.compare(v, FLATTENING) < 0 || Eras.compare(v, floor) >= 0;
             }
             default -> throw new IllegalArgumentException("unknown range syntax '" + syntax + "'");
         };
@@ -185,8 +189,9 @@ public final class CompatExpr {
 
     /**
      * {@code from} to {@code to} written in {@code syntax}, or {@code null} when the syntax has nothing to say (an
-     * {@code api-version} from before 1.13, which no server accepts: the plugin is a legacy one and says no version).
-     * A {@code to} that is a line ({@code 26.3.x}) ends before the next line.
+     * {@code api-version} for a range that ends before 1.13: the plugin is a legacy one and says no version). A range that
+     * reaches 1.13 or later is written as the first version a server reads the key on at the earliest, {@code 1.13}, which
+     * a server before it ignores. A {@code to} that is a line ({@code 26.3.x}) ends before the next line.
      */
     public static String render(String syntax, String from, String to) {
         boolean line = Eras.isLine(to);
@@ -208,8 +213,11 @@ public final class CompatExpr {
                 yield "[" + from + ", " + (line ? bumpLast(top) + ")" : to + "]");
             }
             case "api-version" -> {
-                String[] p = from.split("\\.");
-                yield Eras.compare(from, "1.13") < 0 || p.length < 2 ? null : p[0] + "." + p[1];
+                if (Eras.compare(top, FLATTENING) < 0) {
+                    yield null;
+                }
+                String[] p = (Eras.compare(from, FLATTENING) < 0 ? FLATTENING : from).split("\\.");
+                yield p.length < 2 ? null : p[0] + "." + p[1];
             }
             default -> throw new IllegalArgumentException("unknown range syntax '" + syntax + "'");
         };
