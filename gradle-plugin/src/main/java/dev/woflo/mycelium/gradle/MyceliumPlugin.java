@@ -317,6 +317,30 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getBaselineFile().set(ext.getSurfaceBaseline());
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
             });
+            // The range gate (docs/decisions/0009): only for an artifact that declares one. It reads the processed resources, which
+            // do not depend on the jar, so the evidence it feeds can go into the jar.
+            project.afterEvaluate(p -> {
+                if (!ext.getRange().isDeclared()) {
+                    return;
+                }
+                ArtifactLedger.Artifact claim = ext.getRange().artifact();
+                TaskProvider<RangeTask> rangeTask = p.getTasks().register("myceliumRange", RangeTask.class, t -> {
+                    t.setGroup("mycelium");
+                    t.setDescription("Holds the artifact's claimed Minecraft range to the era table, its proofs and its loader's metadata.");
+                    t.getRoot().set(ext.getRoot());
+                    t.getDeclaration().set(claim.toJson().toString());
+                    t.getSourceFingerprint().set(fingerprint);
+                    t.getResources().from(sourceSets.getByName("main").getOutput().getResourcesDir());
+                    t.getResourcesDir().set(sourceSets.getByName("main").getOutput().getResourcesDir());
+                    t.getReportFile().set(p.getLayout().getBuildDirectory().file("mycelium/range/range.json"));
+                    t.dependsOn(p.getTasks().named("processResources"));
+                });
+                p.getTasks().named("check", check -> check.dependsOn(rangeTask));
+                evidenceTask.configure(t -> {
+                    t.getRangeReport().set(rangeTask.flatMap(RangeTask::getReportFile));
+                    t.dependsOn(rangeTask);
+                });
+            });
             project.getTasks().named("compileJava", c -> c.dependsOn(isolationTask, purityTask));
             project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
                     pureShip, surfaceTask, capsuleTask));

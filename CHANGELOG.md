@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-06 - The range gate
+
+`mycelium { range { ... } }` declares the Minecraft versions an artifact says it runs on (`from` to `to`, inclusive, the
+last possibly a line) and what proves it: keystones (versions servers really run) and flex (one on each side of a wall),
+read from a consumer's ledger (`ArtifactLedger`, `artifacts.json`) or written out. `myceliumRange` fails the build when
+a wall inside the range has no proof on each side, a proof is outside the range, a version in the range is one no claimed
+platform exists on, or the metadata the built artifact declares to its loader refuses a version it claims. The
+metadata can be written from the range (`mycelium.compat()`), so it is stated once. The evidence manifest is schema 3
+and records each version as `proven`, `pending` or `interpolated`, with the metadata check (or why it was not made) and
+that no linkage was run at the proof versions (`docs/decisions/0009-the-range-gate.md`, which says what that needs).
+
+Verification: a rejection fixture in the self-test for each way a claim fails, each refused for its reason, beside the claims the
+table lets stand (hotfix pairs, a range that begins at a wall, NeoForge on its first version, a plugin across the Bukkit
+family, an older Forge whose range lives in code) and the metadata readers over each loader's own format. The
+`range-consumer` fixture runs the task in a build of its own: metadata written from the range, the claim in the evidence
+manifest, and a planted wall break and a planted metadata break each refused by name.
+
 ## 2026-10-06 - The era table says where a loader exists, how the game is named and where a port breaks
 
 `eras/minecraft.json` and `eras/loaders.json` are schema 2.

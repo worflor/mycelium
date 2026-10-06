@@ -71,7 +71,9 @@ plugins {
 Optional blocks: `pure { }` declares the mod's pure layer, which is proven on every era and shipped downgraded where
 an era needs it (`docs/eras.md`); `integration(...)` declares an optional integration, kept isolated
 (`docs/integrations.md`); `ports(...)` names the mod's own packages that are meant to touch the platform, for
-`myceliumSurface` (`docs/eras.md`).
+`myceliumSurface` (`docs/eras.md`); `range { }` declares the Minecraft versions the artifact runs on and what proves it,
+read from a ledger or written out, and `myceliumRange` holds the claim to the era table, the proofs and the loader's own
+metadata (`docs/decisions/0009-the-range-gate.md`).
 
 `artifactJars("jar")` selects the Jar tasks that receive the artifact's private pure classes and evidence. This keeps
 independent probes and source archives separate. An empty selection preserves attachment to every Jar task; a
@@ -91,6 +93,7 @@ apply regardless of which archives receive the artifact.
 | `myceliumDowngradeJar` | Optionally isolates declared feature libraries and their callers under artifact-owned packages, then the jar's own classes, not only the pure layer's, are downgraded and shaded for an era older than the Java they were compiled for. Required JvmDowngrader annotation metadata is carried under the same private prefix from its target-version API classes. The result is held to the era's Java: no call without a backport, every `java.*` reference present on a real JVM of it. Runs only when a consumer's loader step takes its output (`docs/eras.md`). |
 | `myceliumCapsule` | When `mycelium.capsule` is configured, checks outer and nested class-file ceilings, source-to-runtime class mappings, and erased class/member references from bytecode and `StackMapTable` frames against ordered, declared runtime artifacts. Generic `Signature` attributes and source-debug local-variable tables are not checked; the gate does not replace JVM verification. Writes exact SHA-256 inputs to `build/mycelium/capsule/capsule.json` and runs in `check`. |
 | `myceliumSurface` | Reports platform references per package of the mod's own sources, split into declared `ports(...)` and everything else: the cost the next rung would have to eat (`docs/eras.md`). |
+| `myceliumRange` | When `mycelium.range` is declared, holds the claimed Minecraft versions to the era table (the loader exists on each), the proofs (a keystone, and a proof on each side of every wall inside the range) and the metadata the built artifact declares to its loader (it accepts every claimed version). Records each version as `proven`, `pending` or `interpolated` in `build/mycelium/range/range.json`, which the evidence manifest carries. In `check`. |
 | `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (every Jar by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |
@@ -125,3 +128,7 @@ downgrade is needed. Builds that declare no private libraries retain the existin
 `./gradlew -p gradle-plugin/src/test/fixtures/private-consumer check` proves compilation with an incompatible platform
 aggregate on the classpath and executes the isolated artifact on Java 8. The fixture references ASM 9 APIs absent from
 its compile-only ASM 4 aggregate.
+
+`./gradlew -p gradle-plugin/src/test/fixtures/range-consumer check` proves a Fabric artifact's metadata written from
+its range and its evidence manifest carrying the claim; `-PrangeBreak=wall` and `-PrangeBreak=metadata` each plant a
+break `myceliumRange` must refuse by name.

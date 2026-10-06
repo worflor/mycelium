@@ -75,8 +75,14 @@ val requiredJava = JavaVersion.toVersion(mycelium.javaFor(sc.current.version))  
   `myceliumEraJava25` on 26.x). Adding a 1.12.2 target adds a Java 8 gate. Nothing else changes.
 - **Readiness.** `allEras()` runs every Java some era has used. Mycelium runs it on itself. A mod that runs it on its
   main project keeps its pure layer ready for a version nobody has ported yet.
-- **Evidence.** `META-INF/mycelium/evidence.json` records the target's era (Minecraft, Java, loaders, names) and every
-  era gate's result, including which bundles it expected, checked and skipped.
+- **Evidence.** `META-INF/mycelium/evidence.json` records the target's era (Minecraft, Java, the loaders it offers, the
+  names the source and each loader use), the artifact's range and every era gate's result, including which bundles it
+  expected, checked and skipped.
+- **Range.** An artifact that declares the Minecraft versions it runs on (`mycelium { range { ... } }`, or a ledger of
+  them) is held by `myceliumRange` to the walls above: a wall inside its range needs a proof version on each side, the
+  loader must exist on every version of it, and the metadata the built artifact gives its loader must accept all of them.
+  Each version is recorded as `proven`, `pending` or `interpolated`
+  (`docs/decisions/0009-the-range-gate.md`).
 
 ## The pure layer, declared
 

@@ -36,9 +36,12 @@ public final class Loaders {
      * Where a built artifact declares the Minecraft versions it accepts: {@code files} (the first that exists, as paths
      * in the artifact's resources), the {@code format} they are in, how to find the value ({@code path} for json,
      * {@code table}, {@code where} and {@code key} for toml, {@code key} for yaml) and the {@code syntax} it is written in.
+     * {@code from} is the first Minecraft version whose artifacts declare it there, with {@code before} saying where an
+     * older artifact declares it instead (code the build does not read); both are {@code null} when the file serves every
+     * version the loader exists on.
      */
     public record Compat(List<String> files, String format, String path, String table, Map<String, String> where, String key,
-                         String syntax) {
+                         String syntax, String from, String before) {
     }
 
     /** One loader: its family, the package roots it puts in reach, where that fact comes from, and where it declares compatibility. */
@@ -132,7 +135,13 @@ public final class Loaders {
             throw new IllegalStateException(file + ": '" + loader + "' compat in " + format + " needs "
                     + (format.equals("json") ? "a path" : format.equals("toml") ? "a table and a key" : "a key"));
         }
-        return new Compat(files, format, path, table, where, key, syntax);
+        String from = c.has("from") ? c.get("from").getAsString() : null;
+        String before = c.has("before") ? c.get("before").getAsString() : null;
+        if ((from == null) != (before == null)) {
+            throw new IllegalStateException(file + ": '" + loader + "' compat has a 'from' or a 'before' without the other:"
+                    + " an older artifact declares its versions somewhere else, and the table says where");
+        }
+        return new Compat(files, format, path, table, where, key, syntax, from, before);
     }
 
     private static List<String> packages(JsonObject o, String file, String what) {

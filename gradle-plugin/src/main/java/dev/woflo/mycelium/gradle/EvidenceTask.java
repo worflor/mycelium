@@ -6,12 +6,16 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
 
 import java.io.IOException;
@@ -69,6 +73,12 @@ public abstract class EvidenceTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getUsageReportDir();
 
+    /** {@code myceliumRange}'s report, if the artifact declares a range (docs/decisions/0009). */
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.NONE)
+    public abstract RegularFileProperty getRangeReport();
+
     /** {@code myceliumPureShip}'s report dir, if it ran: {@code ship.json} (docs/decisions/0006). */
     @Internal
     public abstract DirectoryProperty getPureShipReportDir();
@@ -83,7 +93,7 @@ public abstract class EvidenceTask extends DefaultTask {
         List<String> ids = getContracts().get();
 
         JsonObject evidence = new JsonObject();
-        evidence.addProperty("schema", 2);
+        evidence.addProperty("schema", 3);
         evidence.addProperty("generatedAt", Instant.now().toString());
         JsonObject artifact = new JsonObject();
         artifact.addProperty("id", getArtifactId().get());
@@ -115,6 +125,16 @@ public abstract class EvidenceTask extends DefaultTask {
             e.add("loaders", loaders);
             evidence.add("era", e);
         }
+        JsonObject range;
+        if (getRangeReport().isPresent() && getRangeReport().get().getAsFile().isFile()) {
+            range = JsonParser.parseString(Files.readString(getRangeReport().get().getAsFile().toPath(), StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+        } else {
+            range = new JsonObject();
+            range.addProperty("checked", false);
+            range.addProperty("why", "this artifact declares no range (mycelium { range { ... } })");
+        }
+        evidence.add("range", range);
         // Every check below says whether it ran: {"checked": true, ...} or {"checked": false, "why": ...}. A check that is
         // absent, or silent, would read the same as one that ran and held (docs/decisions/0004).
         Path erasDir = getErasReportDir().isPresent() ? getErasReportDir().get().getAsFile().toPath() : null;
@@ -237,7 +257,7 @@ public abstract class EvidenceTask extends DefaultTask {
         Path out = getOutputDir().get().getAsFile().toPath();
         Files.createDirectories(out);
         Files.writeString(out.resolve("evidence.json"),
-                new GsonBuilder().setPrettyPrinting().create().toJson(evidence), StandardCharsets.UTF_8);
+                new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(evidence), StandardCharsets.UTF_8);
         getLogger().lifecycle("Mycelium: evidence manifest written for {} contract(s) ({})", ids.size(), getTargetProfile().get());
     }
 

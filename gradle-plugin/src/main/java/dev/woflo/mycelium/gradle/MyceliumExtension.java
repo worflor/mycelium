@@ -91,6 +91,44 @@ public abstract class MyceliumExtension {
         return Eras.load(getRoot().get().getAsFile()).of(minecraft).outerJavaFor(loader, minecraft);
     }
 
+    /**
+     * The Minecraft versions this artifact says it runs on and what proves it (docs/decisions/0009): read from the
+     * consumer's ledger or written here, held by {@code myceliumRange} to the era table, the proofs and the loader's own
+     * metadata, and recorded in the evidence manifest.
+     */
+    @Nested
+    public abstract RangeSpec getRange();
+
+    public void range(Action<? super RangeSpec> action) {
+        action.execute(getRange());
+    }
+
+    /**
+     * The declared range as the loader writes it in the metadata the artifact ships (a Fabric {@code depends.minecraft},
+     * a Forge {@code versionRange}, a plugin's {@code api-version}), so what the loader enforces is the claim and not a
+     * second statement of it; {@code null} where the loader has nothing to say (a plugin before 1.13 names no API
+     * version). Needs {@code root} and a range.
+     */
+    public String compat() {
+        ArtifactLedger.Artifact a = getRange().artifact();
+        Loaders.Loader loader = Loaders.load(getRoot().get().getAsFile()).loaders().get(a.loader());
+        if (loader == null || loader.compat() == null) {
+            throw new IllegalStateException("the loader '" + a.loader() + "' declares no compatibility the build can write (eras/loaders.json)");
+        }
+        return CompatExpr.render(loader.compat().syntax(), a.from(), a.to());
+    }
+
+    /** A version the ledger pins for the artifact's own node (a loader's API, say); a miss names what it does pin. */
+    public String pin(String name) {
+        ArtifactLedger.Artifact a = getRange().artifact();
+        String value = a.pinsFor(a.node()).get(name);
+        if (value == null) {
+            throw new IllegalArgumentException("the ledger pins no '" + name + "' for " + a.id() + " at " + a.node()
+                    + "; it pins " + a.pinsFor(a.node()).keySet() + ". Add it to the row's pins.");
+        }
+        return value;
+    }
+
     /** The Java versions the era gates run: {@code eras(...)} if declared, else the target Minecraft's own era. */
     public List<Integer> resolvedEras() {
         if (!getEras().get().isEmpty()) {

@@ -41,6 +41,7 @@ public final class SelfTest {
         evidence();
         loaders(root);
         compat();
+        ranges(root);
         shipping();
         artifactJars();
         downgrading();
@@ -1225,6 +1226,206 @@ public final class SelfTest {
         that("1.20".equals(CompatExpr.render("api-version", "1.20", "1.21.x")) && "1.21".equals(CompatExpr.render("api-version", "1.21.4", "1.21.x"))
                         && CompatExpr.render("api-version", "1.8.8", "1.12.2") == null,
                 "compat:a plugin's api-version is the range's major.minor, and none before 1.13 where the plugin is a legacy one");
+    }
+
+    // --- the range gate (docs/decisions/0009) --------------------------------------------------------------------------
+
+    static ArtifactLedger.Artifact claim(String loader, String from, String to, List<String> keystones, List<String> flex,
+                                         List<String> platforms, List<String> pending) {
+        List<ArtifactLedger.Proof> k = new ArrayList<>();
+        keystones.forEach(v -> k.add(new ArtifactLedger.Proof(v, List.of())));
+        List<ArtifactLedger.Proof> f = new ArrayList<>();
+        flex.forEach(v -> f.add(new ArtifactLedger.Proof(v, List.of())));
+        return new ArtifactLedger.Artifact(loader + "-" + from, loader, from, platforms, from, to, k, f, pending, java.util.Map.of());
+    }
+
+    static ArtifactLedger.Artifact claim(String loader, String from, String to, List<String> keystones, List<String> flex) {
+        return claim(loader, from, to, keystones, flex, List.of(), List.of());
+    }
+
+    /** What the gate says of {@code a}, with the tables of the repository and what its metadata declares (null: not read). */
+    static RangeGate.Result gate(Path root, ArtifactLedger.Artifact a, CompatMetadata.Found found) {
+        return RangeGate.check(a, Eras.load(root.toFile()), Loaders.load(root.toFile()), Versions.load(root.toFile()), found);
+    }
+
+    static CompatMetadata.Found declares(String file, String value) {
+        return new CompatMetadata.Found(file, value);
+    }
+
+    /** A claim the gate refuses, for exactly the reason named: nothing else may be wrong with it. */
+    static void refused(String what, RangeGate.Result r, String fragment) {
+        that(r.findings().size() == 1 && r.findings().get(0).contains(fragment),
+                "range:" + what + " is refused as '" + fragment + "' (findings: " + r.findings() + ")");
+    }
+
+    /** As {@link #refused}, where the reason comes with others that follow from it. */
+    static void refusedAmong(String what, RangeGate.Result r, String fragment) {
+        that(r.findings().stream().anyMatch(f -> f.contains(fragment)),
+                "range:" + what + " is refused as '" + fragment + "' (findings: " + r.findings() + ")");
+    }
+
+    static void held(String what, RangeGate.Result r) {
+        that(r.findings().isEmpty(), "range:" + what + " holds (findings: " + r.findings() + ")");
+    }
+
+    static void ranges(Path root) throws IOException {
+        String fabricNarrow = ">=1.21 <=1.21.1";
+        // the claims the table lets stand
+        RangeGate.Result r = gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of()), declares("fabric.mod.json", fabricNarrow));
+        held("a hotfix pair on Fabric with its keystone", r);
+        that(r.report().getAsJsonObject("counts").get("proven").getAsInt() == 1
+                        && r.report().getAsJsonObject("counts").get("interpolated").getAsInt() == 1
+                        && r.report().getAsJsonArray("versions").get(0).getAsJsonObject().get("status").getAsString().equals("interpolated")
+                        && r.report().getAsJsonArray("versions").get(1).getAsJsonObject().get("status").getAsString().equals("proven"),
+                "range:a version with no proof of its own is recorded as interpolated, the keystone as proven: " + r.report());
+        that(!r.report().getAsJsonObject("linkage").get("checked").getAsBoolean() && r.report().getAsJsonObject("linkage").has("why"),
+                "range:the report says the gate did not link against each proof version, and why");
+        r = gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of(), List.of(), List.of("1.21.1")), declares("fabric.mod.json", fabricNarrow));
+        that(r.findings().isEmpty() && r.report().getAsJsonObject("counts").get("pending").getAsInt() == 1
+                        && r.report().getAsJsonObject("counts").get("proven").getAsInt() == 0,
+                "range:a proof declared and not yet run is recorded as pending, never as proven: " + r.report());
+        held("a hotfix pair 1.20 to 1.20.1", gate(root, claim("fabric", "1.20", "1.20.1", List.of("1.20.1"), List.of()), declares("fabric.mod.json", ">=1.20 <=1.20.1")));
+        held("a range that begins at a wall splits nothing (1.19.1)", gate(root, claim("forge", "1.19.1", "1.19.2", List.of("1.19.2"), List.of()),
+                declares("META-INF/mods.toml", "[1.19.1, 1.19.2]")));
+        held("a range that begins at a wall splits nothing (1.16.2)", gate(root, claim("fabric", "1.16.2", "1.16.5", List.of("1.16.5"), List.of()),
+                declares("fabric.mod.json", ">=1.16.2 <=1.16.5")));
+        held("NeoForge on its first version", gate(root, claim("neoforge", "1.20.1", "1.20.1", List.of("1.20.1"), List.of()), declares("META-INF/neoforge.mods.toml", "[1.20.1]")));
+        held("a wall with a proof on each side", gate(root, claim("fabric", "1.21.4", "1.21.5", List.of("1.21.5"), List.of("1.21.4")),
+                declares("fabric.mod.json", ">=1.21.4 <=1.21.5")));
+        held("a line to the newest version of it", gate(root, claim("fabric", "26.1", "26.3.x", List.of("26.3"), List.of()), declares("fabric.mod.json", ">=26.1 <26.4")));
+        held("Forge before 1.13, whose range lives in code (unchecked, and says why)", gate(root, claim("forge", "1.12.2", "1.12.2", List.of("1.12.2"), List.of()), null));
+        RangeGate.Result legacy = gate(root, claim("forge", "1.12.2", "1.12.2", List.of("1.12.2"), List.of()), declares(null, null));
+        that(legacy.findings().isEmpty() && !legacy.report().getAsJsonObject("metadata").get("checked").getAsBoolean()
+                        && legacy.report().getAsJsonObject("metadata").get("why").getAsString().contains("@Mod"),
+                "range:an older Forge's metadata is recorded as unchecked, with where it lives: " + legacy.report().get("metadata"));
+        held("a loader that declares no metadata", gate(root, claim("javaagent", "a1.2.6", "a1.2.6", List.of("a1.2.6"), List.of()), null));
+        held("a legacy plugin on Beta", gate(root, claim("bukkit", "b1.7.3", "b1.7.3", List.of("b1.7.3"), List.of()), declares("plugin.yml", null)));
+        ArtifactLedger.Artifact plugin = new ArtifactLedger.Artifact("paper-1.21.11", "paper", "1.21.11",
+                List.of("spigot", "paper", "purpur", "folia"), "1.21.11", "26.3.x",
+                List.of(new ArtifactLedger.Proof("1.21.11", List.of("paper", "purpur", "spigot")), new ArtifactLedger.Proof("26.3", List.of("paper")),
+                        new ArtifactLedger.Proof("26.2", List.of("folia"))), List.of(), List.of(), java.util.Map.of());
+        held("a plugin across the Bukkit family, each proof on the platforms that run it", gate(root, plugin, declares("plugin.yml", "1.21")));
+
+        // each way a claim fails, alone
+        refused("a wall with only the far side proved", gate(root, claim("fabric", "1.21.4", "1.21.5", List.of("1.21.5"), List.of()),
+                declares("fabric.mod.json", ">=1.21.4 <=1.21.5")), "near side of the wall at 1.21.5");
+        refused("a wall with only the near side proved", gate(root, claim("fabric", "1.21.4", "1.21.5", List.of("1.21.4"), List.of()),
+                declares("fabric.mod.json", ">=1.21.4 <=1.21.5")), "far side of the wall at 1.21.5");
+        refusedAmong("two walls with the middle unproved", gate(root, claim("fabric", "1.21.1", "1.21.5", List.of("1.21.1", "1.21.5"), List.of()),
+                declares("fabric.mod.json", ">=1.21.1 <=1.21.5")), "between the walls at 1.21.2 (item and registry holder reworks) and 1.21.4");
+        refused("a proof outside the range", gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of("1.21.4")),
+                declares("fabric.mod.json", fabricNarrow)), "'1.21.4' is outside the range 1.21 to 1.21.1");
+        refused("a proof that is no version", gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1", "1.21.9.9"), List.of()),
+                declares("fabric.mod.json", fabricNarrow)), "'1.21.9.9' is not a version the launcher names");
+        refused("no keystone", gate(root, claim("fabric", "1.21", "1.21.1", List.of(), List.of("1.21")),
+                declares("fabric.mod.json", fabricNarrow)), "declares no keystone");
+        refused("a range wider than the loader's metadata", gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of()),
+                declares("fabric.mod.json", "1.21.1")), "refuses 1.21 in the range");
+        refused("a range wider than Forge's metadata", gate(root, claim("forge", "1.21", "1.21.1", List.of("1.21.1"), List.of()),
+                declares("META-INF/mods.toml", "[1.21.1]")), "refuses 1.21 in the range");
+        refused("metadata that is not in the loader's syntax", gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of()),
+                declares("fabric.mod.json", "[1.21, 1.21.1]")), "is not a semver range");
+        refused("an artifact that carries no metadata file", gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of()),
+                declares(null, null)), "carries none of [fabric.mod.json]");
+        refused("metadata that names no Minecraft", gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of()),
+                declares("fabric.mod.json", null)), "would accept the artifact on any");
+        refused("a modern plugin with no api-version", gate(root, claim("paper", "1.21.11", "1.21.11", List.of("1.21.11"), List.of()),
+                declares("plugin.yml", null)), "declares no api-version");
+        refused("a plugin whose api-version is newer than the range's start", gate(root, claim("paper", "1.20", "1.20.1", List.of("1.20.1"), List.of()),
+                declares("plugin.yml", "1.21")), "refuses 1.20, 1.20.1 in the range");
+        refused("NeoForge before it existed", gate(root, claim("neoforge", "1.20", "1.20.1", List.of("1.20.1"), List.of()),
+                declares("META-INF/neoforge.mods.toml", "[1.20, 1.20.1]")), "neoforge begins on 1.20.1");
+        refused("Folia before it existed", gate(root, claim("folia", "1.19.3", "1.19.4", List.of("1.19.4"), List.of()),
+                declares("plugin.yml", "1.19")), "folia begins on 1.19.4");
+        refusedAmong("a loader the era does not list", gate(root, claim("quilt", "1.12", "1.12.2", List.of("1.12.2"), List.of()), null), "quilt is not in era 'modpacks'");
+        refused("a loader no table knows", gate(root, claim("riftloader", "1.21", "1.21.1", List.of("1.21.1"), List.of()), null), "'riftloader' is not one eras/loaders.json knows");
+        refused("a range that runs backwards", gate(root, claim("fabric", "1.21.1", "1.21", List.of("1.21"), List.of()), null), "runs backwards");
+        refused("a range from a version that does not exist", gate(root, claim("fabric", "1.21.55", "1.21.1", List.of("1.21.1"), List.of()), null),
+                "'1.21.55', which is not a version the launcher names");
+        refused("a range to a line with no version", gate(root, claim("fabric", "26.3", "27.x", List.of("26.3"), List.of()), null),
+                "'27.x', which is not a version, or a line with a version");
+        refusedAmong("a range that reaches back past where Forge's file begins", gate(root, claim("forge", "1.12.2", "1.13.2", List.of("1.12.2", "1.13.2"),
+                List.of()), declares("META-INF/mods.toml", "[1.12.2, 1.13.2]")), "reaches back past 1.13");
+        refusedAmong("a pending proof that is no proof", gate(root, claim("fabric", "1.21", "1.21.1", List.of("1.21.1"), List.of(), List.of(), List.of("1.21")),
+                declares("fabric.mod.json", fabricNarrow)), "'1.21' is marked pending but is neither a keystone nor a flex");
+        ArtifactLedger.Artifact pinned = new ArtifactLedger.Artifact("fabric-1.21", "fabric", "1.21", List.of(), "1.21", "1.21.1",
+                List.of(new ArtifactLedger.Proof("1.21.1", List.of())), List.of(), List.of(), java.util.Map.of("1.21", java.util.Map.of("fabric_api", "0.1")));
+        refused("a pin for a version that is not a proof", gate(root, pinned, declares("fabric.mod.json", fabricNarrow)),
+                "pins are given for '1.21', which is not a proof version");
+        refused("a platform of another family", gate(root, new ArtifactLedger.Artifact("x", "paper", "1.21.11", List.of("paper", "fabric"), "1.21.11", "1.21.11",
+                        List.of(new ArtifactLedger.Proof("1.21.11", List.of("paper"))), List.of(), List.of(), java.util.Map.of()), declares("plugin.yml", "1.21")),
+                "the platform 'fabric' is a mod and the loader 'paper' a plugin");
+        refused("a proof on a platform that does not exist there", gate(root, new ArtifactLedger.Artifact("x", "paper", "1.19.2", List.of("paper", "folia"),
+                        "1.19.2", "1.19.4", List.of(new ArtifactLedger.Proof("1.19.4", List.of("paper")), new ArtifactLedger.Proof("1.19.2", List.of("folia"))),
+                        List.of(), List.of(), java.util.Map.of()), declares("plugin.yml", "1.19")),
+                "the keystone '1.19.2' runs on 'folia', which does not exist on it (it begins on 1.19.4)");
+        refused("a proof on a platform the artifact does not claim", gate(root, new ArtifactLedger.Artifact("x", "paper", "1.21.11", List.of("paper"), "1.21.11", "1.21.11",
+                        List.of(new ArtifactLedger.Proof("1.21.11", List.of("purpur"))), List.of(), List.of(), java.util.Map.of()), declares("plugin.yml", "1.21")),
+                "runs on 'purpur', which the artifact does not claim");
+
+        // the declarations the loaders write, as the gate reads them from an artifact's own resources
+        Path dir = Files.createTempDirectory("mycelium-range");
+        try {
+            Loaders table = Loaders.load(root.toFile());
+            write(dir.resolve("fabric.mod.json"), "{\"schemaVersion\":1,\"depends\":{\"minecraft\":\">=1.21 <=1.21.1\"}}");
+            that(">=1.21 <=1.21.1".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("fabric").compat()).value()),
+                    "range:Fabric's depends.minecraft is read as written");
+            write(dir.resolve("fabric.mod.json"), "{\"depends\":{\"minecraft\":[\"1.21\",\"1.21.1\"]}}");
+            that("1.21 || 1.21.1".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("fabric").compat()).value()),
+                    "range:a Fabric list of versions is read as alternatives");
+            write(dir.resolve("fabric.mod.json"), "{\"depends\":{\"fabric-api\":\"*\"}}");
+            that(CompatMetadata.read(dir.toFile(), table.loaders().get("fabric").compat()).value() == null
+                            && CompatMetadata.read(dir.toFile(), table.loaders().get("fabric").compat()).file().equals("fabric.mod.json"),
+                    "range:a Fabric mod that says nothing of Minecraft is found, and says nothing");
+            write(dir.resolve("quilt.mod.json"), "{\"quilt_loader\":{\"depends\":[{\"id\":\"quilt_loader\",\"versions\":\">=0.2\"},{\"id\":\"minecraft\",\"versions\":\"~1.21\"}]}}");
+            that("~1.21".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("quilt").compat()).value()),
+                    "range:Quilt's depends entry for minecraft is chosen by its id");
+            write(dir.resolve("quilt.mod.json"), "{\"quilt_loader\":{\"depends\":[\"minecraft\"]}}");
+            that("*".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("quilt").compat()).value()),
+                    "range:a Quilt dependency named with no versions is any");
+            Files.createDirectories(dir.resolve("META-INF"));
+            write(dir.resolve("META-INF/mods.toml"), String.join("\n", "modLoader=\"javafml\"", "[[mods]]", "modId=\"recon\"",
+                    "[[dependencies.recon]]", "    modId=\"forge\"", "    versionRange=\"[47,)\"", "[[dependencies.recon]]", "    modId=\"minecraft\"",
+                    "    mandatory=true # needed", "    versionRange=\"[1.20, 1.20.1]\"", "    ordering=\"NONE\""));
+            that("[1.20, 1.20.1]".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("forge").compat()).value()),
+                    "range:Forge's dependency table for minecraft is chosen by its modId, among the others");
+            Files.delete(dir.resolve("META-INF/mods.toml"));
+            write(dir.resolve("META-INF/neoforge.mods.toml"), "[[dependencies.\"recon\"]]\nmodId='minecraft'\nversionRange='[1.21.1]'\n");
+            that("[1.21.1]".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("neoforge").compat()).value()),
+                    "range:NeoForge's neoforge.mods.toml is read with a quoted table name and literal strings");
+            write(dir.resolve("plugin.yml"), "name: Recon\napi-version: '1.20'\nmain: x.Y\n");
+            that("1.20".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("paper").compat()).value()), "range:a plugin's quoted api-version is read");
+            write(dir.resolve("plugin.yml"), "name: Recon\napi-version: 1.21 # newest\n");
+            that("1.21".equals(CompatMetadata.read(dir.toFile(), table.loaders().get("paper").compat()).value()), "range:a plugin's bare api-version is read");
+            write(dir.resolve("plugin.yml"), "name: Recon\n  api-version: 1.21\n");
+            that(CompatMetadata.read(dir.toFile(), table.loaders().get("paper").compat()).value() == null, "range:a nested api-version is no declaration");
+            Files.delete(dir.resolve("plugin.yml"));
+            that(CompatMetadata.read(dir.toFile(), table.loaders().get("paper").compat()).file() == null, "range:no plugin.yml is found as none");
+        } finally {
+            delete(dir);
+        }
+
+        // the ledger
+        String text = "{\"schema\":1,\"note\":\"x\",\"artifacts\":[{\"id\":\"fabric-1.21.1\",\"loader\":\"fabric\",\"node\":\"1.21.1\",\"jar\":\"fabric\","
+                + "\"range\":{\"from\":\"1.21\",\"to\":\"1.21.1\"},\"keystones\":[\"1.21.1\"],\"flex\":[{\"mc\":\"1.21\",\"on\":[\"fabric\"]}],"
+                + "\"pending\":[\"1.21\"],\"pins\":{\"*\":{\"loader\":\"0.19\"},\"1.21.1\":{\"api\":\"0.116\"}},\"ladder\":{\"anything\":true}},"
+                + "{\"id\":\"forge-1.21.1\",\"loader\":\"forge\",\"node\":\"1.21.1\",\"range\":{\"from\":\"1.21\",\"to\":\"1.21.1\"},\"keystones\":[\"1.21.1\"]}]}";
+        ArtifactLedger ledger = ArtifactLedger.parse(text, "t");
+        ArtifactLedger.Artifact fabric = ledger.require("fabric-1.21.1");
+        that(ledger.all().size() == 2 && fabric.flex().get(0).on().equals(List.of("fabric")) && fabric.pending().equals(List.of("1.21"))
+                        && fabric.pinsFor("1.21.1").equals(java.util.Map.of("loader", "0.19", "api", "0.116")) && fabric.pinsFor("1.21").equals(java.util.Map.of("loader", "0.19")),
+                "ledger:a row reads, past fields it does not know, and its pins are the shared ones and the version's own");
+        that(ArtifactLedger.Artifact.fromJson(fabric.toJson(), "t").equals(fabric), "ledger:a row survives being written and read back");
+        that(refuses(() -> ledger.require("fabric-1.21"), "Closest: [fabric-1.21.1]"), "ledger:a miss names the closest rows");
+        that(refuses(() -> ledger.require("neoforge-1.21.1"), "no artifact 'neoforge-1.21.1'"), "ledger:a miss says what it is");
+        that(refuses(() -> ArtifactLedger.parse(text.replace("\"schema\":1", "\"schema\":2"), "t"), "schema must be 1"), "ledger:another schema is refused");
+        that(refuses(() -> ArtifactLedger.parse(text.replace("\"id\":\"forge-1.21.1\"", "\"id\":\"fabric-1.21.1\""), "t"), "two artifacts are called 'fabric-1.21.1'"),
+                "ledger:two rows with one id are refused");
+        that(refuses(() -> ArtifactLedger.parse(text.replace("\"loader\":\"forge\",", ""), "t"), "has no 'loader'"), "ledger:a row without its loader is refused");
+        that(refuses(() -> ArtifactLedger.parse(text.replace("\"range\":{\"from\":\"1.21\",\"to\":\"1.21.1\"},\"keystones\":[\"1.21.1\"]}]}", "\"keystones\":[\"1.21.1\"]}]}"), "t"), "has no range"),
+                "ledger:a row without its range is refused");
+        that(refuses(() -> ArtifactLedger.parse(text.replace("{\"mc\":\"1.21\",\"on\":[\"fabric\"]}", "{\"on\":[\"fabric\"]}"), "t"), "has no 'mc'"),
+                "ledger:a proof without its version is refused");
     }
 
     // --- shipping downgraded jars (docs/decisions/0006) ---------------------------------------------------------------

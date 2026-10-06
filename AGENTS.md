@@ -119,6 +119,11 @@ mycelium/
 | `Versions.java` | `eras/versions.json`: every real version, the list a range is enumerated against |
 | `Loaders.java` | `eras/loaders.json`: each loader's family, the platform packages P1 forbids, where it declares compatibility |
 | `CompatExpr.java` | the loaders' version-range syntaxes (semver, maven, api-version): read as a predicate, written from a range |
+| `CompatMetadata.java` | where a built artifact declares the Minecraft versions it accepts, read as `eras/loaders.json` describes the loader |
+| `ArtifactLedger.java` | a consumer's `artifacts.json`: each artifact's loader, range, proof versions and pins |
+| `RangeGate.java` | the range gate: a claimed range held to the era table, the proofs, the walls and the loader's metadata, recording proven, pending and interpolated |
+| `RangeSpec.java` | `mycelium { range { ... } }`: the claim, from a ledger or written out |
+| `RangeTask.java` | `myceliumRange`: runs the gate on the built artifact's resources and writes its report for the evidence manifest |
 | `EraTask.java` | `myceliumEraJava<N>` (and `myceliumEras`, all of them): every bundle on an era's JVM |
 | `Linkage.java` | law P2: every outside reference in a bundle exists on the era's Java |
 | `CapsuleSpec.java` | the declarative scanner ceiling, nested jars, runtime roots, and mapping profile for a capsule |
@@ -192,6 +197,7 @@ consequences).
 | `myceliumVerify` | every harness: the reference clean, every matrix entry caught for its label, a `NoOp*` among them |
 | `myceliumPurity`, `myceliumPureCompile` | the contract models are a pure layer (P1, P3), and compile alone |
 | `myceliumEras` | every harness on every Java an era runs on: stubs, linkage (P2), behaviour |
+| `myceliumRange` | an artifact's claimed Minecraft range against the era table, its proofs (a keystone, and a proof on each side of a wall inside the range) and the metadata the built artifact declares to its loader |
 | `myceliumRepository` | registry against disk, package shapes, model ownership, copied patterns, era coverage, loader packages, document counts, paths and maps, and the harness's own checks |
 | `selfTest` (`gradle-plugin`) | every repository check fires on the break it exists for; era, registry, evidence and integration semantics |
 | `bash run-contracts.sh`, `.\run-contracts.ps1` | the harness's own checks, then every package, without Gradle |
