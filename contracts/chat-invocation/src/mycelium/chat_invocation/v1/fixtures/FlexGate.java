@@ -21,9 +21,13 @@ import java.util.Set;
  */
 public final class FlexGate implements Gate {
     /** The ways to be wrong. */
-    public enum Flaw { NONE, NO_OP, LEAKY, EAGER, UNBOUNDED, STALE, ECHO, GREEDY, DEAF, TRUNCATING, SHUFFLED, STINGY, MUTE_WAIT, EARLY_WAIT, NAMELESS }
+    public enum Flaw {
+        NONE, NO_OP, LEAKY, EAGER, UNBOUNDED, STALE, ECHO, GREEDY, DEAF, TRUNCATING, SHUFFLED, STINGY, MUTE_WAIT, EARLY_WAIT,
+        NAMELESS, HOLDING, DEAF_TO_SETTINGS, FORGETFUL
+    }
 
-    private final Rules rules;
+    private Rules rules;
+    private boolean configured;
     private final Flaw flaw;
     private final List<Line> held = new ArrayList<>();
     private final Set<String> out = new HashSet<>();
@@ -32,10 +36,38 @@ public final class FlexGate implements Gate {
     public FlexGate(Rules rules, Flaw flaw) {
         this.rules = rules;
         this.flaw = flaw;
+        this.configured = true;
+    }
+
+    /** A gate that has been told nothing: it judges by the default rules, and a HOLDING one waits for settings first. */
+    public FlexGate(Flaw flaw) {
+        this.rules = Rules.defaults();
+        this.flaw = flaw;
+        this.configured = false;
+    }
+
+    /** DEAF_TO_SETTINGS never hears them; FORGETFUL takes them and forgets who opted out. */
+    @Override
+    public void settings(Rules next) {
+        if (flaw == Flaw.DEAF_TO_SETTINGS) {
+            return;
+        }
+        rules = next;
+        configured = true;
+        if (flaw == Flaw.FORGETFUL) {
+            out.clear();
+        }
+        while (flaw != Flaw.UNBOUNDED && held.size() > rules.windowLines()) {
+            held.remove(0);
+        }
     }
 
     @Override
     public Outcome offer(Line line) {
+        if (flaw == Flaw.HOLDING && !configured) {
+            // waiting to hear the assistant's settings: every line, ordinary chat included, is held back and not shown
+            return new Outcome.Rejected(line.principal(), Outcome.Reason.RATE_LIMITED, null);
+        }
         Triggers.Match match = flaw == Flaw.EAGER ? eagerMatch(line.text()) : Triggers.match(rules, line.text());
         String query = match == null ? null : match.query();
         // a nameless gate delivers everything else right and never says which trigger addressed the line

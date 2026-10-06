@@ -20,13 +20,14 @@ stated so a harness can hold an implementation to it.
 - `Triggers.query(rules, text)`: the query an addressed line carries, `""` for a bare trigger, `null` when the line is
   not addressed at all. `Triggers.match(rules, text)` answers the same question with the trigger as well: a
   `Match(trigger, query)`, the trigger spelled as the rules spell it, the first listed one that addresses the line.
-- `Gate`: `offer(line)` for every chat line, `optOut(principal, out)`, and `readyInMs(principal, now)`: how long until
-  that principal's next addressed line would be admitted (0 when it would be now, `Gate.UNKNOWN` (-1) from a gate
-  that cannot say). Asking spends nothing and changes nothing.
+- `Gate`: `offer(line)` for every chat line, `optOut(principal, out)`, `settings(rules)`: the assistant's settings
+  arrived or changed, and `readyInMs(principal, now)`: how long until that principal's next addressed line would be
+  admitted (0 when it would be now, `Gate.UNKNOWN` (-1) from a gate that cannot say). Asking spends nothing and changes
+  nothing.
 - `Outcome`: `Passed` (not an invocation; nothing leaves), `Committed(Invocation)`, `Rejected(principal, reason, trigger)`
   with `Reason` one of `EMPTY_QUERY`, `TOO_LONG`, `RATE_LIMITED`.
 - `Invocation(principal, query, at, snapshot, trigger)`.
-- `ChatGate`: the reference.
+- `ChatGate`: the reference. `new ChatGate()` is a gate that has been told nothing: it judges by `Rules.defaults()`.
 
 A line is addressed when, after leading whitespace, it starts with a trigger (ASCII case-insensitive) followed by the
 end of the line, whitespace, `,` or `:`. `@modpack`, `hi @mod` and `x@mod.com` are not addressed.
@@ -54,6 +55,9 @@ end of the line, whitespace, `,` or `:`. `@modpack`, `hi @mod` and `x@mod.com` a
 | P3 | `P3:under-budget-admitted` | A principal under budget is admitted, and is admitted again once the bucket refills |
 | P4 | `P4:ready-in-is-exact` | `readyInMs(p, t)` is 0 exactly when an addressed line from `p` at `t` is admitted; otherwise it is the exact wait: a line at `t + readyInMs - 1` is still `RATE_LIMITED`, one at `t + readyInMs` is admitted; a principal never seen is ready at once; asking twice answers the same (seeded, five bucket shapes, two principals, 200 steps each) |
 | P5 | `P5:trigger-is-named` | An addressed line, committed or rejected for any reason, names the trigger it began with, spelled as the rules spell it and not as it was typed (`@RECON` under `@Recon` is `@Recon`); where triggers overlap (`@mod`, `@modpack`) it is the first listed one that addresses the line |
+| P6 | `P6:admits-from-the-first-line` | A gate that has been told nothing (the assistant absent, crashed or not yet connected: no settings) judges by the default rules from its very first line: ordinary chat is `Passed` at once, as the first line and after, and an addressed line is committed, even as the first line, with exactly its query and the ordinary lines before it. Nothing is held, cancelled or delayed while the settings are unknown |
+| P7 | `P7:settings-apply-at-once` | After `settings(rules)` the next line is judged by `rules`: the old trigger no longer addresses a line and the new one does; the longest query, the snapshot's size and the bucket are the new ones |
+| P7 | `P7:settings-keep-opt-outs` | A settings change never brings back into a snapshot someone who opted out |
 
 ## Rejection matrix
 
@@ -73,6 +77,9 @@ end of the line, whitespace, `,` or `:`. `@modpack`, `hi @mod` and `x@mod.com` a
 | `MuteWaitGate` | Rate-limits correctly but always says the wait is 0 | `P4:ready-in-is-exact` |
 | `EarlyWaitGate` | Says the wait is one millisecond too short | `P4:ready-in-is-exact` |
 | `NamelessGate` | Delivers and rejects correctly but never says which trigger addressed the line | `P5:trigger-is-named` |
+| `HoldingGate` | Waits to hear the assistant's settings: until it does, every line, ordinary chat included, is held back | `P6:admits-from-the-first-line` |
+| `DeafToSettingsGate` | Takes no settings: it keeps the rules it was built with | `P7:settings-apply-at-once` |
+| `ForgetfulGate` | Takes settings, and forgets who opted out | `P7:settings-keep-opt-outs` |
 
 ## Edge semantics
 
@@ -84,15 +91,29 @@ end of the line, whitespace, `,` or `:`. `@modpack`, `hi @mod` and `x@mod.com` a
 - A rejected invocation still spends nothing from the bucket except `RATE_LIMITED`, which spends nothing by definition.
 - The snapshot includes the invoker's own earlier lines.
 - Opting out drops the principal's lines already held; opting back in does not restore them.
+- A gate that has been told nothing is not waiting: it is a gate with the default rules, or the rules last saved, which
+  is what its constructor was given. The assistant's settings, when they come, replace them for the next line
+  (`settings`). Whether a gate keeps its held lines and its buckets across a settings change is its own business, within
+  the new bounds; that no one who opted out comes back is not (P7).
 
 ## Using it
 
-Put every chat line through one `Gate` on the server thread, before the line is broadcast. `Passed` lines broadcast as
-usual and nothing else happens. A `Committed` or `Rejected` line is a request to the assistant: do not broadcast it
+Put every chat line through one `Gate` on the server thread, before the line is broadcast, from the first line the
+server sees: build it with the triggers last saved, or the defaults, and do not wait for the assistant to say. `Passed`
+lines broadcast as usual and nothing else happens, whether or not the assistant is there. A `Committed` or `Rejected` line is a request to the assistant: do not broadcast it
 (the question is the asker's), deliver the invocation, and tell the asker about a rejection. Nothing else in the mod
 may read chat.
 
 ## Versioning
+
+`settings` and the laws P6 and P7 were added to `@1` on 2026-10-06, from Recon's need to keep ordinary chat flowing
+while its core is absent, crashed or has not yet said what its settings are, and to apply the core's settings without
+starting a gate afresh (and, with it, forgetting who opted out). `settings` is a `default` method (`CONTRACT-PACKAGE.md`
+rule 12) that ignores its argument, and `ChatGate` gained a constructor with no rules, so every existing implementer
+still compiles and every existing label and outcome is unchanged. The harness takes a second factory for a gate that has
+been told nothing; with one factory that is a gate built with the default rules. A gate that predates the method keeps
+L1 to P6 and fails P7: the precedent of `readyInMs` and `trigger`, and the reason this is not `@2`, which only a change
+to what an existing label means would need.
 
 `trigger` was added to `@1` on 2026-10-06, from Recon's need to show an asker the word they used: a server that lists
 `@mod` and `@recon` answers a player who typed `@recon` as `[recon]`, and a rejection ("ask something after @recon")

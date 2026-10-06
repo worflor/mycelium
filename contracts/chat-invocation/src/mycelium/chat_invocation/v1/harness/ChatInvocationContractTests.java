@@ -12,13 +12,22 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /** chat.invocation@1: only addressed lines leave, with a bounded, fresh, private, opt-out-respecting snapshot (SPEC.md). */
 public final class ChatInvocationContractTests {
     private final Function<Rules, Gate> gates;
+    private final Supplier<Gate> unconfigured;
 
+    /** {@code gates} builds a gate with the rules given; a gate built with {@link Rules#defaults()} is also the one that has been told nothing. */
     public ChatInvocationContractTests(Function<Rules, Gate> gates) {
+        this(gates, () -> gates.apply(Rules.defaults()));
+    }
+
+    /** {@code unconfigured} builds a gate that has been told nothing: no rules, no settings from the assistant (law P6). */
+    public ChatInvocationContractTests(Function<Rules, Gate> gates, Supplier<Gate> unconfigured) {
         this.gates = gates;
+        this.unconfigured = unconfigured;
     }
 
     public Check run() {
@@ -37,6 +46,9 @@ public final class ChatInvocationContractTests {
         p3Admitted(c);
         p4ReadyInIsExact(c);
         p5TriggerIsNamed(c);
+        p6AdmitsFromTheFirstLine(c);
+        p7SettingsApplyAtOnce(c);
+        p7SettingsKeepOptOuts(c);
         return c;
     }
 
@@ -282,6 +294,56 @@ public final class ChatInvocationContractTests {
                 && rejectedBy(tooLong, Outcome.Reason.TOO_LONG, "@mod")
                 && rejectedBy(limited, Outcome.Reason.RATE_LIMITED, "@mod");
         c.that(named, "P5:trigger-is-named");
+    }
+
+    /**
+     * P6: a gate that has been told nothing (no settings from the assistant, which may be absent, crashed or not yet
+     * connected) judges by the default rules from its very first line: ordinary chat is {@code Passed} at once, as the
+     * first line and after, and an addressed line is committed, even as the first line, with exactly its query and the
+     * ordinary lines before it. Nothing is held, cancelled or delayed while the settings are unknown.
+     */
+    private void p6AdmitsFromTheFirstLine(Check c) {
+        Gate g = unconfigured.get();
+        Outcome first = g.offer(new Line("alex", "good morning", 1));
+        Outcome second = g.offer(new Line("sam", "anyone online?", 2));
+        Invocation asked = committed(g.offer(new Line("alex", "@mod what is the tps", 3)));
+        Outcome after = g.offer(new Line("sam", "thanks", 4));
+        Invocation firstLine = committed(unconfigured.get().offer(new Line("alex", "  @MOD hi ", 1)));
+        boolean ok = first instanceof Outcome.Passed && second instanceof Outcome.Passed && after instanceof Outcome.Passed
+                && asked != null && asked.query().equals("what is the tps")
+                && texts(asked).equals(Arrays.asList("good morning", "anyone online?"))
+                && firstLine != null && firstLine.query().equals("hi");
+        c.that(ok, "P6:admits-from-the-first-line");
+    }
+
+    /**
+     * P7: settings that arrive (or change) apply to the next line: the old trigger no longer addresses a line and the new
+     * one does, the longest query, the snapshot's size and the bucket are the new ones.
+     */
+    private void p7SettingsApplyAtOnce(Check c) {
+        Gate g = gates.apply(Rules.defaults());
+        g.settings(Rules.defaults().withPrefixes(Arrays.asList("@recon")).withMaxQuery(12).withWindow(1, 1_000_000).withBucket(1, 1_000_000));
+        boolean oldGone = !g.offer(new Line("alex", "@mod hi", 1)).addressed();
+        g.offer(new Line("sam", "one", 2));
+        g.offer(new Line("sam", "two", 3));
+        Invocation named = committed(g.offer(new Line("alex", "@recon hi there", 4)));
+        Outcome limited = g.offer(new Line("alex", "@recon and again", 5));
+        Outcome tooLong = g.offer(new Line("kim", "@recon this is far too long a question", 6));
+        boolean ok = oldGone && named != null && named.query().equals("hi there") && texts(named).equals(Arrays.asList("two"))
+                && limited(limited) && tooLong instanceof Outcome.Rejected r && r.reason() == Outcome.Reason.TOO_LONG;
+        c.that(ok, "P7:settings-apply-at-once");
+    }
+
+    /** P7: a settings change never brings back into a snapshot someone who opted out. */
+    private void p7SettingsKeepOptOuts(Check c) {
+        Gate g = gates.apply(Rules.defaults().withWindow(20, 1_000_000));
+        g.offer(new Line("shy", "private words", 1));
+        g.optOut("shy", true);
+        g.settings(Rules.defaults().withPrefixes(Arrays.asList("@mod", "@recon")).withWindow(20, 1_000_000));
+        g.offer(new Line("shy", "more private words", 2));
+        g.offer(new Line("sam", "public words", 3));
+        Invocation inv = committed(g.offer(new Line("alex", "@mod recap", 4)));
+        c.that(g.optedOut("shy") && inv != null && texts(inv).equals(Arrays.asList("public words")), "P7:settings-keep-opt-outs");
     }
 
     private static boolean rejectedBy(Outcome o, Outcome.Reason reason, String trigger) {

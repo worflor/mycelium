@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-06 - chat.invocation@1: a gate that has been told nothing, and settings that change it
+
+`Gate.settings(Rules)` (a `default` method that ignores its argument) and `new ChatGate()` (the default rules) are added,
+with laws `P6` and `P7`. P6: a gate that has been told nothing, because the assistant is absent, has crashed or has not
+yet connected, judges by the default rules from its very first line: ordinary chat is `Passed` at once, and an addressed
+line is committed even as the first line; nothing is held, cancelled or delayed while the settings are unknown. P7:
+settings apply to the next line (the trigger, the longest query, the snapshot's size and the bucket), and a settings
+change never brings back into a snapshot someone who opted out. The harness takes a second factory for the gate that has
+been told nothing (with one factory it is a gate built with the default rules). Additive in `@1`, by the precedent of
+`readyInMs` and `trigger`: a gate that predates `settings` still compiles, keeps every earlier law and fails
+`P7:settings-apply-at-once`. `Run.java` gains `HoldingGate` (P6), `DeafToSettingsGate` and `ForgetfulGate` (P7).
+Matrix size 17.
+
+Verification: the chat.invocation harness passes (reference and an independent second gate clean, all 17 rejection
+entries caught, each by its own label).
+
 ## 2026-10-06 - The range gate
 
 `mycelium { range { ... } }` declares the Minecraft versions an artifact says it runs on (`from` to `to`, inclusive, the

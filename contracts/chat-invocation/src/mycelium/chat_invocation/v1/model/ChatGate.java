@@ -15,7 +15,7 @@ import java.util.Set;
  * Not thread-safe: offer every line from one thread (the server thread).
  */
 public final class ChatGate implements Gate {
-    private final Rules rules;
+    private Rules rules;
     private final ArrayDeque<Line> window = new ArrayDeque<>();
     private final Set<String> out = new HashSet<>();
     private final Map<String, long[]> buckets = new HashMap<>(); // principal -> {tokens, lastRefill}
@@ -23,6 +23,11 @@ public final class ChatGate implements Gate {
 
     public ChatGate(Rules rules) {
         this.rules = rules;
+    }
+
+    /** A gate that has been told nothing: it judges by {@link Rules#defaults()} from its first line (law P6). */
+    public ChatGate() {
+        this(Rules.defaults());
     }
 
     public Rules rules() {
@@ -79,6 +84,21 @@ public final class ChatGate implements Gate {
             return 0;
         }
         return b[1] + (refills + 1) * rules.refillMs() - at;
+    }
+
+    /**
+     * The new rules apply to the next line. The window keeps what it holds within the new bounds, opt-outs stand, and a
+     * principal's bucket keeps its tokens, never more than the new burst.
+     */
+    @Override
+    public void settings(Rules next) {
+        rules = next;
+        while (window.size() > rules.windowLines()) {
+            window.removeFirst();
+        }
+        for (long[] b : buckets.values()) {
+            b[0] = Math.min(b[0], rules.burst());
+        }
     }
 
     /** Forget every held line (a server stopping). */

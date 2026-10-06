@@ -10,6 +10,19 @@ public interface Gate {
     /** Whether a principal is currently out of snapshots. */
     boolean optedOut(String principal);
 
+    /**
+     * The assistant's settings arrived or changed (law P7): from the next line the gate judges by {@code rules}, and no
+     * one who opted out comes back into a snapshot. What else it holds (lines, rate limits) the gate may keep within the
+     * new bounds or start afresh. A gate never waits for this: until it is called, and from its first line, it judges by
+     * the rules it was built with, the defaults or the last it was given (law P6), so an assistant that is absent, has
+     * crashed or has not yet said what its settings are never holds, cancels or delays an ordinary line.
+     *
+     * <p>The default ignores the settings, which is what a gate that predates this method does: it keeps the rules it was
+     * built with and fails P7, and keeps every other law.
+     */
+    default void settings(Rules rules) {
+    }
+
     /** What {@link #readyInMs} answers when a gate cannot say (the default): not a wait, not zero, just unknown. */
     long UNKNOWN = -1L;
 
