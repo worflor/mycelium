@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-06 - The era table says where a loader exists, how the game is named and where a port breaks
+
+`eras/minecraft.json` and `eras/loaders.json` are schema 2.
+
+- Plugin platforms are loaders: `bukkit`, `spigot`, `paper`, `purpur` and `folia`, each with the version its builds
+  begin on (`since`), and Quilt on 1.14.4 and later, NeoForge on 1.20.1. Every loader has a `family` (`mod`, `plugin`,
+  `agent`).
+- `names` is a pair: `dev` (what the source is written in) and `runtime` (what each loader runs, steps where it changes
+  inside an era, as Forge's before and after SRG at 1.5.1).
+- `outerJava` records the Java a loader's scanner reads, as steps (Forge: 6, then 7 from 1.6.1, then 8 from 1.7.10).
+- `walls` are rows with `at`, `for` (loaders or families) and `what`, stated at the versions the old table
+  only mentioned in prose and at 1.9, 1.11, 1.12, 1.16.2, 1.18.2, 1.19.1, 1.19.3, 1.20.3, 1.21.5, 1.21.6, 1.21.9
+  and 1.21.11. An era boundary is not a wall.
+- `loaders.json` says where a built artifact declares the Minecraft versions it accepts (`compat`), and `CompatExpr`
+  reads and writes the three syntaxes (semver, maven, api-version).
+- The repository check proves every wall is at a real version inside its era, every `for` names a loader or family,
+  every name is in the vocabulary, and every `since` and step begins at a real version inside the era; each was shown
+  to fire on a planted break. The evidence manifest's `era.names` is the pair resolved for the target, and its
+  `era.loaders` are the loaders the target version offers.
+
 ## 2026-10-06 - chat.invocation@1: the trigger is named
 
 `Invocation` and `Outcome.Rejected` carry the trigger the line began with, spelled as the rules spell it, and

@@ -97,9 +97,21 @@ public abstract class EvidenceTask extends DefaultTask {
             e.addProperty("minecraft", getMinecraft().get());
             e.addProperty("id", era.id());
             e.addProperty("java", era.java());
-            e.addProperty("names", era.names());
+            JsonObject names = new JsonObject();
+            names.addProperty("dev", era.names().dev());
+            JsonObject runtime = new JsonObject();
             JsonArray loaders = new JsonArray();
-            era.loaders().forEach(loaders::add);
+            for (String loader : era.loaders()) {
+                if (era.offers(loader, getMinecraft().get())) {
+                    loaders.add(loader);
+                    String name = era.names().runtimeFor(loader, getMinecraft().get());
+                    if (name != null) {
+                        runtime.addProperty(loader, name);
+                    }
+                }
+            }
+            names.add("runtime", runtime);
+            e.add("names", names);
             e.add("loaders", loaders);
             evidence.add("era", e);
         }

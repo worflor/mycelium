@@ -10,7 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
 
 /**
@@ -29,11 +31,74 @@ import java.util.TreeSet;
  * snapshots ({@code 24w14a}) and the versions before Classic ({@code rd-}, {@code in-}, {@code inf-}) are not targets.
  */
 public final class Eras {
-    public record Era(String id, String from, String to, int java, List<String> loaders, String names, List<String> walls) {
+    /**
+     * What code can be called: {@code mojang} (the official names), {@code mojang-from-1.14.4} (official from there, MCP
+     * or Yarn's before), {@code mcp}, {@code srg}, {@code feather}, {@code intermediary}, {@code calamus},
+     * {@code obfuscated}, {@code unobfuscated} (the game ships its own names), {@code spigot} and {@code craftbukkit}
+     * (a server's remapping of them) and {@code api} (a published API, no game names at all).
+     */
+    public static final java.util.Set<String> NAMES = java.util.Set.of("mojang", "mojang-from-1.14.4", "mcp", "srg", "feather",
+            "intermediary", "calamus", "obfuscated", "unobfuscated", "spigot", "craftbukkit", "api");
+
+    /** One value, from the version it begins to apply on ({@code null}: the era's start) until the next step. */
+    public record Step(String from, String value) {
+    }
+
+    /**
+     * How an era's code is named. {@code dev} is what the platform layer's source is written in (a plugin's is always the
+     * API's own, whatever this says); {@code runtime} is what the running game is called, per loader ({@code "*"} for the
+     * loaders it does not name), as steps when it changes inside the era.
+     */
+    public record Names(String dev, Map<String, List<Step>> runtime) {
+        /** What {@code loader}'s running game is called on {@code minecraft}, or {@code null} when the era says nothing. */
+        public String runtimeFor(String loader, String minecraft) {
+            List<Step> steps = runtime.containsKey(loader) ? runtime.get(loader) : runtime.get("*");
+            return steps == null ? null : at(steps, minecraft);
+        }
+    }
+
+    /**
+     * A wall a port crosses: {@code at} is the first version of its far side, {@code appliesTo} the loaders or families
+     * ({@code mod}, {@code plugin}) it splits (empty: every artifact), {@code what} what changes.
+     */
+    public record Wall(String at, List<String> appliesTo, String what) {
+        /** Whether this wall splits an artifact of {@code loader}, which belongs to {@code family}. */
+        public boolean splits(String loader, String family) {
+            return appliesTo.isEmpty() || appliesTo.contains(loader) || appliesTo.contains(family);
+        }
+    }
+
+    public record Era(String id, String from, String to, int java, List<String> loaders, Names names, List<Wall> walls,
+                      List<String> notes, Map<String, String> since, Map<String, List<Step>> outerJava) {
         /** Whether this era covers {@code minecraft}. */
         public boolean covers(String minecraft) {
             return atLeast(minecraft, from) && atMost(minecraft, to);
         }
+
+        /** Whether {@code loader} exists on {@code minecraft} (an era this covers): listed, and past its first version. */
+        public boolean offers(String loader, String minecraft) {
+            return loaders.contains(loader) && (!since.containsKey(loader) || compare(minecraft, since.get(loader)) >= 0);
+        }
+
+        /**
+         * The Java feature version of the newest class file {@code loader}'s scanner reads on {@code minecraft}: where
+         * the era names none, the era's own Java (a scanner that reads what the game runs on is no ceiling).
+         */
+        public int outerJavaFor(String loader, String minecraft) {
+            List<Step> steps = outerJava.get(loader);
+            return steps == null ? java : Integer.parseInt(at(steps, minecraft));
+        }
+    }
+
+    /** The value of the last step that has begun on {@code minecraft}; the first step's when none has. */
+    static String at(List<Step> steps, String minecraft) {
+        String value = steps.get(0).value();
+        for (Step s : steps) {
+            if (s.from() == null || compare(minecraft, s.from()) >= 0) {
+                value = s.value();
+            }
+        }
+        return value;
     }
 
     private final List<Era> eras;
@@ -45,17 +110,94 @@ public final class Eras {
     public static Eras load(File myceliumRoot) {
         File file = new File(myceliumRoot, "eras/minecraft.json");
         try {
-            JsonObject root = new Gson().fromJson(Files.readString(file.toPath(), StandardCharsets.UTF_8), JsonObject.class);
-            List<Era> out = new ArrayList<>();
-            for (JsonElement e : root.getAsJsonArray("eras")) {
-                JsonObject o = e.getAsJsonObject();
-                out.add(new Era(o.get("id").getAsString(), o.get("from").getAsString(), o.get("to").getAsString(),
-                        o.get("java").getAsInt(), strings(o, "loaders"), o.get("names").getAsString(), strings(o, "walls")));
-            }
-            return new Eras(out);
+            return parse(Files.readString(file.toPath(), StandardCharsets.UTF_8), file.toString());
         } catch (IOException e) {
             throw new IllegalStateException("Mycelium era table not found: " + file, e);
         }
+    }
+
+    /** The era table in {@code text}; {@code where} names it in a refusal. A malformed row is refused, by name. */
+    static Eras parse(String text, String where) {
+        JsonObject root = new Gson().fromJson(text, JsonObject.class);
+        if (!root.has("schema") || root.get("schema").getAsInt() != 2) {
+            throw new IllegalStateException(where + ": schema must be 2 (names are a pair, walls are objects)");
+        }
+        List<Era> out = new ArrayList<>();
+        for (JsonElement e : root.getAsJsonArray("eras")) {
+            JsonObject o = e.getAsJsonObject();
+            String id = o.get("id").getAsString();
+            out.add(new Era(id, o.get("from").getAsString(), o.get("to").getAsString(), o.get("java").getAsInt(),
+                    strings(o, "loaders"), names(o, id, where), walls(o, id, where), strings(o, "notes"), since(o),
+                    outerJava(o, id, where)));
+        }
+        return new Eras(out);
+    }
+
+    private static Names names(JsonObject era, String id, String where) {
+        if (!era.has("names") || !era.get("names").isJsonObject() || !era.getAsJsonObject("names").has("dev")
+                || !era.getAsJsonObject("names").has("runtime")) {
+            throw new IllegalStateException(where + ": era '" + id + "': names must be a pair {\"dev\": ..., \"runtime\": {...}}");
+        }
+        JsonObject n = era.getAsJsonObject("names");
+        Map<String, List<Step>> runtime = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> r : n.getAsJsonObject("runtime").entrySet()) {
+            runtime.put(r.getKey(), steps(r.getValue(), "names", id, where));
+        }
+        return new Names(n.get("dev").getAsString(), runtime);
+    }
+
+    /** A plain string is one step from the era's start; an array holds {@code {"from": version, <key>: value}} steps. */
+    private static List<Step> steps(JsonElement value, String key, String id, String where) {
+        List<Step> out = new ArrayList<>();
+        if (value.isJsonPrimitive()) {
+            out.add(new Step(null, value.getAsString()));
+            return out;
+        }
+        String field = key.equals("outerJava") ? "java" : "names";
+        for (JsonElement s : value.getAsJsonArray()) {
+            JsonObject o = s.getAsJsonObject();
+            if (!o.has("from") || !o.has(field)) {
+                throw new IllegalStateException(where + ": era '" + id + "': each " + key + " step needs 'from' and '" + field + "'");
+            }
+            out.add(new Step(o.get("from").getAsString(), o.get(field).getAsString()));
+        }
+        if (out.isEmpty()) {
+            throw new IllegalStateException(where + ": era '" + id + "': an empty " + key + " step list");
+        }
+        return out;
+    }
+
+    private static List<Wall> walls(JsonObject era, String id, String where) {
+        List<Wall> out = new ArrayList<>();
+        if (!era.has("walls")) {
+            return out;
+        }
+        for (JsonElement w : era.getAsJsonArray("walls")) {
+            if (!w.isJsonObject() || !w.getAsJsonObject().has("at") || !w.getAsJsonObject().has("what")) {
+                throw new IllegalStateException(where + ": era '" + id + "': a wall is {\"at\": version, \"what\": text}, not " + w);
+            }
+            JsonObject o = w.getAsJsonObject();
+            out.add(new Wall(o.get("at").getAsString(), strings(o, "for"), o.get("what").getAsString()));
+        }
+        return out;
+    }
+
+    private static Map<String, String> since(JsonObject era) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (era.has("since")) {
+            era.getAsJsonObject("since").entrySet().forEach(e -> out.put(e.getKey(), e.getValue().getAsString()));
+        }
+        return out;
+    }
+
+    private static Map<String, List<Step>> outerJava(JsonObject era, String id, String where) {
+        Map<String, List<Step>> out = new LinkedHashMap<>();
+        if (era.has("outerJava")) {
+            for (Map.Entry<String, JsonElement> e : era.getAsJsonObject("outerJava").entrySet()) {
+                out.put(e.getKey(), steps(e.getValue(), "outerJava", id, where));
+            }
+        }
+        return out;
     }
 
     private static List<String> strings(JsonObject o, String key) {

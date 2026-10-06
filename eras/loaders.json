@@ -1,6 +1,6 @@
 {
-  "schema": 1,
-  "note": "The Java packages each loader in eras/minecraft.json puts in a mod's reach (and each plugin platform in a plugin's), and the game's own. The pure layer may mention none of them (docs/eras.md, law P1); myceliumPurity reads this file, so a loader named in an era is guarded as soon as it is named here, and the repository check fails if an era names a loader this file does not. Each entry says where its packages come from, so it can be re-verified: a loader's packages are what its own published artifacts declare, not what its name suggests.",
+  "schema": 2,
+  "note": "The Java packages each loader in eras/minecraft.json puts in a mod's reach (and each plugin platform in a plugin's), and the game's own. The pure layer may mention none of them (docs/eras.md, law P1); myceliumPurity reads this file, so a loader named in an era is guarded as soon as it is named here, and the repository check fails if an era names a loader this file does not. Each entry says where its packages come from, so it can be re-verified: a loader's packages are what its own published artifacts declare, not what its name suggests. 'family' says what kind of artifact the loader runs: 'mod' (reaches into the game), 'plugin' (reaches the game only through a published API) or 'agent' (a Java agent); a wall that names a family splits every loader of it. 'compat' says where a built artifact declares the Minecraft versions it accepts, so the range gate can read what the loader will enforce: the file in the artifact's resources (the first that exists), its format ('json': 'path' is dotted keys with [key=value] selecting an array element; 'toml': a table, its 'where' keys and the 'key' wanted; 'yaml': a top-level 'key'), and the 'syntax' its value is written in ('semver': Fabric and Quilt, 'maven': Forge and NeoForge, 'api-version': Bukkit); 'compatFrom' borrows another loader's. A loader with no 'compat' enforces none the build can read.",
   "game": {
     "packages": [
       "net.minecraft",
@@ -16,68 +16,96 @@
   },
   "loaders": {
     "javaagent": {
+      "family": "agent",
       "packages": [
         "java.lang.instrument"
       ],
       "source": "Java Instrumentation API in the Java 8 platform, used as an exact-profile native entrance rather than a Minecraft mod loader"
     },
     "fabric": {
+      "family": "mod",
       "packages": [
         "net.fabricmc"
       ],
-      "source": "Fabric Loader and Fabric API (net.fabricmc:fabric-loader, net.fabricmc.fabric-api:fabric-api on maven.fabricmc.net)"
+      "source": "Fabric Loader and Fabric API (net.fabricmc:fabric-loader, net.fabricmc.fabric-api:fabric-api on maven.fabricmc.net)",
+      "compat": {"file": ["fabric.mod.json"], "format": "json", "path": "depends.minecraft", "syntax": "semver"}
     },
     "forge": {
+      "family": "mod",
       "packages": [
         "net.minecraftforge",
         "cpw.mods"
       ],
-      "source": "Forge (net.minecraftforge:forge on maven.minecraftforge.net); cpw.mods is FML before 1.13 and ModLauncher/SecureJarHandler after"
+      "source": "Forge (net.minecraftforge:forge on maven.minecraftforge.net); cpw.mods is FML before 1.13 and ModLauncher/SecureJarHandler after",
+      "compat": {"file": ["META-INF/mods.toml", "META-INF/neoforge.mods.toml"], "format": "toml", "table": "dependencies.*", "where": {"modId": "minecraft"}, "key": "versionRange", "syntax": "maven"}
     },
     "neoforge": {
+      "family": "mod",
       "packages": [
         "net.neoforged",
         "cpw.mods"
       ],
-      "source": "NeoForge (net.neoforged:neoforge on maven.neoforged.net); cpw.mods is the ModLauncher its early versions ran on"
+      "source": "NeoForge (net.neoforged:neoforge on maven.neoforged.net); cpw.mods is the ModLauncher its early versions ran on",
+      "compat": {"file": ["META-INF/neoforge.mods.toml", "META-INF/mods.toml"], "format": "toml", "table": "dependencies.*", "where": {"modId": "minecraft"}, "key": "versionRange", "syntax": "maven"}
     },
     "quilt": {
+      "family": "mod",
       "packages": [
         "org.quiltmc",
         "net.fabricmc"
       ],
-      "source": "Quilt Loader and QSL (org.quiltmc:quilt-loader, org.quiltmc.qsl on maven.quiltmc.org); Quilted Fabric API keeps Fabric API's net.fabricmc packages"
+      "source": "Quilt Loader and QSL (org.quiltmc:quilt-loader, org.quiltmc.qsl on maven.quiltmc.org); Quilted Fabric API keeps Fabric API's net.fabricmc packages",
+      "compat": {"file": ["quilt.mod.json"], "format": "json", "path": "quilt_loader.depends[id=minecraft].versions", "syntax": "semver"}
     },
     "legacy-fabric": {
+      "family": "mod",
       "packages": [
         "net.fabricmc",
         "net.legacyfabric"
       ],
-      "source": "Fabric Loader with Legacy Fabric API (net.legacyfabric.legacy-fabric-api on repo.legacyfabric.net)"
+      "source": "Fabric Loader with Legacy Fabric API (net.legacyfabric.legacy-fabric-api on repo.legacyfabric.net)",
+      "compatFrom": "fabric"
     },
     "ornithe": {
+      "family": "mod",
       "packages": [
         "net.fabricmc",
         "net.ornithemc"
       ],
-      "source": "Fabric Loader with Ornithe's Standard Libraries (net.ornithemc:osl on maven.ornithemc.net)"
+      "source": "Fabric Loader with Ornithe's Standard Libraries (net.ornithemc:osl on maven.ornithemc.net)",
+      "compatFrom": "fabric"
     },
     "babric": {
+      "family": "mod",
       "packages": [
         "net.fabricmc",
         "net.modificationstation"
       ],
-      "source": "Fabric Loader on Beta 1.7.3 (github.com/babric) with StationAPI (net.modificationstation.stationapi, github.com/ModificationStation/StationAPI)"
+      "source": "Fabric Loader on Beta 1.7.3 (github.com/babric) with StationAPI (net.modificationstation.stationapi, github.com/ModificationStation/StationAPI)",
+      "compatFrom": "fabric"
     },
     "bukkit": {
+      "family": "plugin",
       "packages": [
         "org.bukkit",
         "org.spigotmc",
         "net.md_5"
       ],
-      "source": "The Bukkit API as Spigot publishes it (org.spigotmc:spigot-api on hub.spigotmc.org), with its BungeeCord chat components (net.md_5.bungee.api.chat); CraftBukkit and every fork implement it"
+      "source": "The Bukkit API as Spigot publishes it (org.spigotmc:spigot-api on hub.spigotmc.org, from 1.8), with its BungeeCord chat components (net.md_5.bungee.api.chat); CraftBukkit and every fork implement it",
+      "compat": {"file": ["plugin.yml"], "format": "yaml", "key": "api-version", "syntax": "api-version"}
+    },
+    "spigot": {
+      "family": "plugin",
+      "packages": [
+        "org.bukkit",
+        "org.spigotmc",
+        "net.md_5"
+      ],
+      "source": "Spigot (org.spigotmc:spigot-api on hub.spigotmc.org; BuildTools builds the server from 1.8): the Bukkit API plus org.spigotmc",
+      "compatFrom": "bukkit"
     },
     "paper": {
+      "family": "plugin",
       "packages": [
         "io.papermc",
         "com.destroystokyo.paper",
@@ -86,7 +114,36 @@
         "org.spigotmc",
         "net.md_5"
       ],
-      "source": "Paper's API (io.papermc.paper:paper-api on repo.papermc.io): the Bukkit API plus io.papermc/com.destroystokyo.paper, and the Adventure text library (net.kyori) it ships"
+      "source": "Paper's API (io.papermc.paper:paper-api on repo.papermc.io): the Bukkit API plus io.papermc/com.destroystokyo.paper, and the Adventure text library (net.kyori) it ships; builds from 1.7.10 (fill.papermc.io)",
+      "compatFrom": "bukkit"
+    },
+    "purpur": {
+      "family": "plugin",
+      "packages": [
+        "org.purpurmc",
+        "net.pl3x.purpur",
+        "io.papermc",
+        "com.destroystokyo.paper",
+        "net.kyori",
+        "org.bukkit",
+        "org.spigotmc",
+        "net.md_5"
+      ],
+      "source": "Purpur's API (org.purpurmc.purpur:purpur-api on repo.purpurmc.org): Paper's API plus org.purpurmc.purpur (net.pl3x.purpur in its early builds); builds from 1.14.1 (api.purpurmc.org)",
+      "compatFrom": "bukkit"
+    },
+    "folia": {
+      "family": "plugin",
+      "packages": [
+        "io.papermc",
+        "com.destroystokyo.paper",
+        "net.kyori",
+        "org.bukkit",
+        "org.spigotmc",
+        "net.md_5"
+      ],
+      "source": "Folia's API (dev.folia:folia-api on repo.papermc.io): Paper's API with the threaded regions in io.papermc.paper.threadedregions; builds from 1.19.4 (fill.papermc.io); a plugin declares folia-supported: true in plugin.yml",
+      "compatFrom": "bukkit"
     }
   }
 }

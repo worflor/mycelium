@@ -83,6 +83,14 @@ public abstract class MyceliumExtension {
         return Eras.load(getRoot().get().getAsFile()).of(minecraft).java();
     }
 
+    /**
+     * The Java feature version of the newest class file {@code loader}'s scanner reads on {@code minecraft}, from the era
+     * table: what a capsule's {@code outerJava} is set to. Needs {@code root} set.
+     */
+    public int outerJavaFor(String loader, String minecraft) {
+        return Eras.load(getRoot().get().getAsFile()).of(minecraft).outerJavaFor(loader, minecraft);
+    }
+
     /** The Java versions the era gates run: {@code eras(...)} if declared, else the target Minecraft's own era. */
     public List<Integer> resolvedEras() {
         if (!getEras().get().isEmpty()) {

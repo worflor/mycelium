@@ -12,16 +12,37 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 
 /**
  * The packages each loader puts in a mod's reach, and the game's own ({@code eras/loaders.json}, docs/eras.md). The pure
  * layer may mention none of them (law P1): {@link PurityTask} forbids {@link #platformPackages()}, so a loader an era names
  * is guarded as soon as its packages are written down here, never by a list kept somewhere else.
+ *
+ * <p>The table also says what the plugin may know about a loader without knowing the loader: its {@code family}, and
+ * where a built artifact declares the Minecraft versions the loader will accept ({@link Compat}), as data the range gate
+ * reads ({@code docs/decisions/0009}).
  */
 public final class Loaders {
-    /** One loader: the package roots it puts in reach, and where that fact comes from (for re-verifying it). */
-    public record Loader(String name, List<String> packages, String source) {
+    /** What kinds of artifact a loader runs. */
+    public static final Set<String> FAMILIES = Set.of("mod", "plugin", "agent");
+
+    /** The formats a {@link Compat} file may be in, and the syntaxes its value may be written in. */
+    public static final Set<String> FORMATS = Set.of("json", "toml", "yaml");
+    public static final Set<String> SYNTAXES = Set.of("semver", "maven", "api-version");
+
+    /**
+     * Where a built artifact declares the Minecraft versions it accepts: {@code files} (the first that exists, as paths
+     * in the artifact's resources), the {@code format} they are in, how to find the value ({@code path} for json,
+     * {@code table}, {@code where} and {@code key} for toml, {@code key} for yaml) and the {@code syntax} it is written in.
+     */
+    public record Compat(List<String> files, String format, String path, String table, Map<String, String> where, String key,
+                         String syntax) {
+    }
+
+    /** One loader: its family, the package roots it puts in reach, where that fact comes from, and where it declares compatibility. */
+    public record Loader(String name, String family, List<String> packages, String source, Compat compat) {
     }
 
     private final List<String> game;
@@ -37,20 +58,84 @@ public final class Loaders {
     public static Loaders load(File myceliumRoot) {
         File file = new File(myceliumRoot, "eras/loaders.json");
         try {
-            JsonObject root = new Gson().fromJson(Files.readString(file.toPath(), StandardCharsets.UTF_8), JsonObject.class);
-            Map<String, Loader> loaders = new LinkedHashMap<>();
-            for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("loaders").entrySet()) {
-                JsonObject o = e.getValue().getAsJsonObject();
-                loaders.put(e.getKey(), new Loader(e.getKey(), packages(o, file, e.getKey()), source(o, file, e.getKey())));
-            }
-            return new Loaders(packages(root.getAsJsonObject("game"), file, "game"),
-                    packages(root.getAsJsonObject("tools"), file, "tools"), loaders);
+            return parse(Files.readString(file.toPath(), StandardCharsets.UTF_8), file.toString());
         } catch (IOException e) {
             throw new IllegalStateException("Mycelium loader table not found: " + file, e);
         }
     }
 
-    private static List<String> packages(JsonObject o, File file, String what) {
+    /** The loader table in {@code text}; {@code file} names it in a refusal. */
+    static Loaders parse(String text, File file) {
+        return parse(text, file.toString());
+    }
+
+    static Loaders parse(String text, String file) {
+        JsonObject root = new Gson().fromJson(text, JsonObject.class);
+        if (!root.has("schema") || root.get("schema").getAsInt() != 2) {
+            throw new IllegalStateException(file + ": schema must be 2 (every loader has a family)");
+        }
+        Map<String, Loader> loaders = new LinkedHashMap<>();
+        Map<String, String> borrowed = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("loaders").entrySet()) {
+            JsonObject o = e.getValue().getAsJsonObject();
+            String name = e.getKey();
+            String family = o.has("family") ? o.get("family").getAsString() : "";
+            if (!FAMILIES.contains(family)) {
+                throw new IllegalStateException(file + ": '" + name + "' has family '" + family + "'; a loader is one of " + FAMILIES);
+            }
+            if (o.has("compat") && o.has("compatFrom")) {
+                throw new IllegalStateException(file + ": '" + name + "' declares its own compat and borrows another's");
+            }
+            Compat compat = o.has("compat") ? compat(o.getAsJsonObject("compat"), file, name) : null;
+            if (o.has("compatFrom")) {
+                borrowed.put(name, o.get("compatFrom").getAsString());
+            }
+            loaders.put(name, new Loader(name, family, packages(o, file, name), source(o, file, name), compat));
+        }
+        for (Map.Entry<String, String> b : borrowed.entrySet()) {
+            Loader from = loaders.get(b.getValue());
+            if (from == null || from.compat() == null) {
+                throw new IllegalStateException(file + ": '" + b.getKey() + "' borrows the compat of '" + b.getValue()
+                        + "', which declares none of its own");
+            }
+            Loader own = loaders.get(b.getKey());
+            loaders.put(b.getKey(), new Loader(own.name(), own.family(), own.packages(), own.source(), from.compat()));
+        }
+        return new Loaders(packages(root.getAsJsonObject("game"), file, "game"),
+                packages(root.getAsJsonObject("tools"), file, "tools"), loaders);
+    }
+
+    private static Compat compat(JsonObject c, String file, String loader) {
+        List<String> files = new ArrayList<>();
+        if (c.has("file")) {
+            c.getAsJsonArray("file").forEach(x -> files.add(x.getAsString()));
+        }
+        String format = c.has("format") ? c.get("format").getAsString() : "";
+        String syntax = c.has("syntax") ? c.get("syntax").getAsString() : "";
+        if (files.isEmpty() || !FORMATS.contains(format) || !SYNTAXES.contains(syntax)) {
+            throw new IllegalStateException(file + ": '" + loader + "' compat needs file(s), a format of " + FORMATS
+                    + " and a syntax of " + SYNTAXES);
+        }
+        String path = c.has("path") ? c.get("path").getAsString() : null;
+        String table = c.has("table") ? c.get("table").getAsString() : null;
+        String key = c.has("key") ? c.get("key").getAsString() : null;
+        Map<String, String> where = new LinkedHashMap<>();
+        if (c.has("where")) {
+            c.getAsJsonObject("where").entrySet().forEach(e -> where.put(e.getKey(), e.getValue().getAsString()));
+        }
+        boolean complete = switch (format) {
+            case "json" -> path != null;
+            case "toml" -> table != null && key != null;
+            default -> key != null;
+        };
+        if (!complete) {
+            throw new IllegalStateException(file + ": '" + loader + "' compat in " + format + " needs "
+                    + (format.equals("json") ? "a path" : format.equals("toml") ? "a table and a key" : "a key"));
+        }
+        return new Compat(files, format, path, table, where, key, syntax);
+    }
+
+    private static List<String> packages(JsonObject o, String file, String what) {
         List<String> out = new ArrayList<>();
         if (o == null || !o.has("packages")) {
             throw new IllegalStateException(file + ": '" + what + "' names no packages");
@@ -62,7 +147,7 @@ public final class Loaders {
         return out;
     }
 
-    private static String source(JsonObject o, File file, String what) {
+    private static String source(JsonObject o, String file, String what) {
         if (!o.has("source") || o.get("source").getAsString().isBlank()) {
             throw new IllegalStateException(file + ": '" + what + "' does not say where its packages come from");
         }

@@ -40,6 +40,7 @@ public final class SelfTest {
         integrations();
         evidence();
         loaders(root);
+        compat();
         shipping();
         artifactJars();
         downgrading();
@@ -1012,6 +1013,52 @@ public final class SelfTest {
                 "eras:pre-Classic ids are not readable versions; Classic ones are");
         that(Eras.atMost("26.3", "26.x") && Eras.atMost("26.40.1", "26.x") && !Eras.atMost("27.1", "26.x"), "eras:a line ends after its last version");
         that(Eras.atLeast("a1.0.4", "a1.x") && !Eras.atLeast("c0.30_01c", "a1.x"), "eras:a line starts at its first version");
+
+        Eras.Era components = eras.of("1.21.1");
+        that(components.names().dev().equals("mojang") && "intermediary".equals(components.names().runtimeFor("fabric", "1.21.1")),
+                "eras:names are a pair: what the source is written in, and what each loader runs");
+        that("mojang".equals(components.names().runtimeFor("neoforge", "1.21.1")) && "api".equals(components.names().runtimeFor("bukkit", "1.21.1")),
+                "eras:a loader the era does not name runs the era's '*'; a plugin platform's API is not a mapping");
+        that("spigot".equals(components.names().runtimeFor("spigot", "1.21.1")), "eras:Spigot's runtime is its own names on 1.21");
+        that("obfuscated".equals(eras.of("1.2.5").names().runtimeFor("forge", "1.2.5"))
+                        && "obfuscated".equals(eras.of("1.4.7").names().runtimeFor("forge", "1.4.7"))
+                        && "srg".equals(eras.of("1.5.2").names().runtimeFor("forge", "1.5.2"))
+                        && "srg".equals(eras.of("1.7.10").names().runtimeFor("forge", "1.7.10"))
+                        && "craftbukkit".equals(eras.of("1.2.5").names().runtimeFor("paper", "1.7.10")),
+                "eras:names change inside an era at the version a step begins on");
+        that(eras.of("1.2.5").outerJavaFor("forge", "1.2.5") == 6 && eras.of("1.5.2").outerJavaFor("forge", "1.5.2") == 6
+                        && eras.of("1.6.1").outerJavaFor("forge", "1.6.1") == 7 && eras.of("1.6.4").outerJavaFor("forge", "1.6.4") == 7
+                        && eras.of("1.7.10").outerJavaFor("forge", "1.7.10") == 8,
+                "eras:a scanner's Java is a step table: Forge reads 6 until 1.6.1, 7 until 1.7.10, 8 from it");
+        that(eras.of("1.21.1").outerJavaFor("fabric", "1.21.1") == 21 && eras.of("1.12.2").outerJavaFor("forge", "1.12.2") == 8,
+                "eras:a loader with no scanner row is no ceiling below the era's own Java");
+        that(eras.of("1.19.3").offers("paper", "1.19.3") && !eras.of("1.19.3").offers("folia", "1.19.3")
+                        && eras.of("1.19.4").offers("folia", "1.19.4") && !eras.of("1.19.2").offers("neoforge", "1.19.2")
+                        && eras.of("1.20.1").offers("neoforge", "1.20.1") && !eras.of("1.14").offers("quilt", "1.14")
+                        && eras.of("1.14.4").offers("quilt", "1.14.4") && !eras.of("1.7.2").offers("paper", "1.7.2")
+                        && eras.of("1.7.10").offers("paper", "1.7.10") && !eras.of("1.21.1").offers("riftloader", "1.21.1")
+                        && !eras.of("26.1").offers("paper", "26.1") && eras.of("26.1.2").offers("folia", "26.1.2"),
+                "eras:a loader exists from the version its 'since' names, and only where the era lists it");
+        Eras.Wall plugins = eras.of("1.21").walls().stream().filter(w -> w.at().equals("1.21")).findFirst().orElseThrow();
+        Eras.Wall everyone = eras.of("1.13").walls().stream().filter(w -> w.at().equals("1.13")).findFirst().orElseThrow();
+        that(plugins.splits("paper", "plugin") && !plugins.splits("fabric", "mod") && everyone.splits("fabric", "mod")
+                        && everyone.splits("paper", "plugin"),
+                "eras:a wall splits the loaders and families it names, every artifact when it names none");
+        that(eras.of("a1.2.6").walls().isEmpty() && eras.of("c0.30_01c").walls().isEmpty() && eras.of("1.20.1").walls().stream()
+                        .anyMatch(w -> w.at().equals("1.18.2") && w.appliesTo().equals(List.of("mod"))),
+                "eras:walls are explicit rows, never implied by an era boundary");
+
+        String valid = "{\"schema\":2,\"eras\":[{\"id\":\"e\",\"from\":\"1.0\",\"to\":\"1.x\",\"java\":8,\"loaders\":[\"fabric\"],"
+                + "\"names\":{\"dev\":\"mojang\",\"runtime\":{\"*\":\"mojang\"}}}]}";
+        that(Eras.parse(valid, "t").all().size() == 1, "eras:a minimal valid table reads");
+        that(refuses(() -> Eras.parse(valid.replace("\"schema\":2", "\"schema\":1"), "t"), "schema must be 2"),
+                "eras:the old schema is refused, by name");
+        that(refuses(() -> Eras.parse(valid.replace("{\"dev\":\"mojang\",\"runtime\":{\"*\":\"mojang\"}}", "\"mojang\""), "t"), "names must be a pair"),
+                "eras:a single names string is refused: it cannot say what the source is written in and what the game runs");
+        that(refuses(() -> Eras.parse(valid.replace("}}]}", "}, \"walls\":[\"1.5\"]}]}"), "t"), "a wall is"),
+                "eras:a wall that is a bare version is refused: it must say what changes");
+        that(refuses(() -> Eras.parse(valid.replace("}}]}", "}, \"outerJava\":{\"forge\":[{\"from\":\"1.0\"}]}}]}"), "t"), "'from' and 'java'"),
+                "eras:a step without its value is refused");
     }
 
     // --- the registry ------------------------------------------------------------------------------------------------
@@ -1087,6 +1134,97 @@ public final class SelfTest {
                 "org.spongepowered", "net.legacyfabric", "net.ornithemc", "net.modificationstation", "org.quiltmc")) {
             that(packages.contains(p), "loaders:the pure layer keeps " + p + " out");
         }
+        for (String p : List.of("org.bukkit", "io.papermc", "net.kyori", "org.purpurmc", "net.pl3x.purpur", "com.destroystokyo.paper")) {
+            that(packages.contains(p), "loaders:the pure layer keeps the plugin platforms' " + p + " out");
+        }
+        java.util.Map<String, Loaders.Loader> table = Loaders.load(root.toFile()).loaders();
+        that(table.get("fabric").family().equals("mod") && table.get("paper").family().equals("plugin")
+                        && table.get("folia").family().equals("plugin") && table.get("javaagent").family().equals("agent"),
+                "loaders:every loader says what kind of artifact it runs");
+        that(table.get("spigot").compat() == table.get("bukkit").compat() && table.get("folia").compat().syntax().equals("api-version")
+                        && table.get("babric").compat().files().equals(List.of("fabric.mod.json"))
+                        && table.get("quilt").compat().syntax().equals("semver") && table.get("neoforge").compat().syntax().equals("maven")
+                        && table.get("javaagent").compat() == null,
+                "loaders:a loader declares where its artifact says which Minecraft it accepts, or borrows a base's, or has none");
+        String valid = "{\"schema\":2,\"game\":{\"packages\":[\"g\"],\"source\":\"s\"},\"tools\":{\"packages\":[\"t\"],\"source\":\"s\"},"
+                + "\"loaders\":{\"a\":{\"family\":\"mod\",\"packages\":[\"p\"],\"source\":\"s\","
+                + "\"compat\":{\"file\":[\"a.json\"],\"format\":\"json\",\"path\":\"x\",\"syntax\":\"semver\"}},"
+                + "\"b\":{\"family\":\"mod\",\"packages\":[\"q\"],\"source\":\"s\",\"compatFrom\":\"a\"}}}";
+        that(Loaders.parse(valid, "t").loaders().get("b").compat().files().equals(List.of("a.json")), "loaders:a minimal valid table reads");
+        that(refuses(() -> Loaders.parse(valid.replace("\"schema\":2", "\"schema\":1"), "t"), "schema must be 2"),
+                "loaders:the old schema is refused");
+        that(refuses(() -> Loaders.parse(valid.replace("\"family\":\"mod\",\"packages\":[\"q\"]", "\"packages\":[\"q\"]"), "t"), "has family ''"),
+                "loaders:a loader with no family is refused, by name");
+        that(refuses(() -> Loaders.parse(valid.replace("\"family\":\"mod\",\"packages\":[\"q\"]", "\"family\":\"robot\",\"packages\":[\"q\"]"), "t"),
+                "family 'robot'"), "loaders:a family outside mod, plugin and agent is refused");
+        that(refuses(() -> Loaders.parse(valid.replace("\"compatFrom\":\"a\"", "\"compatFrom\":\"zzz\""), "t"), "borrows the compat of 'zzz'"),
+                "loaders:borrowing the compat of a loader that is not there is refused");
+        that(refuses(() -> Loaders.parse(valid.replace("\"compatFrom\":\"a\"",
+                "\"compatFrom\":\"a\",\"compat\":{\"file\":[\"b\"],\"format\":\"yaml\",\"key\":\"k\",\"syntax\":\"semver\"}"), "t"), "declares its own compat and borrows"),
+                "loaders:declaring a compat and borrowing one is refused");
+        that(refuses(() -> Loaders.parse(valid.replace("\"syntax\":\"semver\"", "\"syntax\":\"calver\""), "t"), "syntax of"),
+                "loaders:a compat in a syntax nothing reads is refused");
+        that(refuses(() -> Loaders.parse(valid.replace("\"path\":\"x\",", ""), "t"), "needs a path"),
+                "loaders:a json compat with no path is refused");
+    }
+
+    // --- the loaders' own range syntaxes -----------------------------------------------------------------------------
+
+    static void compat() {
+        List<String> real = List.of("1.19.4", "1.20", "1.20.1", "1.20.2", "1.21", "1.21.1", "1.21.11", "1.22", "26.1", "26.1.2", "26.2");
+        java.util.function.BiConsumer<String[], List<String>> semver = (c, accepted) -> {
+            java.util.function.Predicate<String> p = CompatExpr.parse("semver", c[0]);
+            that(real.stream().filter(p).toList().equals(accepted), "compat:semver '" + c[0] + "' accepts " + accepted
+                    + ", got " + real.stream().filter(p).toList());
+        };
+        semver.accept(new String[]{">=1.20 <=1.21.1"}, List.of("1.20", "1.20.1", "1.20.2", "1.21", "1.21.1"));
+        semver.accept(new String[]{">=1.20 <1.21"}, List.of("1.20", "1.20.1", "1.20.2"));
+        semver.accept(new String[]{"~1.21"}, List.of("1.21", "1.21.1", "1.21.11"));
+        semver.accept(new String[]{"1.21.x"}, List.of("1.21", "1.21.1", "1.21.11"));
+        semver.accept(new String[]{"^1.20"}, List.of("1.20", "1.20.1", "1.20.2", "1.21", "1.21.1", "1.21.11", "1.22"));
+        semver.accept(new String[]{"1.20.1 || 1.21.1"}, List.of("1.20.1", "1.21.1"));
+        semver.accept(new String[]{"1.20 || >=26.1"}, List.of("1.20", "26.1", "26.1.2", "26.2"));
+        semver.accept(new String[]{"*"}, real);
+        semver.accept(new String[]{"=1.20.1"}, List.of("1.20.1"));
+        semver.accept(new String[]{">=1.21-"}, List.of("1.21", "1.21.1", "1.21.11", "1.22", "26.1", "26.1.2", "26.2"));
+        java.util.function.BiConsumer<String[], List<String>> maven = (c, accepted) -> {
+            java.util.function.Predicate<String> p = CompatExpr.parse("maven", c[0]);
+            that(real.stream().filter(p).toList().equals(accepted), "compat:maven '" + c[0] + "' accepts " + accepted
+                    + ", got " + real.stream().filter(p).toList());
+        };
+        maven.accept(new String[]{"[1.20,1.21.1]"}, List.of("1.20", "1.20.1", "1.20.2", "1.21", "1.21.1"));
+        maven.accept(new String[]{"[1.20,1.21)"}, List.of("1.20", "1.20.1", "1.20.2"));
+        maven.accept(new String[]{"(1.20,1.21]"}, List.of("1.20.1", "1.20.2", "1.21"));
+        maven.accept(new String[]{"[1.21,)"}, List.of("1.21", "1.21.1", "1.21.11", "1.22", "26.1", "26.1.2", "26.2"));
+        maven.accept(new String[]{"(,1.20]"}, List.of("1.19.4", "1.20"));
+        maven.accept(new String[]{"[1.20.1]"}, List.of("1.20.1"));
+        maven.accept(new String[]{"[1.20,1.20.2],[1.21.1,1.21.11]"}, List.of("1.20", "1.20.1", "1.20.2", "1.21.1", "1.21.11"));
+        maven.accept(new String[]{"1.20.1"}, List.of("1.20.1"));
+        java.util.function.Predicate<String> api = CompatExpr.parse("api-version", "1.20");
+        that(!api.test("1.19.4") && api.test("1.20") && api.test("1.20.1") && api.test("26.1"),
+                "compat:an api-version accepts that version and every newer one, which is what a server enforces");
+        for (String bad : List.of("", ">=", "[1.20", "[1.20,1.21,1.22]", "1.20.q", "(1.20)", "(,)")) {
+            for (String syntax : List.of("semver", "maven")) {
+                that(refuses(() -> CompatExpr.parse(syntax, bad), ""), "compat:" + syntax + " refuses '" + bad + "' rather than accept something");
+            }
+        }
+        that(refuses(() -> CompatExpr.parse("calver", "1.20"), "unknown range syntax"), "compat:an unknown syntax is refused, by name");
+
+        // render and parse are inverse over the real versions between from and to, and nothing outside it
+        String[][] ranges = {{"1.21", "1.21.1"}, {"1.20.1", "1.20.1"}, {"1.21", "1.21.x"}, {"1.20", "1.21.x"}, {"26.1", "26.x"},
+                {"1.20.2", "1.21.11"}};
+        for (String[] r : ranges) {
+            for (String syntax : List.of("semver", "maven")) {
+                String text = CompatExpr.render(syntax, r[0], r[1]);
+                java.util.function.Predicate<String> p = CompatExpr.parse(syntax, text);
+                List<String> want = real.stream().filter(v -> Eras.atLeast(v, r[0]) && Eras.atMost(v, r[1])).toList();
+                that(real.stream().filter(p).toList().equals(want), "compat:" + syntax + " renders " + r[0] + ".." + r[1] + " as '" + text
+                        + "' and reads it back as " + real.stream().filter(p).toList() + ", not " + want);
+            }
+        }
+        that("1.20".equals(CompatExpr.render("api-version", "1.20", "1.21.x")) && "1.21".equals(CompatExpr.render("api-version", "1.21.4", "1.21.x"))
+                        && CompatExpr.render("api-version", "1.8.8", "1.12.2") == null,
+                "compat:a plugin's api-version is the range's major.minor, and none before 1.13 where the plugin is a legacy one");
     }
 
     // --- shipping downgraded jars (docs/decisions/0006) ---------------------------------------------------------------
@@ -1591,6 +1729,39 @@ public final class SelfTest {
         expect(root, "a plugin class the map does not name", r -> write(r.resolve("gradle-plugin/src/main/java/dev/woflo/mycelium/gradle/Unmapped.java"),
                         "package dev.woflo.mycelium.gradle; final class Unmapped {}"),
                 f -> f.contains("Unmapped.java"), baseline);
+        expect(root, "a wall at a version the launcher does not name", r -> replace(r.resolve("eras/minecraft.json"),
+                        "{\"at\": \"1.21.5\"", "{\"at\": \"1.21.55\""),
+                f -> f.contains("the wall at '1.21.55'") && f.contains("not a version the launcher names"), baseline);
+        expect(root, "a wall outside its era", r -> replace(r.resolve("eras/minecraft.json"),
+                        "{\"at\": \"1.21.11\"", "{\"at\": \"1.20.4\""),
+                f -> f.contains("the wall at '1.20.4'") && f.contains("outside the era"), baseline);
+        expect(root, "a wall for a loader that does not exist", r -> replace(r.resolve("eras/minecraft.json"),
+                        "{\"at\": \"1.21\", \"for\": [\"plugin\"]", "{\"at\": \"1.21\", \"for\": [\"plugins\"]"),
+                f -> f.contains("is for 'plugins'") && f.contains("neither a loader"), baseline);
+        expect(root, "a name outside the vocabulary", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"names\": {\"dev\": \"unobfuscated\"", "\"names\": {\"dev\": \"mappings\""),
+                f -> f.contains("names.dev 'mappings'"), baseline);
+        expect(root, "a runtime name for a loader the era does not list", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"runtime\": {\"*\": \"calamus\"}", "\"runtime\": {\"*\": \"calamus\", \"forge\": \"srg\"}"),
+                f -> f.contains("names.runtime names 'forge'"), baseline);
+        expect(root, "a loader that exists since a version that does not", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"paper\": \"26.1.1\"", "\"paper\": \"26.1.9\""),
+                f -> f.contains("'paper' since '26.1.9'") && f.contains("not a real version"), baseline);
+        expect(root, "a since for a loader the era does not list", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"since\": {\"forge\": \"1.13.2\"}", "\"since\": {\"babric\": \"1.13.2\"}"),
+                f -> f.contains("'since' names 'babric'"), baseline);
+        expect(root, "a scanner step that begins outside its era", r -> replace(r.resolve("eras/minecraft.json"),
+                        "{\"from\": \"1.7.10\", \"java\": 8}", "{\"from\": \"1.8\", \"java\": 8}"),
+                f -> f.contains("outerJava.forge begins at '1.8'"), baseline);
+        expect(root, "a scanner step that is not a Java version", r -> replace(r.resolve("eras/minecraft.json"),
+                        "{\"from\": \"1.0\", \"java\": 6}", "{\"from\": \"1.0\", \"java\": 2}"),
+                f -> f.contains("outerJava.forge '2' is not a Java feature version"), baseline);
+        expect(root, "a loader that runs no known kind of artifact", r -> replace(r.resolve("eras/loaders.json"),
+                        "\"family\": \"agent\"", "\"family\": \"robot\""),
+                f -> f.contains("family 'robot'"), baseline);
+        expect(root, "a loader borrowing the compat of one that has none", r -> replace(r.resolve("eras/loaders.json"),
+                        "\"compatFrom\": \"fabric\"", "\"compatFrom\": \"javaagent\""),
+                f -> f.contains("borrows the compat of 'javaagent'"), baseline);
         delete(base);
     }
 

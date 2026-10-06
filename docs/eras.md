@@ -16,8 +16,8 @@ Three files hold what the plugin knows about versions. The repository check (`my
 
 | File | What it holds |
 |---|---|
-| `eras/minecraft.json` | Every version, by era: its Java, the loaders a mod can target, how its code is named, and the walls a port crosses. Ordered newest first. |
-| `eras/loaders.json` | Each loader or native entrance's Java packages, and the game's own, each with where it was read. The pure layer may mention none of them (P1). |
+| `eras/minecraft.json` | Every version, by era: its Java, the loaders a mod or plugin can target (and the version each begins on), how its code is named, the Java a loader's scanner reads, and the walls a port crosses. Ordered newest first. |
+| `eras/loaders.json` | Each loader or native entrance's family (`mod`, `plugin`, `agent`), Java packages and the game's own, each with where it was read, and where a built artifact declares the Minecraft versions it accepts. The pure layer may mention none of the packages (P1). |
 | `eras/versions.json` | Every real version, from Mojang's launcher manifest: releases, betas and alphas (snapshots are not targets). |
 
 **Bounds.** An era covers every version from `from` to `to`, both included. A bound is either a version as the
@@ -27,7 +27,31 @@ version that does not exist. Order is Classic, then alpha, then beta, then relea
 era of the release it precedes. Versions before Classic (`rd-`, `in-`, `inf-`) are not targets.
 
 **What the repository check proves.** Every named bound is a real version or a line. Every era runs forwards. Every
-real version falls in exactly one era. Every loader an era names has its packages in `eras/loaders.json`.
+real version falls in exactly one era. Every loader an era names has its packages in `eras/loaders.json`. Every wall
+is at a real version inside its era and splits loaders or families that exist; every name is in the vocabulary and
+every `since`, `outerJava` and name step names a loader the era lists, beginning at a real version inside it.
+
+### What an era says besides its bounds
+
+- **`loaders`** are the loaders that exist somewhere in the era. **`since`** gives, per loader, the first version it
+  exists on when that is later than the era's start (Quilt from 1.14.4, Folia from 1.19.4, NeoForge from 1.20.1). A
+  loader on a version below its `since` is not offered there.
+- **`names`** is a pair. `dev` is what the platform layer's source is written in (a plugin's source is always the
+  API's own, whatever this says). `runtime` is what the running game is called, per loader, with `*` for the loaders it
+  does not name; a value may be steps (`[{"from": "1.5.1", "names": "srg"}]`) where it changes inside the era. The
+  vocabulary is `Eras.NAMES`.
+- **`outerJava`** is the Java feature version of the newest class file a loader's scanner reads, as steps: Forge reads
+  Java 6 class files before 1.6.1, Java 7 before 1.7.10 and Java 8 from it. A loader with no row has no ceiling below
+  the era's own Java. A capsule's `outerJava` is `mycelium.outerJavaFor(loader, minecraft)`.
+- **`walls`** are the versions where something a port depends on changes shape. `at` is the first version of the far
+  side, `for` the loaders or families it splits (`mod`, `plugin`, or a loader's name; absent: every artifact), `what`
+  what changes. A wall is always a stated row: an era boundary is not a wall, because a boundary may change nothing a
+  given artifact touches. A range holds a wall when it has versions on both sides of it, and the range gate asks a
+  proof on each side.
+- **`family`** (in `eras/loaders.json`) says what a loader runs. **`compat`** says where a built artifact of that
+  loader declares the Minecraft versions it accepts: the file (the first that exists), its format, where the value
+  is and the syntax it is written in (`semver` for Fabric and Quilt, `maven` for Forge and NeoForge, `api-version`
+  for Bukkit). `CompatExpr` reads and writes the three.
 
 **Keeping it true.**
 - When Mojang ships a version, run `./gradlew myceliumRefreshVersions`. Builds stay offline; this is the one task that
@@ -120,18 +144,21 @@ four. The gate retries once and logs the retry: one failure is noise, two are re
 
 What a mod must change between versions. The same table drives the gates (`eras/minecraft.json`).
 
-| Minecraft | Java | Loaders | Names in the code | What changes for a mod |
-|---|---|---|---|---|
-| 26.x | 25 | Fabric, NeoForge, Forge | unobfuscated | The game ships unobfuscated: mappings are gone. Forge from 26.1.2, on EventBus 7. |
-| 1.20.5 – 1.21.x | 21 | Fabric, NeoForge, Forge | Mojang | **Data components replace item NBT** (1.20.5); holder and item-model reworks (1.21.2, 1.21.4). |
-| 1.20.2 – 1.20.4 | 17 | Fabric, NeoForge, Forge | Mojang | The configuration network phase; NeoForge splits from Forge. |
-| 1.18 – 1.20.1 | 17 | Fabric, Forge, Quilt | Mojang | World height −64..320 (1.18). 1.20.1 is the largest modded population of its time. |
-| 1.17.x | 16 | Fabric, Forge | Mojang | Java 16. |
-| 1.14 – 1.16.5 | 8 | Fabric, Forge | Mojang from 1.14.4 | Fabric exists. 1.16 adds data-driven dimensions. |
-| 1.13 | 8 | Forge, Legacy Fabric, Ornithe | MCP | **The Flattening**: numeric ids become named blocks and states; data packs begin. |
-| 1.8 – 1.12.2 | 8 | Forge, Legacy Fabric, Ornithe | MCP | The great modpack era. Block states (1.8). No data packs: content comes from code. |
-| 1.0 – 1.7.10 | 8* | Forge, Legacy Fabric, Ornithe | MCP | Numeric ids and metadata. Mycelium the block has existed since Beta 1.9 / 1.0. |
-| Beta, Alpha, Classic | 8* | Babric (Beta 1.7.3), Ornithe | Feather | No registries, no events: everything is hand-rolled. |
+| Minecraft | Java | Mod loaders | Plugin platforms | Names in the code | What changes (the walls) |
+|---|---|---|---|---|---|
+| 26.x | 25 | Fabric, Quilt, NeoForge, Forge | Spigot, Paper, Purpur, Folia | unobfuscated | The game ships unobfuscated: mappings are gone. Forge runs on EventBus 7. |
+| 1.20.5 – 1.21.x | 21 | Fabric, Quilt, NeoForge, Forge | Spigot, Paper, Purpur, Folia | Mojang | **Data components replace item NBT** (1.20.5); registry-backed API for plugins (1.21); holder and item-model reworks (1.21.2, 1.21.4); click and hover events change shape (1.21.5); Forge's EventBus 7 (1.21.6); value input and output (1.21.9); `Identifier` (1.21.11). |
+| 1.20.2 – 1.20.4 | 17 | Fabric, Quilt, NeoForge, Forge | Spigot, Paper, Purpur, Folia | Mojang | The configuration network phase; NeoForge splits from Forge (1.20.2); components travel as NBT (1.20.3). |
+| 1.18 – 1.20.1 | 17 | Fabric, Quilt, Forge, NeoForge (1.20.1) | Spigot, Paper, Purpur, Folia (1.19.4) | Mojang | World height -64..320 (1.18); join packet data (1.18.2); signed chat (1.19, 1.19.1, 1.19.3); damage types (1.19.4). 1.20.1 is the largest modded population of its time. |
+| 1.17.x | 16 | Fabric, Quilt, Forge | Spigot, Paper, Purpur | Mojang | Java 16. |
+| 1.14 – 1.16.5 | 8 | Fabric, Quilt (1.14.4), Forge (1.14.2) | Spigot, Paper, Purpur (1.14.1) | Mojang from 1.14.4 | Fabric exists. Official mappings (1.14.4). 1.16 adds data-driven dimensions; 1.16.2 puts them in the join packet. |
+| 1.13 | 8 | Forge (1.13.2), Legacy Fabric, Ornithe | Spigot, Paper | MCP | **The Flattening**: numeric ids become named blocks and states; data packs begin. |
+| 1.8 – 1.12.2 | 8 | Forge, Legacy Fabric, Ornithe | Spigot, Paper (1.8.8) | MCP | The great modpack era. Block states (1.8). Hands (1.9), namespaced entity ids (1.11), advancements (1.12). No data packs: content comes from code. |
+| 1.0 – 1.7.10 | 8* | Forge, Legacy Fabric, Ornithe | Paper (1.7.10) | MCP | Numeric ids and metadata. The integrated server (1.3.1); Forge's scanner refuses class files above Java 6 until 1.6.1 and Java 7 until 1.7.10; UUIDs (1.7.2). |
+| Beta, Alpha, Classic | 8* | Babric (Beta 1.7.3), Ornithe | Bukkit (Beta) | Feather | No registries, no events: everything is hand-rolled. |
+
+Where a version is in parentheses the loader or platform exists from it (`since` in the era table); a plugin runs on every
+platform of the Bukkit family, whose API it is written against. The table is a summary: the walls are the rows in `eras/minecraft.json`.
 
 \* These shipped for Java 6, but they run on Java 8 today, as does every modern loader for them.
 

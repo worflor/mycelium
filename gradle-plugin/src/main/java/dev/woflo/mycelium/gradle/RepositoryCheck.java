@@ -340,6 +340,7 @@ public final class RepositoryCheck {
                             + " the pure layer would not keep its packages out");
                 }
             }
+            eraFields(e, loaders, real, report);
         }
         int covered = 0;
         int outside = 0;
@@ -364,6 +365,71 @@ public final class RepositoryCheck {
         report.result("eras", covered, all.size() + " eras cover " + covered + " real versions exactly once ("
                 + outside + " before Classic are not targets); " + loaders.loaders().size() + " loaders, "
                 + loaders.platformPackages().size() + " platform package roots");
+    }
+
+    /**
+     * What an era says besides its bounds, each proven against something real: a wall is at a real version inside the era
+     * and splits loaders or families that exist; a name is one the vocabulary has and a loader the era lists; a
+     * {@code since} and an {@code outerJava} step begin at a real version inside the era.
+     */
+    private static void eraFields(Eras.Era e, Loaders loaders, Set<String> real, Report report) {
+        for (Eras.Wall w : e.walls()) {
+            if (!real.contains(w.at())) {
+                report.find("eras", "era '" + e.id() + "': the wall at '" + w.at() + "' is not a version the launcher names");
+            } else if (!e.covers(w.at())) {
+                report.find("eras", "era '" + e.id() + "': the wall at '" + w.at() + "' is outside the era (" + e.from() + " to "
+                        + e.to() + "): a wall belongs to the era whose versions it splits");
+            }
+            for (String token : w.appliesTo()) {
+                if (!loaders.loaders().containsKey(token) && !Loaders.FAMILIES.contains(token)) {
+                    report.find("eras", "era '" + e.id() + "': the wall at '" + w.at() + "' is for '" + token
+                            + "', which is neither a loader in eras/loaders.json nor a family " + Loaders.FAMILIES);
+                }
+            }
+        }
+        if (!Eras.NAMES.contains(e.names().dev())) {
+            report.find("eras", "era '" + e.id() + "': names.dev '" + e.names().dev() + "' is not one of " + new TreeSet<>(Eras.NAMES));
+        }
+        e.names().runtime().forEach((loader, steps) -> {
+            if (!loader.equals("*") && !e.loaders().contains(loader)) {
+                report.find("eras", "era '" + e.id() + "': names.runtime names '" + loader + "', which the era does not list");
+            }
+            for (Eras.Step s : steps) {
+                if (!Eras.NAMES.contains(s.value())) {
+                    report.find("eras", "era '" + e.id() + "': names.runtime." + loader + " '" + s.value() + "' is not one of "
+                            + new TreeSet<>(Eras.NAMES));
+                }
+                stepStart(e, "names.runtime." + loader, s, real, report);
+            }
+        });
+        e.since().forEach((loader, version) -> {
+            if (!e.loaders().contains(loader)) {
+                report.find("eras", "era '" + e.id() + "': 'since' names '" + loader + "', which the era does not list");
+            }
+            if (!real.contains(version) || !e.covers(version)) {
+                report.find("eras", "era '" + e.id() + "': '" + loader + "' since '" + version
+                        + "' is not a real version inside the era (" + e.from() + " to " + e.to() + ")");
+            }
+        });
+        e.outerJava().forEach((loader, steps) -> {
+            if (!e.loaders().contains(loader)) {
+                report.find("eras", "era '" + e.id() + "': 'outerJava' names '" + loader + "', which the era does not list");
+            }
+            for (Eras.Step s : steps) {
+                if (!s.value().matches("\\d{1,2}") || Integer.parseInt(s.value()) < 5) {
+                    report.find("eras", "era '" + e.id() + "': outerJava." + loader + " '" + s.value() + "' is not a Java feature version");
+                }
+                stepStart(e, "outerJava." + loader, s, real, report);
+            }
+        });
+    }
+
+    /** A step begins at the era's start or at a real version inside it. */
+    private static void stepStart(Eras.Era e, String what, Eras.Step s, Set<String> real, Report report) {
+        if (s.from() != null && (!real.contains(s.from()) || !e.covers(s.from()))) {
+            report.find("eras", "era '" + e.id() + "': " + what + " begins at '" + s.from()
+                    + "', which is not a real version inside the era (" + e.from() + " to " + e.to() + ")");
+        }
     }
 
     private static String lineOf(String version) {

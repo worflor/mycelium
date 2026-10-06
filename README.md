@@ -20,7 +20,7 @@ The founding design is `DESIGN.md` (v0.4, frozen). What belongs here is `docs/ad
 |---|---|
 | Status | Contract models and rejection matrices are checked by the repository build. |
 | Java | Contracts and harness: written for 17, proven on every Java an era runs on (`docs/eras.md`). Plugin: built for 17. |
-| Loaders | Whatever `eras/minecraft.json` lists for an era: Fabric, NeoForge and Forge on modern versions, and the loaders of older eras. The plugin knows none of them. |
+| Loaders | Whatever `eras/minecraft.json` lists for an era: Fabric, Quilt, NeoForge and Forge on modern versions, the Bukkit family (Spigot, Paper, Purpur, Folia) for plugins, and the loaders of older eras. The plugin knows none of them: each is a row of data. |
 | Dependencies | None at design time. The plugin uses Gson and ASM; era gates fetch JvmDowngrader and each era's JDK when needed. |
 
 ## Layout

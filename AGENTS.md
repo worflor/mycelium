@@ -115,8 +115,10 @@ mycelium/
 | `IsolationTask.java` | `myceliumIsolation`: optional integrations stay in their home packages (`docs/integrations.md`) |
 | `PurityTask.java` | `myceliumPurity`: the pure layer's source laws, P1 and P3 (`docs/eras.md`) |
 | `PureCompileTask.java` | `myceliumPureCompile`: the pure layer compiled alone, into a bundle |
-| `Eras.java` | the era table: bounds, lookup, coverage |
-| `Loaders.java` | `eras/loaders.json`: the platform packages P1 forbids |
+| `Eras.java` | the era table: bounds, lookup, coverage, walls, availability, names, scanner Java |
+| `Versions.java` | `eras/versions.json`: every real version, the list a range is enumerated against |
+| `Loaders.java` | `eras/loaders.json`: each loader's family, the platform packages P1 forbids, where it declares compatibility |
+| `CompatExpr.java` | the loaders' version-range syntaxes (semver, maven, api-version): read as a predicate, written from a range |
 | `EraTask.java` | `myceliumEraJava<N>` (and `myceliumEras`, all of them): every bundle on an era's JVM |
 | `Linkage.java` | law P2: every outside reference in a bundle exists on the era's Java |
 | `CapsuleSpec.java` | the declarative scanner ceiling, nested jars, runtime roots, and mapping profile for a capsule |

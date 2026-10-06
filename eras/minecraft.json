@@ -1,6 +1,6 @@
 {
- "schema": 1,
- "note": "Every Minecraft version, by era: the Java it runs on, the loaders a mod can target (eras/loaders.json names each loader's packages), how its code is named, and the walls a port crosses. Read by the Gradle plugin (mycelium { minecraft = ... }): a target's era sets its Java, its era gate and its evidence. Ordered newest first; from and to are inclusive, and each is a version as Mojang's launcher manifest names it (eras/versions.json) or a whole line, '<line>.x' (every version of that line, those still to come included). The repository check proves every real version falls in exactly one era. Each row's facts are re-verified against the loaders' own mavens when a consumer first ports to it (docs/eras.md).",
+ "schema": 2,
+ "note": "Every Minecraft version, by era: the Java it runs on, the loaders a mod or plugin can target (eras/loaders.json names each loader's packages and where its declared compatibility lives), how its code is named (names.dev: what the source is written in; names.runtime: what the running game is called, per loader, '*' for the rest), the Java a loader's scanner reads (outerJava), and the walls a port crosses. Read by the Gradle plugin (mycelium { minecraft = ... }): a target's era sets its Java, its era gate and its evidence; an artifact's declared range is held to the walls (docs/decisions/0009). Ordered newest first; from and to are inclusive, and each is a version as Mojang's launcher manifest names it (eras/versions.json) or a whole line, '<line>.x' (every version of that line, those still to come included). A loader listed in an era exists on every version of it unless 'since' gives the first version it exists on. A wall is the first version of its far side: 'at' is a real version, 'for' names the loaders or families ('mod', 'plugin') it splits (absent: every artifact), and a range holding a wall needs a proof version on each side (docs/decisions/0009). 'notes' are facts that are not walls. The repository check proves every real version falls in exactly one era and every named version, loader and name is real. Each row's facts are re-verified against the loaders' own mavens when a consumer first ports to it (docs/eras.md).",
  "eras": [
   {
    "id": "unobfuscated",
@@ -9,12 +9,22 @@
    "java": 25,
    "loaders": [
     "fabric",
+    "quilt",
     "neoforge",
-    "forge"
+    "forge",
+    "bukkit",
+    "spigot",
+    "paper",
+    "purpur",
+    "folia"
    ],
-   "names": "unobfuscated",
+   "since": {"paper": "26.1.1", "purpur": "26.1.2", "folia": "26.1.2"},
+   "names": {"dev": "unobfuscated", "runtime": {"*": "unobfuscated", "bukkit": "api", "spigot": "unobfuscated"}},
    "walls": [
-    "26.1: the game ships unobfuscated; mappings are gone"
+    {"at": "26.1", "for": ["mod"], "what": "the game ships unobfuscated; mappings are gone"}
+   ],
+   "notes": [
+    "Forge runs on EventBus 7 (it began at 1.21.6)"
    ]
   },
   {
@@ -24,15 +34,29 @@
    "java": 21,
    "loaders": [
     "fabric",
+    "quilt",
     "neoforge",
-    "forge"
+    "forge",
+    "bukkit",
+    "spigot",
+    "paper",
+    "purpur",
+    "folia"
    ],
-   "names": "mojang",
+   "names": {"dev": "mojang", "runtime": {"*": "mojang", "fabric": "intermediary", "quilt": "intermediary", "bukkit": "api", "spigot": "spigot"}},
    "walls": [
-    "1.20.5: data components replace item NBT",
-    "1.21.2: item and registry holder reworks",
-    "1.21.4: item model definitions",
-    "1.21.1: PalettedContainer.copy() is shallow (its palettes keep the source's resize handler); 26.3 copies deeply"
+    {"at": "1.20.5", "for": ["mod"], "what": "data components replace item NBT"},
+    {"at": "1.21", "for": ["plugin"], "what": "the Bukkit API's registries become API: Enchantment, PotionEffectType and kin are registry-backed"},
+    {"at": "1.21.2", "for": ["mod"], "what": "item and registry holder reworks"},
+    {"at": "1.21.4", "for": ["mod"], "what": "item model definitions"},
+    {"at": "1.21.5", "for": ["mod"], "what": "text component click and hover events change shape (click_event, hover_event)"},
+    {"at": "1.21.6", "for": ["mod"], "what": "Forge moves to EventBus 7"},
+    {"at": "1.21.9", "for": ["mod"], "what": "entity and block-entity saving moves to ValueInput and ValueOutput"},
+    {"at": "1.21.11", "for": ["mod"], "what": "ResourceLocation is renamed Identifier"}
+   ],
+   "notes": [
+    "1.21.1: PalettedContainer.copy() is shallow (its palettes keep the source's resize handler); 26.3 copies deeply",
+    "Paper's runtime is Mojang-named from 1.20.5; Spigot's stays its own"
    ]
   },
   {
@@ -42,12 +66,22 @@
    "java": 17,
    "loaders": [
     "fabric",
+    "quilt",
     "neoforge",
-    "forge"
+    "forge",
+    "bukkit",
+    "spigot",
+    "paper",
+    "purpur",
+    "folia"
    ],
-   "names": "mojang",
+   "names": {"dev": "mojang", "runtime": {"*": "mojang", "fabric": "intermediary", "quilt": "intermediary", "bukkit": "api", "spigot": "spigot", "paper": "spigot", "purpur": "spigot", "folia": "spigot"}},
    "walls": [
-    "1.20.2: the configuration network phase; NeoForge splits from Forge"
+    {"at": "1.20.2", "for": ["mod"], "what": "the configuration network phase; NeoForge splits from Forge"},
+    {"at": "1.20.3", "for": ["mod"], "what": "text components travel as NBT on the wire (protocol 765)"}
+   ],
+   "notes": [
+    "Forge and NeoForge run Mojang names from 1.20.2; 1.20.1 and before run SRG"
    ]
   },
   {
@@ -58,13 +92,26 @@
    "loaders": [
     "fabric",
     "forge",
-    "quilt"
+    "quilt",
+    "neoforge",
+    "bukkit",
+    "spigot",
+    "paper",
+    "purpur",
+    "folia"
    ],
-   "names": "mojang",
+   "since": {"neoforge": "1.20.1", "folia": "1.19.4"},
+   "names": {"dev": "mojang", "runtime": {"*": "spigot", "fabric": "intermediary", "quilt": "intermediary", "forge": "srg", "neoforge": "srg", "bukkit": "api"}},
    "walls": [
-    "1.18: the world spans -64..320",
-    "1.19: chat signing, the Deep Dark",
-    "1.20.1: NeoForge's first fork (loader 'neoforge' on 1.20.1 is Forge-shaped)"
+    {"at": "1.18", "for": ["mod"], "what": "the world spans -64..320"},
+    {"at": "1.18.2", "for": ["mod"], "what": "registry and tag data in the join packet change from 1.18.1 (protocol 758)"},
+    {"at": "1.19", "for": ["mod"], "what": "chat signing, the Deep Dark"},
+    {"at": "1.19.1", "for": ["mod"], "what": "secure chat: messages are signed and carry chat types (protocol 760)"},
+    {"at": "1.19.3", "for": ["mod"], "what": "chat and command signing become a chain, player info updates split, registries become BuiltInRegistries (protocol 761)"},
+    {"at": "1.19.4", "for": ["mod"], "what": "damage types become registry data (protocol 762)"}
+   ],
+   "notes": [
+    "1.20.1: NeoForge's first fork (loader 'neoforge' on 1.20.1 is Forge-shaped: net.minecraftforge packages, mods.toml, SRG at runtime)"
    ]
   },
   {
@@ -74,11 +121,16 @@
    "java": 16,
    "loaders": [
     "fabric",
-    "forge"
+    "forge",
+    "quilt",
+    "bukkit",
+    "spigot",
+    "paper",
+    "purpur"
    ],
-   "names": "mojang",
+   "names": {"dev": "mojang", "runtime": {"*": "spigot", "fabric": "intermediary", "quilt": "intermediary", "forge": "srg", "bukkit": "api"}},
    "walls": [
-    "1.17: Java 16; world-height groundwork"
+    {"at": "1.17", "for": ["mod"], "what": "Java 16; world-height groundwork"}
    ]
   },
   {
@@ -88,13 +140,20 @@
    "java": 8,
    "loaders": [
     "fabric",
-    "forge"
+    "forge",
+    "quilt",
+    "bukkit",
+    "spigot",
+    "paper",
+    "purpur"
    ],
-   "names": "mojang-from-1.14.4",
+   "since": {"forge": "1.14.2", "quilt": "1.14.4", "purpur": "1.14.1"},
+   "names": {"dev": "mojang-from-1.14.4", "runtime": {"*": "spigot", "fabric": "intermediary", "quilt": "intermediary", "forge": "srg", "bukkit": "api"}},
    "walls": [
-    "1.14: Fabric exists",
-    "1.14.4: official Mojang mappings",
-    "1.16: data-driven dimensions"
+    {"at": "1.14", "for": ["mod"], "what": "Fabric exists"},
+    {"at": "1.14.4", "for": ["mod"], "what": "official Mojang mappings"},
+    {"at": "1.16", "for": ["mod"], "what": "data-driven dimensions"},
+    {"at": "1.16.2", "for": ["mod"], "what": "biome and dimension data travel in the join packet (protocol 751)"}
    ]
   },
   {
@@ -105,11 +164,15 @@
    "loaders": [
     "forge",
     "legacy-fabric",
-    "ornithe"
+    "ornithe",
+    "bukkit",
+    "spigot",
+    "paper"
    ],
-   "names": "mcp",
+   "since": {"forge": "1.13.2"},
+   "names": {"dev": "mcp", "runtime": {"*": "spigot", "forge": "srg", "legacy-fabric": "intermediary", "ornithe": "calamus", "bukkit": "api"}},
    "walls": [
-    "1.13: the Flattening: numeric ids and metadata become named blocks and states; data packs begin"
+    {"at": "1.13", "what": "the Flattening: numeric ids and metadata become named blocks and states; data packs begin"}
    ]
   },
   {
@@ -120,11 +183,20 @@
    "loaders": [
     "forge",
     "legacy-fabric",
-    "ornithe"
+    "ornithe",
+    "bukkit",
+    "spigot",
+    "paper"
    ],
-   "names": "mcp",
+   "since": {"paper": "1.8.8"},
+   "names": {"dev": "mcp", "runtime": {"*": "spigot", "forge": "srg", "legacy-fabric": "intermediary", "ornithe": "calamus", "bukkit": "api"}},
    "walls": [
-    "1.8: block states and JSON models",
+    {"at": "1.9", "for": ["mod"], "what": "the combat update: hands in item and interaction APIs, protocol 107"},
+    {"at": "1.11", "for": ["mod"], "what": "entity ids become namespaced strings, protocol 315"},
+    {"at": "1.12", "for": ["mod"], "what": "advancements replace achievements, the recipe book arrives (protocol 335)"}
+   ],
+   "notes": [
+    "block states and JSON models (1.8)",
     "no data packs: content comes from code"
    ]
   },
@@ -136,12 +208,23 @@
    "loaders": [
     "forge",
     "legacy-fabric",
-    "ornithe"
+    "ornithe",
+    "bukkit",
+    "paper"
    ],
-   "names": "mcp",
+   "since": {"paper": "1.7.10"},
+   "names": {"dev": "mcp", "runtime": {"*": "craftbukkit", "forge": [{"from": "1.0", "names": "obfuscated"}, {"from": "1.5.1", "names": "srg"}], "legacy-fabric": "intermediary", "ornithe": "calamus", "bukkit": "api"}},
+   "outerJava": {"forge": [{"from": "1.0", "java": 6}, {"from": "1.6.1", "java": 7}, {"from": "1.7.10", "java": 8}]},
    "walls": [
+    {"at": "1.3.1", "for": ["mod"], "what": "the integrated server: every game runs a server (protocol 39)"},
+    {"at": "1.6.1", "for": ["mod"], "what": "protocol 73; FML scans every class with ASM 4, which refuses a class file above Java 7"},
+    {"at": "1.7.2", "for": ["mod"], "what": "protocol 4: UUIDs and the new authentication"}
+   ],
+   "notes": [
     "numeric block ids and metadata",
-    "the mycelium block has existed since Beta 1.9 / 1.0"
+    "the mycelium block has existed since Beta 1.9 / 1.0",
+    "Forge's scanner reads Java 6 class files until 1.6.1, Java 7 until 1.7.10 and Java 8 from it; the first fact is what Recon's 1.2.5, 1.4.7 and 1.5.2 capsules hold to, the second what its 1.6.4 capsule holds to",
+    "Forge deobfuscates the game at runtime (SRG names) from 1.5.1; before it, mods are reobfuscated to the game's own obfuscated names"
    ]
   },
   {
@@ -154,10 +237,12 @@
     "ornithe",
     "bukkit"
    ],
-   "names": "feather",
+   "names": {"dev": "feather", "runtime": {"*": "intermediary", "ornithe": "calamus", "bukkit": "craftbukkit"}},
    "walls": [
-    "no registries, no events: everything is hand-rolled",
-    "b1.7.3: Babric and StationAPI"
+    {"at": "b1.7.3", "for": ["babric"], "what": "Babric and StationAPI"}
+   ],
+   "notes": [
+    "no registries, no events: everything is hand-rolled"
    ]
   },
   {
@@ -169,8 +254,8 @@
     "ornithe",
     "javaagent"
    ],
-   "names": "feather",
-   "walls": [
+   "names": {"dev": "feather", "runtime": {"*": "obfuscated", "ornithe": "calamus"}},
+   "notes": [
     "no registries, no events",
     "a1.2.6 javaagent profile is limited to the paired Alpha 0.2.8 server artifact"
    ]
@@ -183,8 +268,8 @@
    "loaders": [
     "ornithe"
    ],
-   "names": "feather",
-   "walls": [
+   "names": {"dev": "feather", "runtime": {"*": "calamus"}},
+   "notes": [
     "a block-building toy: no survival mechanics a dream mod leans on"
    ]
   }
