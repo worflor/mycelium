@@ -36,6 +36,7 @@ public final class ChatInvocationContractTests {
         p2InOrder(c);
         p3Admitted(c);
         p4ReadyInIsExact(c);
+        p5TriggerIsNamed(c);
         return c;
     }
 
@@ -256,6 +257,35 @@ public final class ChatInvocationContractTests {
             }
         }
         c.that(known && pure && zeroAdmits && exact && unseen && waits > 0 && admits > 0, "P4:ready-in-is-exact");
+    }
+
+    /**
+     * P5: an addressed line, delivered or rejected for any reason, names the trigger it began with, as the rules spell
+     * it (not as it was typed), and the first listed trigger that addresses it wins. A line that is not addressed names
+     * nothing: it carries nothing at all (L1).
+     */
+    private void p5TriggerIsNamed(Check c) {
+        Rules rules = Rules.defaults().withPrefixes(Arrays.asList("@mod", "@Recon", "@modpack"));
+        Gate g = gates.apply(rules.withBucket(1, 1_000_000));
+        Invocation typedApart = committed(g.offer(new Line("alex", "@RECON what is the tps?", 1)));
+        Outcome limited = g.offer(new Line("alex", "@mod again", 2));
+        Gate h = gates.apply(rules.withBucket(10, 1));
+        Invocation comma = committed(h.offer(new Line("alex", "  @mod, hi", 1)));
+        // "@modpack" begins with "@mod" but is not it (no boundary), so only the third trigger addresses the line
+        Invocation longer = committed(h.offer(new Line("alex", "@modpack: hi", 2)));
+        Outcome bare = h.offer(new Line("alex", "@recon", 3));
+        Outcome tooLong = gates.apply(rules.withMaxQuery(10)).offer(new Line("alex", "@mod this question is far too long", 1));
+        boolean named = typedApart != null && "@Recon".equals(typedApart.trigger())
+                && comma != null && "@mod".equals(comma.trigger())
+                && longer != null && "@modpack".equals(longer.trigger())
+                && rejectedBy(bare, Outcome.Reason.EMPTY_QUERY, "@Recon")
+                && rejectedBy(tooLong, Outcome.Reason.TOO_LONG, "@mod")
+                && rejectedBy(limited, Outcome.Reason.RATE_LIMITED, "@mod");
+        c.that(named, "P5:trigger-is-named");
+    }
+
+    private static boolean rejectedBy(Outcome o, Outcome.Reason reason, String trigger) {
+        return o instanceof Outcome.Rejected r && r.reason() == reason && trigger.equals(r.trigger());
     }
 
     private static boolean limited(Outcome o) {

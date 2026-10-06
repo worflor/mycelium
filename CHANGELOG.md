@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-06 - chat.invocation@1: the trigger is named
+
+`Invocation` and `Outcome.Rejected` carry the trigger the line began with, spelled as the rules spell it, and
+`Triggers.match` answers the addressing question with it. The earlier constructors remain and leave it `null`, so every
+existing implementer still compiles and keeps every existing law; a gate that does not name it fails the new law `P5`.
+`Run.java` gains the matrix entry `NamelessGate`, caught by P5. Matrix size 14.
+
+Verification: the chat.invocation harness passes (reference clean, all 14 rejection entries caught).
+
 ## 2026-10-05 - Chat coverage retired
 
 `chat.coverage@1` has registry status `retired`, and its SPEC says so. Recon, the only consumer, redacts the logs it

@@ -21,7 +21,7 @@ import java.util.Set;
  */
 public final class FlexGate implements Gate {
     /** The ways to be wrong. */
-    public enum Flaw { NONE, NO_OP, LEAKY, EAGER, UNBOUNDED, STALE, ECHO, GREEDY, DEAF, TRUNCATING, SHUFFLED, STINGY, MUTE_WAIT, EARLY_WAIT }
+    public enum Flaw { NONE, NO_OP, LEAKY, EAGER, UNBOUNDED, STALE, ECHO, GREEDY, DEAF, TRUNCATING, SHUFFLED, STINGY, MUTE_WAIT, EARLY_WAIT, NAMELESS }
 
     private final Rules rules;
     private final Flaw flaw;
@@ -36,7 +36,10 @@ public final class FlexGate implements Gate {
 
     @Override
     public Outcome offer(Line line) {
-        String query = flaw == Flaw.EAGER ? eagerQuery(line.text()) : Triggers.query(rules, line.text());
+        Triggers.Match match = flaw == Flaw.EAGER ? eagerMatch(line.text()) : Triggers.match(rules, line.text());
+        String query = match == null ? null : match.query();
+        // a nameless gate delivers everything else right and never says which trigger addressed the line
+        String trigger = match == null || flaw == Flaw.NAMELESS ? null : match.trigger();
         if (flaw == Flaw.NO_OP) {
             return Outcome.Passed.INSTANCE;
         }
@@ -51,22 +54,22 @@ public final class FlexGate implements Gate {
             hold(line);
         }
         if (query.isEmpty()) {
-            return new Outcome.Rejected(line.principal(), Outcome.Reason.EMPTY_QUERY);
+            return new Outcome.Rejected(line.principal(), Outcome.Reason.EMPTY_QUERY, trigger);
         }
         if (query.length() > rules.maxQueryChars()) {
             if (flaw != Flaw.TRUNCATING) {
-                return new Outcome.Rejected(line.principal(), Outcome.Reason.TOO_LONG);
+                return new Outcome.Rejected(line.principal(), Outcome.Reason.TOO_LONG, trigger);
             }
             query = query.substring(0, rules.maxQueryChars());
         }
         if (flaw != Flaw.GREEDY && !admit(line.principal(), line.at())) {
-            return new Outcome.Rejected(line.principal(), Outcome.Reason.RATE_LIMITED);
+            return new Outcome.Rejected(line.principal(), Outcome.Reason.RATE_LIMITED, trigger);
         }
         List<Line> snap = snapshot(line.at());
         if (flaw == Flaw.SHUFFLED) {
             Collections.reverse(snap);
         }
-        return new Outcome.Committed(new Invocation(line.principal(), query, line.at(), snap));
+        return new Outcome.Committed(new Invocation(line.principal(), query, line.at(), snap, trigger));
     }
 
     @Override
@@ -117,11 +120,11 @@ public final class FlexGate implements Gate {
         return flaw == Flaw.EARLY_WAIT ? wait - 1 : wait;
     }
 
-    private String eagerQuery(String text) {
+    private Triggers.Match eagerMatch(String text) {
         String t = text.trim();
         for (String p : rules.prefixes()) {
             if (t.regionMatches(true, 0, p, 0, p.length())) {
-                return t.substring(p.length()).trim();
+                return new Triggers.Match(p, t.substring(p.length()).trim());
             }
         }
         return null;

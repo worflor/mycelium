@@ -25,7 +25,12 @@ public sealed interface Outcome permits Outcome.Passed, Outcome.Committed, Outco
     record Committed(Invocation invocation) implements Outcome {
     }
 
-    record Rejected(String principal, Reason reason) implements Outcome {
+    /** {@code trigger} is the trigger the line began with, spelled as the rules spell it (law P5); {@code null} only from a gate that does not name it. */
+    record Rejected(String principal, Reason reason, String trigger) implements Outcome {
+        /** A rejection from a gate that does not name the trigger. */
+        public Rejected(String principal, Reason reason) {
+            this(principal, reason, null);
+        }
     }
 
     /** True for an addressed line, delivered or not: such a line is the asker's and is not broadcast. */

@@ -18,13 +18,14 @@ stated so a harness can hold an implementation to it.
   (`burst` invocations at once, one more every `refillMs`). `Rules.defaults()` is `@mod`, 256 chars, 12 lines,
   2 minutes, 3 at once, one per 10 s.
 - `Triggers.query(rules, text)`: the query an addressed line carries, `""` for a bare trigger, `null` when the line is
-  not addressed at all.
+  not addressed at all. `Triggers.match(rules, text)` answers the same question with the trigger as well: a
+  `Match(trigger, query)`, the trigger spelled as the rules spell it, the first listed one that addresses the line.
 - `Gate`: `offer(line)` for every chat line, `optOut(principal, out)`, and `readyInMs(principal, now)`: how long until
   that principal's next addressed line would be admitted (0 when it would be now, `Gate.UNKNOWN` (-1) from a gate
   that cannot say). Asking spends nothing and changes nothing.
-- `Outcome`: `Passed` (not an invocation; nothing leaves), `Committed(Invocation)`, `Rejected(principal, reason)` with
-  `Reason` one of `EMPTY_QUERY`, `TOO_LONG`, `RATE_LIMITED`.
-- `Invocation(principal, query, at, snapshot)`.
+- `Outcome`: `Passed` (not an invocation; nothing leaves), `Committed(Invocation)`, `Rejected(principal, reason, trigger)`
+  with `Reason` one of `EMPTY_QUERY`, `TOO_LONG`, `RATE_LIMITED`.
+- `Invocation(principal, query, at, snapshot, trigger)`.
 - `ChatGate`: the reference.
 
 A line is addressed when, after leading whitespace, it starts with a trigger (ASCII case-insensitive) followed by the
@@ -52,6 +53,7 @@ end of the line, whitespace, `,` or `:`. `@modpack`, `hi @mod` and `x@mod.com` a
 | P2 | `P2:snapshot-in-order` | The snapshot is exactly the most recent eligible lines, oldest first |
 | P3 | `P3:under-budget-admitted` | A principal under budget is admitted, and is admitted again once the bucket refills |
 | P4 | `P4:ready-in-is-exact` | `readyInMs(p, t)` is 0 exactly when an addressed line from `p` at `t` is admitted; otherwise it is the exact wait: a line at `t + readyInMs - 1` is still `RATE_LIMITED`, one at `t + readyInMs` is admitted; a principal never seen is ready at once; asking twice answers the same (seeded, five bucket shapes, two principals, 200 steps each) |
+| P5 | `P5:trigger-is-named` | An addressed line, committed or rejected for any reason, names the trigger it began with, spelled as the rules spell it and not as it was typed (`@RECON` under `@Recon` is `@Recon`); where triggers overlap (`@mod`, `@modpack`) it is the first listed one that addresses the line |
 
 ## Rejection matrix
 
@@ -70,6 +72,7 @@ end of the line, whitespace, `,` or `:`. `@modpack`, `hi @mod` and `x@mod.com` a
 | `StingyGate` | A bucket that never refills | `P3:under-budget-admitted` |
 | `MuteWaitGate` | Rate-limits correctly but always says the wait is 0 | `P4:ready-in-is-exact` |
 | `EarlyWaitGate` | Says the wait is one millisecond too short | `P4:ready-in-is-exact` |
+| `NamelessGate` | Delivers and rejects correctly but never says which trigger addressed the line | `P5:trigger-is-named` |
 
 ## Edge semantics
 
@@ -90,6 +93,13 @@ usual and nothing else happens. A `Committed` or `Rejected` line is a request to
 may read chat.
 
 ## Versioning
+
+`trigger` was added to `@1` on 2026-10-06, from Recon's need to show an asker the word they used: a server that lists
+`@mod` and `@recon` answers a player who typed `@recon` as `[recon]`, and a rejection ("ask something after @recon")
+names the word they typed. It is the last component of `Invocation` and of `Rejected`, and the previous constructors
+remain (they leave it `null`: a gate that does not name it, which a caller meets by falling back to its first trigger),
+so every existing implementer still compiles and every existing label and outcome is unchanged. A gate that leaves it
+unnamed keeps L1 to P4 and fails P5.
 
 `readyInMs` was added to `@1` on 2026-09-29, from Recon's need to tell a rate-limited asker when to ask again
 (before, it could only say "one every 10s", which is wrong for a bucket half-way to its next refill). It is a

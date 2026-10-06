@@ -5,8 +5,21 @@ public final class Triggers {
     private Triggers() {
     }
 
+    /** An addressed line: the trigger it began with, spelled as the rules spell it, and the query after it. */
+    public record Match(String trigger, String query) {
+    }
+
     /** The query an addressed line carries ({@code ""} for a bare trigger), or {@code null} when it is not addressed. */
     public static String query(Rules rules, String text) {
+        Match match = match(rules, text);
+        return match == null ? null : match.query();
+    }
+
+    /**
+     * The first trigger, in the rules' order, that addresses the line, with the query after it; {@code null} when no
+     * trigger does. The trigger is the rules' own spelling, not the case the line was typed in.
+     */
+    public static Match match(Rules rules, String text) {
         if (text == null) {
             return null;
         }
@@ -26,7 +39,7 @@ public final class Triggers {
                 }
                 end++;
             }
-            return text.substring(end).trim();
+            return new Match(prefix, text.substring(end).trim());
         }
         return null;
     }

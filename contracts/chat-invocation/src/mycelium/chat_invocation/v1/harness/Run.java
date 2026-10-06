@@ -40,7 +40,8 @@ public final class Run {
                         broken("ShuffledGate", Flaw.SHUFFLED, "P2:snapshot-in-order"),
                         broken("StingyGate", Flaw.STINGY, "P3:under-budget-admitted"),
                         broken("MuteWaitGate", Flaw.MUTE_WAIT, "P4:ready-in-is-exact"),
-                        broken("EarlyWaitGate", Flaw.EARLY_WAIT, "P4:ready-in-is-exact")
+                        broken("EarlyWaitGate", Flaw.EARLY_WAIT, "P4:ready-in-is-exact"),
+                        broken("NamelessGate", Flaw.NAMELESS, "P5:trigger-is-named")
                 ));
         System.exit(exit);
     }

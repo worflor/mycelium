@@ -33,21 +33,22 @@ public final class ChatGate implements Gate {
     public Outcome offer(Line line) {
         long now = Math.max(line.at(), last);
         last = now;
-        String query = Triggers.query(rules, line.text());
-        if (query == null) {
+        Triggers.Match match = Triggers.match(rules, line.text());
+        if (match == null) {
             remember(new Line(line.principal(), line.text(), now));
             return Outcome.Passed.INSTANCE;
         }
+        String query = match.query();
         if (query.isEmpty()) {
-            return new Outcome.Rejected(line.principal(), Outcome.Reason.EMPTY_QUERY);
+            return new Outcome.Rejected(line.principal(), Outcome.Reason.EMPTY_QUERY, match.trigger());
         }
         if (query.length() > rules.maxQueryChars()) {
-            return new Outcome.Rejected(line.principal(), Outcome.Reason.TOO_LONG);
+            return new Outcome.Rejected(line.principal(), Outcome.Reason.TOO_LONG, match.trigger());
         }
         if (!spend(line.principal(), now)) {
-            return new Outcome.Rejected(line.principal(), Outcome.Reason.RATE_LIMITED);
+            return new Outcome.Rejected(line.principal(), Outcome.Reason.RATE_LIMITED, match.trigger());
         }
-        return new Outcome.Committed(new Invocation(line.principal(), query, now, snapshot(now)));
+        return new Outcome.Committed(new Invocation(line.principal(), query, now, snapshot(now), match.trigger()));
     }
 
     @Override
