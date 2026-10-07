@@ -75,13 +75,13 @@
     "purpur",
     "folia"
    ],
-   "names": {"dev": "mojang", "runtime": {"*": "mojang", "fabric": "intermediary", "quilt": "intermediary", "bukkit": "api", "spigot": "spigot", "paper": "spigot", "purpur": "spigot", "folia": "spigot"}},
+   "names": {"dev": "mojang", "runtime": {"*": "mojang", "fabric": "intermediary", "quilt": "intermediary", "forge": "srg", "bukkit": "api", "spigot": "spigot", "paper": "spigot", "purpur": "spigot", "folia": "spigot"}},
    "walls": [
     {"at": "1.20.2", "for": ["mod"], "what": "the configuration network phase; NeoForge splits from Forge"},
     {"at": "1.20.3", "for": ["mod"], "what": "text components travel as NBT on the wire (protocol 765)"}
    ],
    "notes": [
-    "Forge and NeoForge run Mojang names from 1.20.2; 1.20.1 and before run SRG"
+    "NeoForge runs Mojang names from 1.20.2; Forge's installer still builds an SRG server for 1.20.2 to 1.20.4 (Forge 48 and 49), and Forge runs Mojang names from 1.20.6 (50); 1.20.1 and before run SRG on both"
    ]
   },
   {
