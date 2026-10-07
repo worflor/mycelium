@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-07 - License
+
+Mycelium is licensed under the Mozilla Public License 2.0 (`LICENSE`). A mod built with it keeps its own licence;
+Mycelium's own files stay MPL-2.0.
+
 ## 2026-10-06 - Linkage at each version
 
 `range { linkage { } }` adds `myceliumLinkage`: every class, method and field the finished artifact references must resolve

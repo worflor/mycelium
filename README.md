@@ -141,3 +141,10 @@ ForgeGradle does, which the task must order itself after `compileJava` to read.
 `./gradlew -p gradle-plugin/src/test/fixtures/linkage-consumer check` proves a Fabric artifact whose range's first version is
 linked from name data the build pins itself and whose second stays proven; `-PlinkageBreak=1.21` removes the method the artifact
 calls from 1.21's data, which `myceliumLinkage` must refuse by naming the reference and the version.
+
+## License
+
+Mycelium is licensed under the [Mozilla Public License 2.0](LICENSE). The licence applies file by file: a mod built with
+Mycelium, including a paid or closed one, keeps its own licence, while Mycelium's files, and any changes made to them,
+stay under MPL-2.0 wherever they are carried, including contract models and stubs copied into a mod's jar. The licence
+grants no rights to the name Mycelium; a modified fork is published under a name of its own.

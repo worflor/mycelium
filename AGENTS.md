@@ -24,7 +24,7 @@ It ships no runtime. Everything a mod imports becomes that mod's own private cod
 |---|---|
 | Java | Contracts and harness: written for 17, proven on every Java an era runs on (`docs/eras.md`). Plugin: built for 17. |
 | Dependencies | None at design time. The plugin uses Gson and ASM; era gates fetch JvmDowngrader and each era's JDK when needed. |
-| License | Not decided. Do not add a LICENSE without the owner's word. |
+| License | MPL-2.0 (`LICENSE`). A mod built with Mycelium keeps its own licence; files taken from Mycelium stay MPL-2.0. |
 | Design | `DESIGN.md` (v0.4, frozen). Read it once, in full, before proposing an architectural change. |
 | State | `README.md`'s status line (derived by the build), `CHANGELOG.md` (history), `docs/decisions/` (why). |
 
