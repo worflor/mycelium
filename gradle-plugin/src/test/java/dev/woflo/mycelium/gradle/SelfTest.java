@@ -1531,6 +1531,14 @@ public final class SelfTest {
                     "downgrade:a method the jar's class inherits from a class outside is traced to it (Java 9's getDefinedPackage on Java 8)");
             that(refs.keySet().stream().noneMatch(r -> r.contains(" declared ")), "downgrade:a method the jar's class declares is not");
 
+            // the shade step is told the target's class version: its API archive is named for it, and that is the one read
+            for (int target : new int[] {8, 16}) {
+                java.util.List<String> shade = DowngradeJarTask.shadeCommand("java", "tool.jar", target, "pfx", Path.of("down.jar"), Path.of("out.jar"));
+                int flag = shade.indexOf("-c");
+                that(flag >= 0 && shade.get(flag + 1).equals(String.valueOf(44 + target)) && flag < shade.indexOf("shade"),
+                        "downgrade:the shade step for Java " + target + " carries class version " + (44 + target) + " before its command");
+            }
+
             downgradedMetadata(dir);
         } finally {
             delete(dir);

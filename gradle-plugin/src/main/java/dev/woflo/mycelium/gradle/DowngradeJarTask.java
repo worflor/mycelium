@@ -182,7 +182,7 @@ public abstract class DowngradeJarTask extends DefaultTask {
                 "--target", in.toString(), down.toString(), "--classpath", classpath)) {
             throw new GradleException("Mycelium: could not downgrade " + in.getFileName() + " to Java " + java + " (" + log + ")");
         }
-        if (!tool(report, log, hostJava, "-jar", tool, "shade", "--prefix", prefix, "--target", down.toString(), out.toString())) {
+        if (!tool(report, log, shadeCommand(hostJava, tool, java, prefix, down, out).toArray(String[]::new))) {
             throw new GradleException("Mycelium: could not shade the backports of " + in.getFileName() + " (" + log + ")");
         }
         Path metadataApi = downgradedApi(report.resolve(".jvmdg"), 44 + java);
@@ -248,6 +248,16 @@ public abstract class DowngradeJarTask extends DefaultTask {
         }
         getLogger().lifecycle("Mycelium: {} downgraded to Java {} (class version {} to {}; {} Java references resolve on it)",
                 in.getFileName(), java, r.get("classVersionBefore").getAsInt(), r.get("classVersionAfter").getAsInt(), javaRefs.size());
+    }
+
+    /**
+     * JvmDowngrader's shade step for a jar downgraded to {@code java}. The class version names the API archive the step
+     * writes ({@code -downgraded-<major>}) and so the one {@link #downgradedApi} reads: a step left at the tool's default
+     * writes Java 8's, which no other target has.
+     */
+    static List<String> shadeCommand(String hostJava, String tool, int java, String prefix, Path down, Path out) {
+        return List.of(hostJava, "-jar", tool, "-c", String.valueOf(44 + java), "shade", "--prefix", prefix, "--target",
+                down.toString(), out.toString());
     }
 
     /** Highest class file major version in a jar (52 is Java 8), or 0 when it holds no class. */

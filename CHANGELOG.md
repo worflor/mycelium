@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-06 - myceliumDowngradeJar for a Java between 9 and 17
+
+The shade step of `myceliumDowngradeJar` is told the target's class version (`-c 60` for Java 16), as the downgrade step
+already was. Left at the tool's default it wrote its API archive downgraded to class version 52, and the task, which reads
+the archive named for the target (`-downgraded-60`), found none: a jar for a game on Java 16 (Minecraft 1.17.x) could not
+be downgraded, where Java 8 (52) and Java 17 and later (no downgrade) could. On Recon's 1.17.1 jar the shaded result is
+the same size with either class version. Self-test: `downgrade:` holds the shade command to carry the class version of Java 8 and Java 16.
+
 ## 2026-10-06 - A plugin's api-version across the flattening
 
 A server before 1.13 reads no `api-version`, so the key is a floor only where it is read. `CompatExpr.parse("api-version", v)`
