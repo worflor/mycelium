@@ -30,7 +30,8 @@ import java.util.function.Predicate;
  * </ul>
  * Every version in the range is then recorded as {@code proven} (a proof version not marked pending), {@code pending} (a
  * proof declared and not yet run) or {@code interpolated} (inside the range, with no proof of its own: a claim). The gate
- * does not link the artifact against each proof version's game and loader jars; the report says so.
+ * does not link the artifact against any version's game; {@code myceliumLinkage} ({@link LinkageGate}) does, on the finished
+ * artifact, and the report says which of the two a build ran.
  */
 public final class RangeGate {
     private RangeGate() {
@@ -45,6 +46,12 @@ public final class RangeGate {
      * loader ({@code null}: its resources were not read, and the report says the metadata was not checked).
      */
     public static Result check(ArtifactLedger.Artifact a, Eras eras, Loaders loaders, List<String> real, CompatMetadata.Found found) {
+        return check(a, eras, loaders, real, found, false);
+    }
+
+    /** As above; {@code linkageDeclared} says the artifact also runs {@code myceliumLinkage}, which the report points to. */
+    public static Result check(ArtifactLedger.Artifact a, Eras eras, Loaders loaders, List<String> real, CompatMetadata.Found found,
+                               boolean linkageDeclared) {
         List<String> findings = new ArrayList<>();
         JsonObject report = new JsonObject();
         report.addProperty("schema", 1);
@@ -162,8 +169,16 @@ public final class RangeGate {
         report.add("metadata", metadata(a, loader, versions, real, found, findings));
         JsonObject linkage = new JsonObject();
         linkage.addProperty("checked", false);
-        linkage.addProperty("why", "the gate holds the claim to the era table, the proofs and the loader's metadata; it does not link the"
-                + " artifact against each proof version's game and loader jars (docs/decisions/0009 says what that needs)");
+        if (linkageDeclared) {
+            linkage.addProperty("deferred", true);
+            linkage.addProperty("why", "linkage reads the finished artifact, which this manifest is sealed into, so it runs after it: "
+                    + "build/mycelium/linkage/linkage.json (myceliumLinkage) names that archive by SHA-256 and records each version as "
+                    + "proven, pending, linked or interpolated (docs/decisions/0010)");
+        } else {
+            linkage.addProperty("why", "the gate holds the claim to the era table, the proofs and the loader's metadata; the artifact "
+                    + "declares no linkage (mycelium { range { linkage { ... } } }), so no version is held to the game's published names"
+                    + " (docs/decisions/0010)");
+        }
         report.add("linkage", linkage);
         return done(report, findings, true);
     }

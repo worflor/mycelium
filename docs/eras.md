@@ -53,9 +53,20 @@ every `since`, `outerJava` and name step names a loader the era lists, beginning
   is and the syntax it is written in (`semver` for Fabric and Quilt, `maven` for Forge and NeoForge, `api-version`
   for Bukkit). `CompatExpr` reads and writes the three.
 
+### Name data
+
+`runtime` says what a loader runs the game as; `eras/names.json` holds what the game *has* under each naming on each
+version, for the linkage gate (`docs/decisions/0010-linkage-at-each-version.md`): per naming and version, the published
+files (Searge's `joined.srg`, Fabric's intermediary, Mojang's server bundle and mappings, the game's own jar where it
+ships unobfuscated, an API's jar) pinned by SHA-256, how each is read, and which class names the data speaks for. A
+version with no entry has no name data and is never reported as linked. Pins are fetched once into a cache keyed by
+hash. The repository check holds every entry to a real version some loader runs under that naming.
+
 **Keeping it true.**
 - When Mojang ships a version, run `./gradlew myceliumRefreshVersions`. Builds stay offline; this is the one task that
   reads the network. If the new version opens a new line, the check says which era it falls outside.
+- When a release should be linked too, run `./gradlew myceliumRefreshNames --namespace=<name> --versions=<v>`; it pins
+  that version's files, and without versions it reports any pinned file that has changed.
 - When a loader appears, write its packages into `eras/loaders.json` with their source. From then on law P1 guards
   them everywhere, with no list kept anywhere else.
 - A row's facts (loaders, Java) are re-verified against the loaders' own mavens when a consumer first ports to it.

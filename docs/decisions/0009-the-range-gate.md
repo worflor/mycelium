@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Date | 2026-10-06 |
-| Status | Accepted (the self-tests pass); per-version linkage is not built |
+| Status | Accepted (the self-tests pass); per-version linkage is `docs/decisions/0010-linkage-at-each-version.md` |
 | Extends | `docs/decisions/0008-capsule-runtime-linkage.md` |
 
 ## Context
@@ -58,14 +58,14 @@ The era table gained what the gate needs (docs/eras.md): plugin platforms, Quilt
 `names` as a pair (`dev`, `runtime`), `outerJava` (the Java a loader's scanner reads) and walls as rows. Walls are
 explicit: an era boundary is not a wall.
 
-## Not built: linkage at each proof version
+## Linkage at each version
 
 ADR 0008's `Linkage` proves every class and member a bundle references exists in a runtime view, for one view. The same
-check at each proof version would link the artifact against that version's game and the loader's API, which needs those
-jars per version: the game's server jar, its mappings, the loader and its API. A build resolves them for its own node
-only. Until a provider resolves them per proof version (a pinned, hash-checked set, as the ladder's lock files are), the
-report carries `linkage: {"checked": false, "why": ...}`, and an interpolated version is a claim a user's report can
-disprove. Narrowing the range is the fix when one does.
+check against each version of a range needs that version's names, which a build resolves for its own node only. ADR 0010
+pins them (`eras/names.json`) and adds `myceliumLinkage`, which marks an interpolated version `linked` when every reference
+the finished artifact makes resolves there. A build that does not declare it records `linkage: {"checked": false, "why": ...}`
+in the range report, and an interpolated version is then a claim a user's report can disprove. Narrowing the range is the
+fix when one does.
 
 ## Consequences
 

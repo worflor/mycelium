@@ -331,6 +331,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.getRoot().set(ext.getRoot());
                     t.getDeclaration().set(claim.toJson().toString());
                     t.getSourceFingerprint().set(fingerprint);
+                    t.getLinkageDeclared().set(ext.getRange().isLinkageDeclared());
                     t.getResources().from(sourceSets.getByName("main").getOutput().getResourcesDir());
                     t.getResourcesDir().set(sourceSets.getByName("main").getOutput().getResourcesDir());
                     t.getReportFile().set(p.getLayout().getBuildDirectory().file("mycelium/range/range.json"));
@@ -341,6 +342,43 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.getRangeReport().set(rangeTask.flatMap(RangeTask::getReportFile));
                     t.dependsOn(rangeTask);
                 });
+                // Linkage (docs/decisions/0010) reads the finished artifact, so it cannot be inside the manifest that goes into it:
+                // it runs after the artifact exists and writes its own report. Only a range that declares it is linked.
+                if (ext.getRange().isLinkageDeclared()) {
+                    LinkageSpec spec = ext.getRange().getLinkage();
+                    Provider<org.gradle.api.file.RegularFile> shipped = ext.getCapsule().getArchive().isPresent()
+                            ? ext.getCapsule().getArchive() : p.getTasks().named("jar", Jar.class).flatMap(Jar::getArchiveFile);
+                    spec.getArchive().convention(shipped);
+                    spec.getNames().convention(ext.getRoot().file("eras/names.json"));
+                    spec.getCache().convention(p.getLayout().dir(p.provider(() -> namesCache(p))));
+                    if (ext.getCapsule().getArchive().isPresent()) {
+                        spec.getNestedJars().convention(p.provider(() -> ext.getCapsule().getNestedJars().get().stream()
+                                .map(encoded -> encoded.substring(0, encoded.lastIndexOf('|'))).toList()));
+                    }
+                    TaskProvider<LinkageTask> linkageTask = p.getTasks().register("myceliumLinkage", LinkageTask.class, t -> {
+                        t.setGroup("mycelium");
+                        t.setDescription("Holds the finished artifact to the game's published names on every version of its range that has name data.");
+                        t.getRoot().set(ext.getRoot());
+                        t.getDeclaration().set(claim.toJson().toString());
+                        t.getSourceFingerprint().set(fingerprint);
+                        t.getRangeReport().set(rangeTask.flatMap(RangeTask::getReportFile));
+                        t.getArchive().set(spec.getArchive());
+                        t.getNestedJars().set(spec.getNestedJars());
+                        t.getNamespace().set(spec.getNamespace());
+                        t.getExcluded().from(spec.getExclude());
+                        t.getNames().set(spec.getNames());
+                        t.getCache().set(spec.getCache());
+                        t.getOffline().set(p.getGradle().getStartParameter().isOffline());
+                        if (ext.getCapsule().getArchive().isPresent()) {
+                            t.getMinecraft().set(ext.getMinecraft());
+                            t.getCapsuleReport().set(capsuleTask.flatMap(CapsuleTask::getReportFile));
+                            t.dependsOn(capsuleTask);
+                        }
+                        t.getReportFile().set(p.getLayout().getBuildDirectory().file("mycelium/linkage/linkage.json"));
+                        t.dependsOn(rangeTask);
+                    });
+                    p.getTasks().named("check", check -> check.dependsOn(linkageTask));
+                }
             });
             project.getTasks().named("compileJava", c -> c.dependsOn(isolationTask, purityTask));
             project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
@@ -404,6 +442,19 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 });
             });
         });
+    }
+
+    /** Where pinned name data is kept: {@code -Pmycelium.names.cache}, the environment's {@code MYCELIUM_NAMES_CACHE}, or Gradle's user home. */
+    static java.io.File namesCache(Project project) {
+        Object property = project.findProperty("mycelium.names.cache");
+        String environment = System.getenv("MYCELIUM_NAMES_CACHE");
+        if (property != null && !String.valueOf(property).isBlank()) {
+            return new java.io.File(String.valueOf(property));
+        }
+        if (environment != null && !environment.isBlank()) {
+            return new java.io.File(environment);
+        }
+        return new java.io.File(project.getGradle().getGradleUserHomeDir(), "mycelium/names");
     }
 
     static boolean isArtifactJar(List<String> taskNames, String name) {

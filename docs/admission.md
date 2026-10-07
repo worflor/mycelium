@@ -69,6 +69,8 @@ required method changes. The shape of a package is `CONTRACT-PACKAGE.md`.
   manifest names, or `<line>.x` for a whole line.
 - **A loader** gets its package roots in `eras/loaders.json`, with where they were read. From then on the pure layer
   may not mention them (law P1), with no list kept anywhere else.
+- **Name data** for a version is pinned in `eras/names.json` (`myceliumRefreshNames`, by hand), each file by SHA-256;
+  the repository check proves every entry is for a real version some loader runs under that naming.
 - A row's facts are re-verified against the loader's own maven when a consumer first ports to it (`docs/eras.md`).
 
 ## The harness

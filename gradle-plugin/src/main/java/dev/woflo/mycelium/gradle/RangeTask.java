@@ -41,6 +41,10 @@ public abstract class RangeTask extends DefaultTask {
     @Input
     public abstract Property<String> getSourceFingerprint();
 
+    /** Whether the artifact also declares {@code myceliumLinkage}, which the report says runs after it. */
+    @Input
+    public abstract Property<Boolean> getLinkageDeclared();
+
     /** The artifact's processed resources: where it declares what Minecraft it accepts. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -71,7 +75,7 @@ public abstract class RangeTask extends DefaultTask {
                 throw new GradleException("Mycelium range: " + artifact.id() + ": " + e.getMessage(), e);
             }
         }
-        RangeGate.Result result = RangeGate.check(artifact, eras, loaders, real, found);
+        RangeGate.Result result = RangeGate.check(artifact, eras, loaders, real, found, getLinkageDeclared().getOrElse(false));
 
         File report = getReportFile().get().getAsFile();
         Files.createDirectories(report.toPath().getParent());

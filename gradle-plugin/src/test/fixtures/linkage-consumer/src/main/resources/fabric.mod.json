@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "linkage-fixture",
+  "version": "1.0.0",
+  "depends": {
+    "minecraft": "${minecraft}"
+  }
+}

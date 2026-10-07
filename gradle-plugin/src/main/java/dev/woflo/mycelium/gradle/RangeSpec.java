@@ -1,7 +1,9 @@
 package dev.woflo.mycelium.gradle;
 
+import org.gradle.api.Action;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Nested;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -26,6 +28,20 @@ public abstract class RangeSpec {
     private File ledgerFile;
     private String ledgerId;
     private ArtifactLedger.Artifact fromLedger;
+    private boolean linkageDeclared;
+
+    /** Whether {@code myceliumLinkage} is on: the artifact is held to the game's published names across the range (docs/decisions/0010). */
+    @Nested
+    public abstract LinkageSpec getLinkage();
+
+    public void linkage(Action<? super LinkageSpec> action) {
+        linkageDeclared = true;
+        action.execute(getLinkage());
+    }
+
+    public boolean isLinkageDeclared() {
+        return linkageDeclared;
+    }
 
     /** The loader as {@code eras/loaders.json} names it: its walls and its metadata are the artifact's. */
     public abstract Property<String> getLoader();

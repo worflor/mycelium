@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-10-06 - Linkage at each version
+
+`range { linkage { } }` adds `myceliumLinkage`: every class, method and field the finished artifact references must resolve
+on each version of its claimed range that has name data, or the build fails naming the reference, the class that uses it and
+the version. A version whose references all resolve is recorded `linked` (the range gate's `interpolated` that was checked
+against that release's published names), a `proven` or `pending` version keeps its status and is linked as well, and a version
+with no name data stays `interpolated` with the reason. The report is `build/mycelium/linkage/linkage.json`, which names the
+archive it read by SHA-256; the evidence manifest's range report says linkage is deferred to it.
+
+The name data is a lock, `eras/names.json`: one entry per naming and Minecraft version, each input pinned by SHA-256 at the
+URL it is published at (Searge's `joined.srg`, Fabric's intermediary, Mojang's server bundle and mappings, the game's own
+unobfuscated jar, Spigot's API jars). Pins are fetched once into a cache keyed by hash and checked on every use, so a build
+that has run once links offline; `myceliumRefreshNames` pins more versions or reports a pin whose file has changed. The
+repository check holds every entry to the version list and the era table. Readers: `srg-flat` and `tiny-flat` hold classes
+and numbered members, `jar` and `proguard-jar` hold every member through its hierarchy. `namespace` states the naming where the
+era table's is not the artifact's (a plugin: `api`), `exclude(...)` leaves out classes an artifact chooses between at runtime by
+probe, and a capsule's own gate links its version against the final runtime view without name data
+(`docs/decisions/0010-linkage-at-each-version.md`).
+
+Verification: self-tests (`linkage:`) for the reference scan, each reader, the inventory's resolution through hierarchies, the
+lock's refusals, the cache, the refresh task and its lock form, and the gate: a planted reference that does not exist on one
+version of a range, a changed descriptor, a missing field on a proven version, an inherited method lost, a capsule's version,
+an unavailable input online and offline, and exclusions, each refused or let stand for its reason; repository breaks for name
+data of a version the launcher does not name, data no loader runs under, a pin that is no SHA-256 and a missing lock. The
+`linkage-consumer` fixture builds a Fabric artifact whose range's first version is linked, and `-PlinkageBreak=1.21` removes the
+method it calls from that version's data, which the build refuses by name.
+
 ## 2026-10-06 - myceliumDowngradeJar for a Java between 9 and 17
 
 The shade step of `myceliumDowngradeJar` is told the target's class version (`-c 60` for Java 16), as the downgrade step

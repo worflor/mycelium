@@ -92,6 +92,7 @@ public final class RepositoryCheck {
         models(root, registry, report);
         patterns(root, report);
         eras(root, report);
+        names(root, report);
         docs(root, registry, matrices, report);
         return report;
     }
@@ -436,6 +437,73 @@ public final class RepositoryCheck {
         String core = version.replaceAll("-.*$", "");
         int dot = core.lastIndexOf('.');
         return (dot > 0 ? core.substring(0, dot) : core) + ".x";
+    }
+
+    // --- the name data ------------------------------------------------------------------------------------------
+
+    /**
+     * {@code eras/names.json} against the version list and the era table: every entry is for a real version, and on that version
+     * some loader runs under that naming (data nothing would read is a pin nobody checks), so the linkage gate can only ever be
+     * handed data that belongs to a version it can be asked about (docs/decisions/0010).
+     */
+    static void names(Path root, Report report) {
+        Eras eras;
+        List<String> versions;
+        NameData data;
+        try {
+            eras = Eras.load(root.toFile());
+            versions = Versions.load(root.toFile());
+            if (!Files.isRegularFile(NameData.lockOf(root.toFile()).toPath())) {
+                report.find("names", "eras/names.json is missing: the linkage gate has no name data to read");
+                return;
+            }
+            data = NameData.load(NameData.lockOf(root.toFile()));
+        } catch (RuntimeException e) {
+            report.find("names", e.getMessage());
+            return;
+        }
+        Set<String> real = new HashSet<>(versions);
+        int entries = 0;
+        for (String ns : data.namespaces()) {
+            for (String v : data.versions(ns)) {
+                entries++;
+                String where = "eras/names.json: " + ns + " " + v;
+                if (!real.contains(v)) {
+                    report.find("names", where + " is not a version the launcher names (eras/versions.json)");
+                    continue;
+                }
+                Eras.Era era;
+                try {
+                    era = eras.of(v);
+                } catch (IllegalArgumentException e) {
+                    report.find("names", where + ": no era covers it (eras/minecraft.json)");
+                    continue;
+                }
+                boolean read = false;
+                for (String loader : era.loaders()) {
+                    if (era.offers(loader, v) && ns.equals(era.names().runtimeFor(loader, v))) {
+                        read = true;
+                    }
+                }
+                if (!read) {
+                    report.find("names", where + " is data no loader's runtime is named " + ns + " on: era '" + era.id()
+                            + "' (eras/minecraft.json names.runtime) runs " + runtimes(era, v) + " there, so nothing would read it");
+                }
+            }
+        }
+        report.result("names", entries, entries + " name data entries over " + data.namespaces().size()
+                + " namings, each for a real version some loader runs under that naming");
+    }
+
+    private static String runtimes(Eras.Era era, String version) {
+        Set<String> out = new TreeSet<>();
+        for (String loader : era.loaders()) {
+            String n = era.names().runtimeFor(loader, version);
+            if (n != null) {
+                out.add(n);
+            }
+        }
+        return out.toString();
     }
 
     // --- documents ----------------------------------------------------------------------------------------------

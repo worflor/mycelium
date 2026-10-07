@@ -42,6 +42,7 @@ public final class SelfTest {
         loaders(root);
         compat();
         ranges(root);
+        LinkageSelfTest.run(root);
         shipping();
         artifactJars();
         downgrading();
@@ -1976,6 +1977,17 @@ public final class SelfTest {
         expect(root, "a loader borrowing the compat of one that has none", r -> replace(r.resolve("eras/loaders.json"),
                         "\"compatFrom\": \"fabric\"", "\"compatFrom\": \"javaagent\""),
                 f -> f.contains("borrows the compat of 'javaagent'"), baseline);
+        expect(root, "name data for a version the launcher does not name", r -> replace(r.resolve("eras/names.json"),
+                        "\"1.8.9\": {\"inputs\": [{\"role\": \"joined\"", "\"1.8.99\": {\"inputs\": [{\"role\": \"joined\""),
+                f -> f.contains("srg 1.8.99 is not a version the launcher names"), baseline);
+        expect(root, "name data no loader runs under", r -> replace(r.resolve("eras/names.json"),
+                        "\"26.3\": {\"inputs\": [{\"role\": \"game\"", "\"1.21.1\": {\"inputs\": [{\"role\": \"game\""),
+                f -> f.contains("unobfuscated 1.21.1 is data no loader's runtime is named unobfuscated on"), baseline);
+        expect(root, "a pin that is no SHA-256", r -> replaceRegex(r.resolve("eras/names.json"),
+                        "\"sha256\": \"[0-9a-f]{64}\"", "\"sha256\": \"not-a-hash\""),
+                f -> f.contains("sha256 must be 64 lowercase hex"), baseline);
+        expect(root, "a lock that is gone", r -> Files.delete(r.resolve("eras/names.json")),
+                f -> f.contains("eras/names.json is missing"), baseline);
         delete(base);
     }
 
