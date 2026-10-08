@@ -11,7 +11,9 @@ The `linkage-consumer` fixture includes a positive exact-server inventory, `-Pli
 in Tiny mappings but removes it from the server surface), and `-PlinkageServerRuntime=false` (which leaves the optional input unset).
 `LinkageSelfTest` covers an inherited server method, that
 mapping-present/server-absent failure, an unknown hierarchy reported as unverified, and a runtime-only version with no name row.
-The focused Java compilation and linkage self-test pass; the Gradle fixture has not yet been run.
+Verification: `./gradlew check` passes on Java 21 with the installed Java 8, 16, 17 and 25 toolchains; the positive and optional-unset
+fixtures pass, and the server-surface rejection fixture fails on the expected mapping-present/server-absent method. The launcher
+self-test selects the platform's Java executable, and `gradlew` is executable in source control.
 
 ## 2026-10-07 - License
 
