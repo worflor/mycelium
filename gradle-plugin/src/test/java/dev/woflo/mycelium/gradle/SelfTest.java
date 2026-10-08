@@ -545,7 +545,7 @@ public final class SelfTest {
     }
 
     private static Process launcherFixture(String mode) throws IOException {
-        String executable = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win") ? "java.exe" : "java";
+        String executable = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows") ? "java.exe" : "java";
         Path java = Path.of(System.getProperty("java.home"), "bin", executable);
         return new ProcessBuilder(java.toString(), "-cp", System.getProperty("java.class.path"),
                 LauncherProcessFixture.class.getName(), mode).redirectErrorStream(true).start();
