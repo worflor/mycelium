@@ -144,7 +144,7 @@ ForgeGradle does, which the task must order itself after `compileJava` to read.
 linked from name data the build pins itself and whose second stays proven; `-PlinkageBreak=1.21` removes the method the artifact
 calls from 1.21's data, which `myceliumLinkage` must refuse by naming the reference and the version. The fixture supplies an exact
 server game archive; `-PlinkageServerBreak=1.21.1` leaves the method in Tiny mappings but removes it from that server archive, and
-the same gate must refuse it. A consumer opts into this check with `serverRuntimeArchive.set(...)`,
+the same gate must refuse it. `-PlinkageServerRuntime=false` proves the optional inputs may remain unset. A consumer opts into this check with `serverRuntimeArchive.set(...)`,
 `serverRuntimeNamespace.set("intermediary")` (or its actual runtime namespace), and `serverRuntimeOwns.set(listOf("net/minecraft/"))`.
 
 ## License

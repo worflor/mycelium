@@ -15,6 +15,7 @@ repositories { mavenCentral() }
 
 val plantedBreak: String = providers.gradleProperty("linkageBreak").getOrElse("")
 val plantedServerBreak: String = providers.gradleProperty("linkageServerBreak").getOrElse("")
+val useServerRuntime: Boolean = providers.gradleProperty("linkageServerRuntime").getOrElse("true") != "false"
 
 abstract class WriteNames : DefaultTask() {
     @get:Input
@@ -91,9 +92,11 @@ mycelium {
         linkage {
             names.set(writeNames.flatMap { it.dir.file("names.json") })
             cache.set(layout.buildDirectory.dir("names-cache"))
-            serverRuntimeArchive.set(serverJar.flatMap { it.archiveFile })
-            serverRuntimeNamespace.set("intermediary")
-            serverRuntimeOwns.set(listOf("net/minecraft/"))
+            if (useServerRuntime) {
+                serverRuntimeArchive.set(serverJar.flatMap { it.archiveFile })
+                serverRuntimeNamespace.set("intermediary")
+                serverRuntimeOwns.set(listOf("net/minecraft/"))
+            }
         }
     }
 }

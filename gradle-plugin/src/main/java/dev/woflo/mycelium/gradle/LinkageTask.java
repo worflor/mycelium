@@ -190,12 +190,13 @@ public abstract class LinkageTask extends DefaultTask {
         Map<String, Names> serverSurfaces = new LinkedHashMap<>();
         Map<String, List<String>> serverOwns = new LinkedHashMap<>();
         JsonObject serverRuntime = null;
+        List<String> configuredServerOwns = getServerRuntimeOwns().getOrElse(List.of());
         if (!getServerRuntimeArchive().isPresent()
-                && (getServerRuntimeNamespace().isPresent() || getServerRuntimeOwns().isPresent())) {
+                && (getServerRuntimeNamespace().isPresent() || !configuredServerOwns.isEmpty())) {
             throw new GradleException("Mycelium linkage: " + artifact.id() + ": serverRuntimeNamespace and serverRuntimeOwns require serverRuntimeArchive");
         }
         if (getServerRuntimeArchive().isPresent()) {
-            if (!getMinecraft().isPresent() || !getServerRuntimeNamespace().isPresent() || !getServerRuntimeOwns().isPresent()) {
+            if (!getMinecraft().isPresent() || !getServerRuntimeNamespace().isPresent()) {
                 throw new GradleException("Mycelium linkage: " + artifact.id()
                         + ": a serverRuntimeArchive requires minecraft, serverRuntimeNamespace and serverRuntimeOwns");
             }
@@ -207,7 +208,7 @@ public abstract class LinkageTask extends DefaultTask {
             String serverNamespace = getServerRuntimeNamespace().get();
             boolean inRange = range.getAsJsonArray("versions").asList().stream()
                     .anyMatch(v -> v.getAsJsonObject().get("version").getAsString().equals(version));
-            List<String> owns = getServerRuntimeOwns().get();
+            List<String> owns = configuredServerOwns;
             NameData.Entry published = expectedNamespace == null ? null : data.entry(expectedNamespace, version);
             validateServerRuntime(artifact.id(), version, expectedNamespace, serverNamespace, owns, inRange,
                     published == null ? null : published.owns());

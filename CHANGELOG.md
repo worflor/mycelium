@@ -7,8 +7,9 @@ names. The linkage gate checks references against that class inventory as well a
 inventory alone when a version has no name row. The task records its version, namespace and SHA-256; class scope is explicit and
 must agree with published name data when present. This catches a mapping-listed client-only member without starting a server.
 
-The `linkage-consumer` fixture includes a positive exact-server inventory and `-PlinkageServerBreak=1.21.1`, which leaves the method
-in Tiny mappings but removes it from the server surface. `LinkageSelfTest` covers an inherited server method, that
+The `linkage-consumer` fixture includes a positive exact-server inventory, `-PlinkageServerBreak=1.21.1` (which leaves the method
+in Tiny mappings but removes it from the server surface), and `-PlinkageServerRuntime=false` (which leaves the optional input unset).
+`LinkageSelfTest` covers an inherited server method, that
 mapping-present/server-absent failure, an unknown hierarchy reported as unverified, and a runtime-only version with no name row.
 The focused Java compilation and linkage self-test pass; the Gradle fixture has not yet been run.
 
