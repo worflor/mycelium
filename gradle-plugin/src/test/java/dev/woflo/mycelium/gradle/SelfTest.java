@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
@@ -544,7 +545,8 @@ public final class SelfTest {
     }
 
     private static Process launcherFixture(String mode) throws IOException {
-        Path java = Path.of(System.getProperty("java.home"), "bin", "java.exe");
+        String executable = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win") ? "java.exe" : "java";
+        Path java = Path.of(System.getProperty("java.home"), "bin", executable);
         return new ProcessBuilder(java.toString(), "-cp", System.getProperty("java.class.path"),
                 LauncherProcessFixture.class.getName(), mode).redirectErrorStream(true).start();
     }
