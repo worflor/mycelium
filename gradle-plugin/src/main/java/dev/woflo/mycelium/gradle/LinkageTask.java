@@ -26,8 +26,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * {@code myceliumLinkage}: holds the finished artifact to the game's published names on every version of its claimed range
@@ -57,6 +60,22 @@ public abstract class LinkageTask extends DefaultTask {
     @InputFile
     @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getArchive();
+
+    /** The target's exact dedicated-server surface, in the artifact's runtime names. */
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.NONE)
+    public abstract RegularFileProperty getServerRuntimeArchive();
+
+    /** The names the server runtime inventory uses; must match the artifact's names on its target version. */
+    @Input
+    @Optional
+    public abstract Property<String> getServerRuntimeNamespace();
+
+    /** Game class prefixes inventoried from the dedicated-server archive. */
+    @Input
+    @Optional
+    public abstract ListProperty<String> getServerRuntimeOwns();
 
     @Input
     public abstract ListProperty<String> getNestedJars();
@@ -114,6 +133,26 @@ public abstract class LinkageTask extends DefaultTask {
         return out;
     }
 
+    static void validateServerRuntime(String artifact, String version, String expectedNamespace, String actualNamespace,
+                                      List<String> owns, boolean inRange, List<String> publishedOwns) {
+        if (expectedNamespace == null || !expectedNamespace.equals(actualNamespace)) {
+            throw new GradleException("Mycelium linkage: " + artifact + ": server runtime namespace " + actualNamespace
+                    + " does not match the artifact's " + expectedNamespace + " references on " + version);
+        }
+        if (!inRange) {
+            throw new GradleException("Mycelium linkage: " + artifact + ": server runtime version " + version
+                    + " is outside the declared range");
+        }
+        if (owns.isEmpty() || owns.stream().anyMatch(prefix -> prefix.isBlank() || !prefix.endsWith("/") || prefix.contains(".") || prefix.startsWith("/")
+                || prefix.contains("..")) || new HashSet<>(owns).size() != owns.size()) {
+            throw new GradleException("Mycelium linkage: " + artifact + ": serverRuntimeOwns must list unique internal-name prefixes");
+        }
+        if (publishedOwns != null && (!new HashSet<>(publishedOwns).equals(new HashSet<>(owns)) || publishedOwns.size() != owns.size())) {
+            throw new GradleException("Mycelium linkage: " + artifact + ": serverRuntimeOwns " + owns
+                    + " differs from the published name data's game scope " + publishedOwns);
+        }
+    }
+
     @TaskAction
     public void run() throws IOException {
         File root = getRoot().get().getAsFile();
@@ -147,8 +186,45 @@ public abstract class LinkageTask extends DefaultTask {
 
         NameData data = NameData.load(getNames().get().getAsFile());
         NameCache cache = new NameCache(getCache().get().getAsFile().toPath(), getOffline().get());
-        LinkageGate.Result result = LinkageGate.evaluate(range, artifact, getNamespace().getOrNull(), Eras.load(root), data, found,
-                entry -> Names.read(entry, cache), runtimeLinked, getOffline().get());
+        Eras eras = Eras.load(root);
+        Map<String, Names> serverSurfaces = new LinkedHashMap<>();
+        Map<String, List<String>> serverOwns = new LinkedHashMap<>();
+        JsonObject serverRuntime = null;
+        if (!getServerRuntimeArchive().isPresent()
+                && (getServerRuntimeNamespace().isPresent() || getServerRuntimeOwns().isPresent())) {
+            throw new GradleException("Mycelium linkage: " + artifact.id() + ": serverRuntimeNamespace and serverRuntimeOwns require serverRuntimeArchive");
+        }
+        if (getServerRuntimeArchive().isPresent()) {
+            if (!getMinecraft().isPresent() || !getServerRuntimeNamespace().isPresent() || !getServerRuntimeOwns().isPresent()) {
+                throw new GradleException("Mycelium linkage: " + artifact.id()
+                        + ": a serverRuntimeArchive requires minecraft, serverRuntimeNamespace and serverRuntimeOwns");
+            }
+            String version = getMinecraft().get();
+            String expectedNamespace = getNamespace().getOrNull();
+            if (expectedNamespace == null) {
+                expectedNamespace = eras.of(version).names().runtimeFor(artifact.loader(), version);
+            }
+            String serverNamespace = getServerRuntimeNamespace().get();
+            boolean inRange = range.getAsJsonArray("versions").asList().stream()
+                    .anyMatch(v -> v.getAsJsonObject().get("version").getAsString().equals(version));
+            List<String> owns = getServerRuntimeOwns().get();
+            NameData.Entry published = expectedNamespace == null ? null : data.entry(expectedNamespace, version);
+            validateServerRuntime(artifact.id(), version, expectedNamespace, serverNamespace, owns, inRange,
+                    published == null ? null : published.owns());
+            Path runtimeArchive = getServerRuntimeArchive().get().getAsFile().toPath();
+            String runtimeHash = NameCache.sha256(runtimeArchive);
+            Names inventory = Inventory.of("dedicated server " + version + " (" + serverNamespace + ")", runtimeArchive, owns);
+            serverSurfaces.put(version, inventory);
+            serverOwns.put(version, owns);
+            serverRuntime = new JsonObject();
+            serverRuntime.addProperty("version", version);
+            serverRuntime.addProperty("namespace", serverNamespace);
+            serverRuntime.addProperty("file", runtimeArchive.getFileName().toString());
+            serverRuntime.addProperty("sha256", runtimeHash);
+            serverRuntime.addProperty("inventory", inventory.describe());
+        }
+        LinkageGate.Result result = LinkageGate.evaluate(range, artifact, getNamespace().getOrNull(), eras, data, found,
+                entry -> Names.read(entry, cache), runtimeLinked, serverSurfaces, serverOwns, getOffline().get());
 
         JsonObject report = result.report();
         JsonObject archiveJson = report.getAsJsonObject("artifact");
@@ -160,6 +236,9 @@ public abstract class LinkageTask extends DefaultTask {
         JsonObject lock = new JsonObject();
         lock.addProperty("sha256", NameCache.sha256(getNames().get().getAsFile().toPath()));
         report.add("names", lock);
+        if (serverRuntime != null) {
+            report.add("serverRuntime", serverRuntime);
+        }
 
         File out = getReportFile().get().getAsFile();
         Files.createDirectories(out.toPath().getParent());

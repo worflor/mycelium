@@ -38,7 +38,7 @@ public final class LinkageGate {
     }
 
     /** One version's check against one entry's names. */
-    record Check(int classes, int methods, int fields, int unchecked, List<Unresolved> unresolved) {
+    record Check(int classes, int methods, int fields, int unchecked, int serverRuntimeUnchecked, List<Unresolved> unresolved) {
     }
 
     /** Reads the game's names for an entry; {@link NameCache.Unavailable} when the data is pinned and not to be had. */
@@ -55,34 +55,46 @@ public final class LinkageGate {
      * owns must resolve.
      */
     static Check check(References.Found found, NameData.Entry entry, Names names) {
+        return check(found, entry.owns(), names, null);
+    }
+
+    static Check check(References.Found found, List<String> owns, Names names, Names serverRuntime) {
         int classes = 0;
         int methods = 0;
         int fields = 0;
         int unchecked = 0;
+        int serverRuntimeUnchecked = 0;
         List<Unresolved> unresolved = new ArrayList<>();
         for (Map.Entry<References.Ref, String> e : found.refs().entrySet()) {
             References.Ref ref = e.getKey();
-            if (entry.owns().stream().noneMatch(prefix -> ref.owner().startsWith(prefix))) {
+            if (owns.stream().noneMatch(prefix -> ref.owner().startsWith(prefix))) {
                 continue;
             }
-            Names.Verdict verdict;
+            Names.Verdict published;
+            Names.Verdict server;
             switch (ref.kind()) {
                 case 'C' -> {
-                    verdict = names.hasClass(ref.owner());
+                    published = names == null ? Names.Verdict.UNKNOWN : names.hasClass(ref.owner());
+                    server = serverRuntime == null ? Names.Verdict.UNKNOWN : serverRuntime.hasClass(ref.owner());
                     classes++;
                 }
                 case 'M' -> {
-                    verdict = names.hasMethod(ref.owners(), ref.name(), ref.descriptor());
-                    if (verdict != Names.Verdict.UNKNOWN) {
-                        methods++;
-                    }
+                    published = names == null ? Names.Verdict.UNKNOWN : names.hasMethod(ref.owners(), ref.name(), ref.descriptor());
+                    server = serverRuntime == null ? Names.Verdict.UNKNOWN : serverRuntime.hasMethod(ref.owners(), ref.name(), ref.descriptor());
                 }
                 default -> {
-                    verdict = names.hasField(ref.owners(), ref.name(), ref.descriptor());
-                    if (verdict != Names.Verdict.UNKNOWN) {
-                        fields++;
-                    }
+                    published = names == null ? Names.Verdict.UNKNOWN : names.hasField(ref.owners(), ref.name(), ref.descriptor());
+                    server = serverRuntime == null ? Names.Verdict.UNKNOWN : serverRuntime.hasField(ref.owners(), ref.name(), ref.descriptor());
                 }
+            }
+            if (serverRuntime != null && server == Names.Verdict.UNKNOWN) {
+                serverRuntimeUnchecked++;
+            }
+            Names.Verdict verdict = combine(published, server, serverRuntime != null);
+            if (ref.kind() == 'M' && verdict != Names.Verdict.UNKNOWN) {
+                methods++;
+            } else if (ref.kind() == 'F' && verdict != Names.Verdict.UNKNOWN) {
+                fields++;
             }
             if (verdict == Names.Verdict.UNKNOWN) {
                 unchecked++;
@@ -90,7 +102,20 @@ public final class LinkageGate {
                 unresolved.add(new Unresolved(ref, e.getValue()));
             }
         }
-        return new Check(classes, methods, fields, unchecked, unresolved);
+        return new Check(classes, methods, fields, unchecked, serverRuntimeUnchecked, unresolved);
+    }
+
+    private static Names.Verdict combine(Names.Verdict published, Names.Verdict server, boolean serverRequired) {
+        if (published == Names.Verdict.ABSENT || server == Names.Verdict.ABSENT) {
+            return Names.Verdict.ABSENT;
+        }
+        if (serverRequired && server == Names.Verdict.UNKNOWN) {
+            return Names.Verdict.UNKNOWN;
+        }
+        if (published == Names.Verdict.PRESENT || server == Names.Verdict.PRESENT) {
+            return Names.Verdict.PRESENT;
+        }
+        return Names.Verdict.UNKNOWN;
     }
 
     /**
@@ -107,6 +132,12 @@ public final class LinkageGate {
      */
     static Result evaluate(JsonObject range, ArtifactLedger.Artifact artifact, String namespace, Eras eras, NameData data, References.Found found,
                            Loader loadNames, Map<String, String> runtimeLinked, boolean offline) {
+        return evaluate(range, artifact, namespace, eras, data, found, loadNames, runtimeLinked, Map.of(), Map.of(), offline);
+    }
+
+    static Result evaluate(JsonObject range, ArtifactLedger.Artifact artifact, String namespace, Eras eras, NameData data, References.Found found,
+                           Loader loadNames, Map<String, String> runtimeLinked, Map<String, Names> serverRuntime,
+                           Map<String, List<String>> serverOwns, boolean offline) {
         List<String> findings = new ArrayList<>();
         JsonObject report = new JsonObject();
         report.addProperty("schema", 1);
@@ -131,25 +162,41 @@ public final class LinkageGate {
             boolean ok = false;
             String names = namespace != null ? namespace : eras.of(version).names().runtimeFor(artifact.loader(), version);
             NameData.Entry entry = names == null ? null : data.entry(names, version);
-            if (runtimeLinked.containsKey(version)) {
+            Names runtime = serverRuntime.get(version);
+            List<String> runtimePrefixes = serverOwns.get(version);
+            if (runtimeLinked.containsKey(version) && runtime == null) {
                 link.addProperty("status", "linked");
                 link.addProperty("by", runtimeLinked.get(version));
                 ok = true;
-            } else if (names == null) {
+            } else if (names == null && runtime == null) {
                 link.addProperty("status", "none");
                 link.addProperty("why", "the era table names no runtime names for " + artifact.loader() + " on " + version);
-            } else if (entry == null) {
+            } else if (entry == null && runtime == null) {
                 link.addProperty("status", "none");
                 link.addProperty("namespace", names);
                 link.addProperty("why", "no name data is pinned for " + names + " " + version + " (eras/names.json)");
             } else {
-                link.addProperty("namespace", names);
+                if (names != null) {
+                    link.addProperty("namespace", names);
+                }
+                if (runtimeLinked.containsKey(version)) {
+                    link.addProperty("by", runtimeLinked.get(version));
+                }
                 try {
-                    Names resolved = loadNames.load(entry);
-                    Check c = check(found, entry, resolved);
-                    link.addProperty("source", resolved.describe());
+                    Names resolved = entry == null ? null : loadNames.load(entry);
+                    List<String> owns = entry == null ? runtimePrefixes : entry.owns();
+                    if (owns == null || owns.isEmpty()) {
+                        throw new IllegalStateException("a server runtime inventory needs a game class scope");
+                    }
+                    Check c = check(found, owns, resolved, runtime);
+                    if (resolved != null) {
+                        link.addProperty("source", resolved.describe());
+                    }
+                    if (runtime != null) {
+                        link.addProperty("serverRuntime", runtime.describe());
+                    }
                     JsonArray inputs = new JsonArray();
-                    for (NameData.Input i : entry.inputs()) {
+                    if (entry != null) for (NameData.Input i : entry.inputs()) {
                         JsonObject io = new JsonObject();
                         io.addProperty("role", i.role());
                         io.addProperty("sha256", i.sha256());
@@ -161,19 +208,26 @@ public final class LinkageGate {
                     checked.addProperty("methods", c.methods());
                     checked.addProperty("fields", c.fields());
                     checked.addProperty("notNumbered", c.unchecked());
+                    checked.addProperty("serverRuntimeUnchecked", c.serverRuntimeUnchecked());
                     link.add("checked", checked);
-                    if (c.unresolved().isEmpty()) {
+                    if (c.unresolved().isEmpty() && c.serverRuntimeUnchecked() == 0) {
                         link.addProperty("status", "linked");
                         ok = true;
+                    } else if (c.unresolved().isEmpty()) {
+                        link.addProperty("status", "unverified");
+                        link.addProperty("why", c.serverRuntimeUnchecked()
+                                + " game reference(s) leave the supplied server inventory hierarchy");
                     } else {
                         link.addProperty("status", "broken");
                         JsonArray missing = new JsonArray();
                         c.unresolved().stream().limit(LISTED).forEach(u -> missing.add(u.text()));
                         link.add("unresolved", missing);
                         link.addProperty("unresolvedCount", c.unresolved().size());
+                        String checkedAgainst = entry == null ? "the supplied dedicated-server inventory"
+                                : names + " " + version + (runtime == null ? "" : " and the dedicated-server inventory");
                         StringBuilder f = new StringBuilder(version + ": " + c.unresolved().size() + " reference"
                                 + (c.unresolved().size() == 1 ? "" : "s") + " do" + (c.unresolved().size() == 1 ? "es" : "") + " not resolve in "
-                                + names + " " + version + " (the artifact claims it runs there):");
+                                + checkedAgainst + " (the artifact claims it runs there):");
                         c.unresolved().stream().limit(LISTED).forEach(u -> f.append("\n      ").append(u.text()));
                         if (c.unresolved().size() > LISTED) {
                             f.append("\n      ... and ").append(c.unresolved().size() - LISTED).append(" more");

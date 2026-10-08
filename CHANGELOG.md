@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-08 - Dedicated-server linkage surface
+
+The optional `linkage.serverRuntimeArchive` input lets a target provide its exact dedicated-server game jar in the artifact's runtime
+names. The linkage gate checks references against that class inventory as well as published names when available, or against the
+inventory alone when a version has no name row. The task records its version, namespace and SHA-256; class scope is explicit and
+must agree with published name data when present. This catches a mapping-listed client-only member without starting a server.
+
+The `linkage-consumer` fixture includes a positive exact-server inventory and `-PlinkageServerBreak=1.21.1`, which leaves the method
+in Tiny mappings but removes it from the server surface. `LinkageSelfTest` covers an inherited server method, that
+mapping-present/server-absent failure, an unknown hierarchy reported as unverified, and a runtime-only version with no name row.
+The focused Java compilation and linkage self-test pass; the Gradle fixture has not yet been run.
+
 ## 2026-10-07 - License
 
 Mycelium is licensed under the Mozilla Public License 2.0 (`LICENSE`). A mod built with it keeps its own licence;

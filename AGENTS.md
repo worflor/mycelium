@@ -124,9 +124,9 @@ mycelium/
 | `RangeGate.java` | the range gate: a claimed range held to the era table, the proofs, the walls and the loader's metadata, recording proven, pending and interpolated |
 | `RangeSpec.java` | `mycelium { range { ... } }`: the claim, from a ledger or written out |
 | `RangeTask.java` | `myceliumRange`: runs the gate on the built artifact's resources and writes its report for the evidence manifest |
-| `LinkageSpec.java` | `mycelium { range { linkage { } } }`: the archive to hold, its naming, the classes left out, the name data and its cache |
-| `LinkageTask.java` | `myceliumLinkage`: reads the finished artifact's references, runs the gate on each version of the range and writes its report |
-| `LinkageGate.java` | the linkage gate: every reference resolves on each version of a range that has name data, recording linked beside proven, pending and interpolated |
+| `LinkageSpec.java` | `mycelium { range { linkage { } } }`: the archive to hold, its naming, optional exact server-runtime archive/namespace/scope, the classes left out, the name data and its cache |
+| `LinkageTask.java` | `myceliumLinkage`: reads the finished artifact's references, checks published names on each version of the range and an optional exact dedicated-server inventory on the target, then writes its report |
+| `LinkageGate.java` | the linkage gate: every reference resolves on each version of a range that has name data; an exact server inventory may further constrain the target version, recording linked beside proven, pending and interpolated |
 | `References.java` | every class, method and field an artifact's class files reach, read from the bytes, with inherited members traced to where the game would have them |
 | `NameData.java` | `eras/names.json`: the pinned name data of each naming and version, strictly read |
 | `NameCache.java` | the pinned files on disk by SHA-256: fetched once, checked on every use |
@@ -209,7 +209,7 @@ consequences).
 | `myceliumPurity`, `myceliumPureCompile` | the contract models are a pure layer (P1, P3), and compile alone |
 | `myceliumEras` | every harness on every Java an era runs on: stubs, linkage (P2), behaviour |
 | `myceliumRange` | an artifact's claimed Minecraft range against the era table, its proofs (a keystone, and a proof on each side of a wall inside the range) and the metadata the built artifact declares to its loader |
-| `myceliumLinkage` | every reference the finished artifact makes resolves in the game's published names on each version of its range that has name data (`eras/names.json`) |
+| `myceliumLinkage` | every reference the finished artifact makes resolves in the game's published names on each version of its range that has name data (`eras/names.json`); when configured, its target-version references also resolve in the exact dedicated-server inventory |
 | `myceliumRepository` | registry against disk, package shapes, model ownership, copied patterns, era coverage, loader packages, document counts, paths and maps, and the harness's own checks |
 | `selfTest` (`gradle-plugin`) | every repository check fires on the break it exists for; era, registry, evidence and integration semantics |
 | `bash run-contracts.sh`, `.\run-contracts.ps1` | the harness's own checks, then every package, without Gradle |

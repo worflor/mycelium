@@ -22,22 +22,29 @@ data and the check are the same for every mod in a family, so they belong here.
 
 `range { linkage { } }` in a build that declares a range adds `myceliumLinkage` (`LinkageTask`, `LinkageGate`), which holds
 **the finished artifact**, the jar that ships (a capsule's own archive and its nested payload jars where a capsule is
-declared), to the game's published names on **every version of its claimed range that has name data**:
+declared), to the game's published names on **every version of its claimed range that has name data**. A build may also
+supply `serverRuntimeArchive`, `serverRuntimeNamespace` and `serverRuntimeOwns` for its exact `minecraft` target. That
+archive is the dedicated server's game classes in the artifact's runtime names; on that target, the gate intersects its
+inventory with published names when available, or uses the inventory alone when no name row exists:
 
 - Every class, method and field the artifact's classes reach must resolve on that version, and a reference that does not
   fails the build, naming the reference, the class that first uses it and the version. `References` reads class files: the
   constant pool, and the types signatures, annotations, handles and `throws` clauses name. A member named on one of the
   artifact's own classes that it does not declare is inherited, and is held on the first class outside the artifact its
   superclasses and interfaces reach, which is where the game would have to have it.
-- A version whose references all resolve is **`linked`** in the report: proven by the artifact's bytes and that version's
-  published names, without a server. A version the range gate recorded as `proven` or `pending` keeps that status and is
-  linked as well; a version with no name data stays `interpolated`, and says why. A version a capsule's own gate already
-  linked against that version's final runtime view (0008) is `linked` without name data; the capsule's report must name
-  the archive being read, by SHA-256.
+- A version whose references all resolve in published names is **`linked`** in the report: proven by the artifact's bytes
+  and that version's data, without starting a server. When the optional server inventory is supplied, the exact target's game
+  references must also resolve in that dedicated-server class hierarchy; if no published names row exists, that exact inventory
+  can hold the target by itself. If hierarchy resolution leaves the supplied archive, the target is reported `unverified`; it
+  is not claimed as linked. A version the range gate recorded as `proven` or `pending` keeps that status, while a version with
+  neither name data nor an exact server inventory stays `interpolated` and says why. A version a capsule's own gate already
+  linked against that version's final runtime view (0008) is `linked` without name data; the capsule's report must name the
+  archive being read, by SHA-256.
 - Linkage reads the finished artifact, so it cannot sit in the evidence manifest that is inside it. The manifest's range
   report says linkage is deferred, with where the report is; `myceliumLinkage` writes `build/mycelium/linkage/linkage.json`
   (each version's `run` and final `status`, what was checked and from which pinned inputs, the unresolved references, the
-  archive's SHA-256) and logs the counts. It is in `check` and opt-in: a build that declares no `linkage` block is unchanged.
+  artifact's SHA-256, and the optional server archive's SHA-256 and naming) and logs the counts. It is in `check` and opt-in:
+  a build that declares no `linkage` block is unchanged.
 
 ### Which names, and where they come from
 
@@ -69,6 +76,15 @@ build, since a version that could not be checked must not be reported as checked
 
 ### What a flat reader can and cannot say
 
+A `serverRuntimeArchive` is a build input for one target version, not a name-lock row: the consumer's loader build must
+produce the dedicated-server game surface (not a merged development jar), remap it to the artifact's runtime namespace,
+and state the game class prefixes it contains. The task requires that namespace to match the era table or the declared
+`namespace`; where a name-lock row exists, its `owns` scope must match. The report hashes the exact archive. Only references
+inside that game scope are compared; loader APIs, libraries and the JDK remain outside the check. The inventory resolves
+methods and fields through its class hierarchy. It complements published mappings, whose flat rows can name a client-only
+member, and it can check a target for which no published name row exists. It does not prove loader behavior or replace a
+real-server run.
+
 The Searge and intermediary files number methods and fields and say nothing about the rest: a constructor, an enum's
 `values`, a method the game inherits from a library and `toString` are neither found nor missing, and the report counts
 them as not numbered. Inventories read the game's own classes and resolve a member through its hierarchy as the JVM does;
@@ -96,7 +112,8 @@ the pinned one. The lock is written in one form, which the self-tests hold.
 ## What is not covered
 
 - Releases with no entry in the lock (the report says so for each): the SRG-named releases after 1.12.2 (Forge 1.13 through
-  1.20.4 run Searge numbered names whose data is MCPConfig's, not Searge's flat file), Mojang's names on releases other than
+  1.20.4 run Searge numbered names whose data is MCPConfig's, not Searge's flat file), except where a consumer supplies an
+  exact server-runtime archive for that target; Mojang's names on releases other than
   those pinned, intermediary where Fabric did not publish it, and API jars Spigot no longer serves.
 - The loader's own API (Fabric API, Forge's and NeoForge's events), a library an artifact depends on, and Spigot's server
   internals: only the game, and a plugin's Bukkit API, are held.

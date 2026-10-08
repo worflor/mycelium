@@ -52,6 +52,19 @@ public abstract class LinkageSpec {
         getExclude().from(classDirectories);
     }
 
+    /**
+     * An exact dedicated-server class inventory for the target {@code minecraft}, remapped into the artifact's runtime namespace.
+     * When present, the linkage gate intersects it with published name data for this target version, so merged client names
+     * cannot make a server-only call pass. The producer must supply the final game-only server surface, not a merged dev jar.
+     */
+    public abstract RegularFileProperty getServerRuntimeArchive();
+
+    /** The namespace of {@link #getServerRuntimeArchive()}; it must match the artifact's references for the target version. */
+    public abstract Property<String> getServerRuntimeNamespace();
+
+    /** Internal-name prefixes inventoried as game classes in the server archive (for example {@code net/minecraft/}). */
+    public abstract ListProperty<String> getServerRuntimeOwns();
+
     /** The name data's lock; defaults to the Mycelium checkout's {@code eras/names.json}. */
     public abstract RegularFileProperty getNames();
 
