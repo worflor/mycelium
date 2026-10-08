@@ -124,14 +124,19 @@ val verifyLinkage = tasks.register("verifyLinkage") {
         val versions = (parsed["versions"] as List<Map<String, Any>>).associate { it["version"] as String to it["status"] as String }
         check(versions == mapOf("1.21" to "linked", "1.21.1" to "proven")) { "the linkage report says $versions, not 1.21 linked and 1.21.1 proven" }
         @Suppress("UNCHECKED_CAST")
-        val server = parsed["serverRuntime"] as Map<String, Any>
-        check(server["version"] == "1.21.1" && server["namespace"] == "intermediary"
-            && (server["sha256"] as String).matches(Regex("[0-9a-f]{64}"))) {
-            "the server runtime inventory identity is missing or incomplete: $server"
-        }
-        @Suppress("UNCHECKED_CAST")
         val targetLinkage = (parsed["versions"] as List<Map<String, Any>>).first { it["version"] == "1.21.1" }["linkage"] as Map<String, Any>
-        check(targetLinkage["serverRuntime"] is String) { "the target linkage row does not report its server inventory: $targetLinkage" }
+        if (useServerRuntime) {
+            @Suppress("UNCHECKED_CAST")
+            val server = parsed["serverRuntime"] as Map<String, Any>
+            check(server["version"] == "1.21.1" && server["namespace"] == "intermediary"
+                && (server["sha256"] as String).matches(Regex("[0-9a-f]{64}"))) {
+                "the server runtime inventory identity is missing or incomplete: $server"
+            }
+            check(targetLinkage["serverRuntime"] is String) { "the target linkage row does not report its server inventory: $targetLinkage" }
+        } else {
+            check(parsed["serverRuntime"] == null) { "an unset server runtime appears in the report: ${parsed["serverRuntime"]}" }
+            check(!targetLinkage.containsKey("serverRuntime")) { "an unset server runtime appears in a target row: $targetLinkage" }
+        }
         ZipFile(jar.get().asFile).use { zip ->
             check(zip.getEntry("net/minecraft/class_1937.class") == null) { "the game's stand-in class was shipped" }
         }
