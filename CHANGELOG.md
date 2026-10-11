@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-11 - item.component@1: Data Component <-> NBT Carrier Translation
+
+Added `item.component@1` (`contracts/item-component`): a pure, deterministic bidirectional translation and carrier model
+bridging modern Minecraft Data Components (1.20.5+) and legacy item NBT compounds (pre-1.20.5, specifically 1.20.1), written
+for consumers with immutable component definitions.
+
+- **Pure Model:** `TagNode` algebraic data type representing NBT AST without Minecraft dependencies, `ComponentCodec<T>`,
+  `ComponentDefinition<T>`, `ComponentRegistry`, and immutable `CarrierSnapshot`.
+- **Laws Enforced:** T1 Round-Trip Isomorphism, T2 Default Elision (unmutated items emit zero tags in 1.20.1), T3 Fenced
+  Namespace (`mycelium$c`, zero root pollution), T4 Foreign Tag Preservation, T5 Diagnostic Rejection on Corruption, and
+  T6 Lexicographical Key Ordering.
+- **Verification:** Rejection matrix catches 5 broken implementations (`NoOpTranslator`, `DefaultWritingTranslator`,
+  `RootPollutingTranslator`, `LossyUnknownTagTranslator`, `CrashingParseTranslator`).
+- **Java 8 Linkage:** Explicit integer-cast `toString()` implementations for `TagByte` and `TagShort` ensure clean
+  bytecode lowering and linkage resolution across all historical eras down to Java 8.
+
+Ran: `.\run-contracts.ps1 item-component` (clean, 5 rejections caught), `.\run-contracts.ps1` (all 19 packages PASS),
+and `./gradlew check` (all 18 tasks green: `myceliumRepository`, `myceliumPurity`, `myceliumVerify`, and era gates from Java 8 to Java 25).
+
 ## 2026-10-07 - License
 
 Mycelium is licensed under the Mozilla Public License 2.0 (`LICENSE`). A mod built with it keeps its own licence;

@@ -93,6 +93,13 @@
       "package": "mycelium.chat_coverage.v1",
       "status": "retired",
       "provenance": "written for Recon"
+    },
+    {
+      "id": "item.component@1",
+      "path": "item-component",
+      "package": "mycelium.item_component.v1",
+      "status": "reference",
+      "provenance": "written for Cartomancy"
     }
   ]
 }
