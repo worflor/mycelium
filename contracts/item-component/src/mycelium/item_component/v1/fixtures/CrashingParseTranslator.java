@@ -23,7 +23,12 @@ public final class CrashingParseTranslator implements RosettaTranslator {
 
         TagNode.TagCompound fenced = fencedOpt.get();
         for (Map.Entry<String, TagNode> entry : fenced.entries().entrySet()) {
-            ComponentId id = ComponentId.of(entry.getKey());
+            ComponentId id;
+            try {
+                id = ComponentId.of(entry.getKey());
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
             Optional<ComponentDefinition<?>> defOpt = registry.get(id);
             if (defOpt.isPresent()) {
                 try {

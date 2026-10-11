@@ -47,6 +47,21 @@ public final class LossyUnknownTagTranslator implements RosettaTranslator {
             // Broken: deliberately drops unknown tags (empty unmapped map)
         }
 
-        return new CarrierSnapshot(components, Collections.emptyMap());
+        Set<ComponentId> removals = new TreeSet<>();
+        TagNode removedNode = fenced.get("!removed");
+        if (removedNode instanceof TagNode.TagList remList) {
+            for (int i = 0; i < remList.size(); i++) {
+                TagNode elem = remList.get(i);
+                if (elem instanceof TagNode.TagString ts) {
+                    try {
+                        removals.add(ComponentId.of(ts.value()));
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+        }
+
+        return new CarrierSnapshot(components, Collections.emptyMap(), removals);
     }
 }
+

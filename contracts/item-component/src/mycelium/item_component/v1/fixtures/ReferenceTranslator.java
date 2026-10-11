@@ -37,12 +37,21 @@ public final class ReferenceTranslator implements RosettaTranslator {
             }
         }
 
-        // 2. Preserve unmapped foreign tags (Law T4)
+        // 2. Encode explicit removals (negative patches)
+        if (!snapshot.removals().isEmpty()) {
+            List<TagNode> removalNodes = new ArrayList<>();
+            for (ComponentId rem : snapshot.removals()) {
+                removalNodes.add(TagNode.TagString.of(rem.toString()));
+            }
+            componentTags.put("!removed", new TagNode.TagList(removalNodes));
+        }
+
+        // 3. Preserve unmapped foreign and quarantined tags (Law T4 & Anti-Data Loss)
         for (Map.Entry<String, TagNode> entry : snapshot.unmappedTags().entrySet()) {
             componentTags.put(entry.getKey(), entry.getValue());
         }
 
-        // Law T2: Default elision - if no components or unmapped tags survive, omit fenced compound
+        // Law T2: Default elision - if no components, removals, or unmapped tags survive, omit fenced compound
         if (componentTags.isEmpty()) {
             return TagNode.TagCompound.empty();
         }
@@ -66,9 +75,26 @@ public final class ReferenceTranslator implements RosettaTranslator {
         TagNode.TagCompound fenced = fencedOpt.get();
         Map<ComponentId, Object> components = new TreeMap<>();
         Map<String, TagNode> unmapped = new TreeMap<>();
+        Set<ComponentId> removals = new TreeSet<>();
+
+        // Decode negative patches
+        TagNode removedNode = fenced.get("!removed");
+        if (removedNode instanceof TagNode.TagList remList) {
+            for (int i = 0; i < remList.size(); i++) {
+                TagNode elem = remList.get(i);
+                if (elem instanceof TagNode.TagString ts) {
+                    try {
+                        removals.add(ComponentId.of(ts.value()));
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+        }
 
         for (Map.Entry<String, TagNode> entry : fenced.entries().entrySet()) {
             String key = entry.getKey();
+            if (key.equals("!removed")) continue;
+
             TagNode node = entry.getValue();
 
             ComponentId id;
@@ -88,7 +114,9 @@ public final class ReferenceTranslator implements RosettaTranslator {
                     components.put(id, decoded);
                 } catch (CodecException e) {
                     // Law T5: Diagnostic rejection on corruption - does not throw unchecked exception
-                    // Drop corrupted component and leave at default
+                    // Anti-Data Loss Quarantine: Preserve corrupt tag in unmapped tags so re-saving
+                    // does not permanently destroy user data
+                    unmapped.put(key, node);
                 }
             } else {
                 // Law T4: Foreign tag preservation - keep unknown tags
@@ -96,6 +124,6 @@ public final class ReferenceTranslator implements RosettaTranslator {
             }
         }
 
-        return new CarrierSnapshot(components, unmapped);
+        return new CarrierSnapshot(components, unmapped, removals);
     }
 }
