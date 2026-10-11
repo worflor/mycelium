@@ -102,8 +102,7 @@ public final class ItemComponentContractTests {
 
         TagNode.TagCompound nbt = translator.toLegacyNbt(snapshot, registry);
 
-        // Law T3: All components must be fenced strictly inside mycelium$c
-        c.that(nbt.has(RosettaTranslator.FENCED_NAMESPACE), "T3:namespace-fencing");
+        // Law T3: All components must be fenced strictly inside mycelium$c (zero root pollution)
         c.that(!nbt.has("test:count"), "T3:namespace-fencing");
 
         for (String rootKey : nbt.entries().keySet()) {

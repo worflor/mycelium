@@ -65,6 +65,7 @@ public sealed interface TagNode permits
             return o instanceof TagByteArray other && Arrays.equals(value, other.value);
         }
         @Override public int hashCode() { return Arrays.hashCode(value); }
+        @Override public String toString() { return "TagByteArray[value=" + Arrays.toString(value) + "]"; }
     }
 
     record TagString(String value) implements TagNode {
@@ -78,8 +79,18 @@ public sealed interface TagNode permits
     record TagList(List<TagNode> elements) implements TagNode {
         public TagList {
             elements = elements == null ? List.of() : List.copyOf(elements);
+            if (!elements.isEmpty()) {
+                byte firstType = elements.get(0).typeId();
+                for (int i = 1; i < elements.size(); i++) {
+                    if (elements.get(i).typeId() != firstType) {
+                        throw new IllegalArgumentException("TagList elements must have homogeneous typeId: expected "
+                                + firstType + " but element " + i + " was " + elements.get(i).typeId());
+                    }
+                }
+            }
         }
         @Override public byte typeId() { return 9; }
+        public byte elementTypeId() { return elements.isEmpty() ? 0 : elements.get(0).typeId(); }
         public static TagList of(TagNode... items) { return new TagList(List.of(items)); }
         public static TagList of(List<TagNode> items) { return new TagList(items); }
         public int size() { return elements.size(); }
@@ -91,8 +102,7 @@ public sealed interface TagNode permits
             if (entries == null || entries.isEmpty()) {
                 entries = Collections.emptyMap();
             } else {
-                // TreeMap guarantees lexicographical key ordering (Law T6)
-                entries = Collections.unmodifiableMap(new TreeMap<>(entries));
+                entries = Collections.unmodifiableMap(new LinkedHashMap<>(entries));
             }
         }
 
@@ -128,14 +138,14 @@ public sealed interface TagNode permits
         }
 
         public TagCompound with(String key, TagNode value) {
-            Map<String, TagNode> copy = new TreeMap<>(entries);
+            Map<String, TagNode> copy = new LinkedHashMap<>(entries);
             copy.put(Objects.requireNonNull(key, "key"), Objects.requireNonNull(value, "value"));
             return new TagCompound(copy);
         }
 
         public TagCompound without(String key) {
             if (!entries.containsKey(key)) return this;
-            Map<String, TagNode> copy = new TreeMap<>(entries);
+            Map<String, TagNode> copy = new LinkedHashMap<>(entries);
             copy.remove(key);
             return new TagCompound(copy);
         }
@@ -151,6 +161,7 @@ public sealed interface TagNode permits
             return o instanceof TagIntArray other && Arrays.equals(value, other.value);
         }
         @Override public int hashCode() { return Arrays.hashCode(value); }
+        @Override public String toString() { return "TagIntArray[value=" + Arrays.toString(value) + "]"; }
     }
 
     record TagLongArray(long[] value) implements TagNode {
@@ -163,5 +174,6 @@ public sealed interface TagNode permits
             return o instanceof TagLongArray other && Arrays.equals(value, other.value);
         }
         @Override public int hashCode() { return Arrays.hashCode(value); }
+        @Override public String toString() { return "TagLongArray[value=" + Arrays.toString(value) + "]"; }
     }
 }

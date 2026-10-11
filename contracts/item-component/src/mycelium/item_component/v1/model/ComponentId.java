@@ -7,10 +7,10 @@ public record ComponentId(String namespace, String path) implements Comparable<C
     public ComponentId {
         Objects.requireNonNull(namespace, "namespace");
         Objects.requireNonNull(path, "path");
-        if (namespace.isBlank() || !isValidNamespace(namespace)) {
+        if (namespace.trim().isEmpty() || !isValidNamespace(namespace)) {
             throw new IllegalArgumentException("Invalid namespace: " + namespace);
         }
-        if (path.isBlank() || !isValidPath(path)) {
+        if (path.trim().isEmpty() || !isValidPath(path)) {
             throw new IllegalArgumentException("Invalid path: " + path);
         }
     }

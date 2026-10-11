@@ -71,7 +71,7 @@ public final class CarrierSnapshot {
         Map<ComponentId, Object> norm = new TreeMap<>();
         for (Map.Entry<ComponentId, Object> e : components.entrySet()) {
             Optional<ComponentDefinition<?>> defOpt = registry.get(e.getKey());
-            if (defOpt.isEmpty()) {
+            if (!defOpt.isPresent()) {
                 norm.put(e.getKey(), e.getValue());
             } else {
                 ComponentDefinition<Object> def = (ComponentDefinition<Object>) defOpt.get();

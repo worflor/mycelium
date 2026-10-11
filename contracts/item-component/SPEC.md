@@ -50,6 +50,7 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
 | `RootPollutingTranslator` | Writes component keys directly to root NBT rather than under `"mycelium$c"` | T3 (`T3:namespace-fencing`) |
 | `LossyUnknownTagTranslator` | Discards unrecognized tags under `"mycelium$c"` during round-trip | T4 (`T4:foreign-tag-preservation`) |
 | `CrashingParseTranslator` | Throws an unchecked `RuntimeException` on malformed nodes | T5 (`T5:corruption-rejected-safely`) |
+| `UnsortedKeysTranslator` | Serializes keys in reverse order instead of canonical sorted order | T6 (`T6:deterministic-ordering`) |
 
 `NoOpTranslator` never crashes, writes no corrupt data, and is trivially fast. It is in the matrix because doing nothing must fail T1.
 

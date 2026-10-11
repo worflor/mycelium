@@ -17,7 +17,7 @@ public final class LossyUnknownTagTranslator implements RosettaTranslator {
     @Override
     public CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry) {
         Optional<TagNode.TagCompound> fencedOpt = nbt.getCompound(FENCED_NAMESPACE);
-        if (fencedOpt.isEmpty()) {
+        if (!fencedOpt.isPresent()) {
             return CarrierSnapshot.empty();
         }
 

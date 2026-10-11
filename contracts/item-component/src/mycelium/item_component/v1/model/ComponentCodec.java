@@ -1,6 +1,6 @@
 package mycelium.item_component.v1.model;
 
-import java.util.Objects;
+import java.util.*;
 
 /**
  * Pure codec for translating between typed Java domain objects and {@link TagNode} trees.
@@ -57,7 +57,13 @@ public interface ComponentCodec<T> {
             if (node instanceof TagNode.TagByte tb) {
                 return tb.value() != 0;
             }
-            throw new CodecException("Expected TagByte for boolean, got " + (node == null ? "null" : node.getClass().getSimpleName()));
+            if (node instanceof TagNode.TagInt ti) {
+                return ti.value() != 0;
+            }
+            if (node instanceof TagNode.TagShort ts) {
+                return ts.value() != 0;
+            }
+            throw new CodecException("Expected TagByte or numeric boolean tag, got " + (node == null ? "null" : node.getClass().getSimpleName()));
         }
     };
 
@@ -96,4 +102,31 @@ public interface ComponentCodec<T> {
             throw new CodecException("Expected TagDouble, got " + (node == null ? "null" : node.getClass().getSimpleName()));
         }
     };
+
+    static <E> ComponentCodec<List<E>> listOf(ComponentCodec<E> elementCodec) {
+        Objects.requireNonNull(elementCodec, "elementCodec");
+        return new ComponentCodec<>() {
+            @Override
+            public TagNode encode(List<E> list) {
+                Objects.requireNonNull(list, "list");
+                List<TagNode> nodes = new ArrayList<>(list.size());
+                for (E item : list) {
+                    nodes.add(elementCodec.encode(item));
+                }
+                return new TagNode.TagList(nodes);
+            }
+
+            @Override
+            public List<E> decode(TagNode node) throws CodecException {
+                if (node instanceof TagNode.TagList listNode) {
+                    List<E> result = new ArrayList<>(listNode.size());
+                    for (int i = 0; i < listNode.size(); i++) {
+                        result.add(elementCodec.decode(listNode.get(i)));
+                    }
+                    return Collections.unmodifiableList(result);
+                }
+                throw new CodecException("Expected TagList, got " + (node == null ? "null" : node.getClass().getSimpleName()));
+            }
+        };
+    }
 }

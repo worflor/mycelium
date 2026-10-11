@@ -27,7 +27,10 @@ public final class Run {
                                 "T4:foreign-tag-preservation"),
                         new ContractRun.Broken("CrashingParseTranslator",
                                 () -> new ItemComponentContractTests(CrashingParseTranslator::new).run(),
-                                "T5:corruption-rejected-safely")
+                                "T5:corruption-rejected-safely"),
+                        new ContractRun.Broken("UnsortedKeysTranslator",
+                                () -> new ItemComponentContractTests(UnsortedKeysTranslator::new).run(),
+                                "T6:deterministic-ordering")
                 ));
         System.exit(exit);
     }

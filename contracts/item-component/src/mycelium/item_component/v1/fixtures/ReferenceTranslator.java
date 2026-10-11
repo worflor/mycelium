@@ -59,7 +59,7 @@ public final class ReferenceTranslator implements RosettaTranslator {
 
         // Law T3: Only inspect fenced compound
         Optional<TagNode.TagCompound> fencedOpt = nbt.getCompound(FENCED_NAMESPACE);
-        if (fencedOpt.isEmpty()) {
+        if (!fencedOpt.isPresent()) {
             return CarrierSnapshot.empty();
         }
 
