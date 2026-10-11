@@ -30,6 +30,31 @@ public final class RootPollutingTranslator implements RosettaTranslator {
 
     @Override
     public CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry) {
-        return ReferenceTranslator.create().fromLegacyNbt(nbt, registry);
+        Objects.requireNonNull(nbt, "nbt");
+        Objects.requireNonNull(registry, "registry");
+
+        Map<ComponentId, Object> components = new TreeMap<>();
+        for (Map.Entry<String, TagNode> entry : nbt.entries().entrySet()) {
+            String key = entry.getKey();
+            TagNode node = entry.getValue();
+
+            ComponentId id;
+            try {
+                id = ComponentId.of(key);
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+
+            Optional<ComponentDefinition<?>> defOpt = registry.get(id);
+            if (defOpt.isPresent()) {
+                ComponentDefinition<?> def = defOpt.get();
+                try {
+                    components.put(id, def.decodeValue(node));
+                } catch (CodecException ignored) {
+                }
+            }
+        }
+        return new CarrierSnapshot(components, Collections.emptyMap());
     }
 }
+

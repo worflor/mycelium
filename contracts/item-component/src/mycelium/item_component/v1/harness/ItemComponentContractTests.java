@@ -375,19 +375,25 @@ public final class ItemComponentContractTests {
 
         // 3. Special Strings (runes, formatting codes, quotes, zero-length arrays)
         ComponentId runesId = ComponentId.of("example:rune_inscription");
-        ComponentId emptyArraysId = ComponentId.of("example:empty_arrays");
+        ComponentId byteArrayId = ComponentId.of("example:byte_array");
         ComponentRegistry specialRegistry = ComponentRegistry.builder()
                 .register(runesId, ComponentCodec.STRING, "")
-                .register(emptyArraysId, ComponentCodec.BYTE_ARRAY, new byte[0])
+                .register(byteArrayId, ComponentCodec.BYTE_ARRAY, new byte[0])
                 .build();
 
         CarrierSnapshot specialSnapshot = CarrierSnapshot.empty()
                 .with(runesId, "ᚠᚢᚦᚨᚱᚲ §6Gilded Foil§r \"The Fool's Journey\" \n\t\r")
-                .with(emptyArraysId, new byte[0]);
+                .with(byteArrayId, new byte[]{ 0x1, 0x2, 0x3 });
 
         TagNode.TagCompound specialNbt = translator.toLegacyNbt(specialSnapshot, specialRegistry);
         CarrierSnapshot specialRecovered = translator.fromLegacyNbt(specialNbt, specialRegistry);
         c.equal(specialSnapshot, specialRecovered, "T1:round-trip-isomorphism");
+
+        // Verify Law T2: default array elision
+        CarrierSnapshot defaultArraySnapshot = CarrierSnapshot.empty().with(byteArrayId, new byte[0]);
+        TagNode.TagCompound defaultNbt = translator.toLegacyNbt(defaultArraySnapshot, specialRegistry);
+        c.that(defaultNbt.isEmpty(), "T2:default-elision");
+
 
         // 4. Snapshot Mutation Interplay (with, withRemoval, without)
         ComponentId idA = ComponentId.of("test:comp_a");

@@ -23,6 +23,13 @@ public final class DefaultWritingTranslator implements RosettaTranslator {
                 componentTags.put(id.toString(), def.encodeValue(value));
             }
         }
+        if (!snapshot.removals().isEmpty()) {
+            List<TagNode> removalNodes = new ArrayList<>();
+            for (ComponentId rem : snapshot.removals()) {
+                removalNodes.add(TagNode.TagString.of(rem.toString()));
+            }
+            componentTags.put("!removed", new TagNode.TagList(removalNodes));
+        }
         for (Map.Entry<String, TagNode> entry : snapshot.unmappedTags().entrySet()) {
             componentTags.put(entry.getKey(), entry.getValue());
         }

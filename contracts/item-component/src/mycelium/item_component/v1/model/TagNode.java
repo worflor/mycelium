@@ -129,12 +129,40 @@ public sealed interface TagNode permits
             return getOptional(key).filter(n -> n instanceof TagInt).map(n -> ((TagInt) n).value());
         }
 
+        public Optional<Long> getLong(String key) {
+            return getOptional(key).filter(n -> n instanceof TagLong).map(n -> ((TagLong) n).value());
+        }
+
+        public Optional<Float> getFloat(String key) {
+            return getOptional(key).filter(n -> n instanceof TagFloat).map(n -> ((TagFloat) n).value());
+        }
+
+        public Optional<Double> getDouble(String key) {
+            return getOptional(key).filter(n -> n instanceof TagDouble).map(n -> ((TagDouble) n).value());
+        }
+
         public Optional<Boolean> getBoolean(String key) {
             return getOptional(key).filter(n -> n instanceof TagByte).map(n -> ((TagByte) n).value() != 0);
         }
 
         public Optional<TagCompound> getCompound(String key) {
             return getOptional(key).filter(n -> n instanceof TagCompound).map(n -> (TagCompound) n);
+        }
+
+        public Optional<TagList> getList(String key) {
+            return getOptional(key).filter(n -> n instanceof TagList).map(n -> (TagList) n);
+        }
+
+        public Optional<byte[]> getByteArray(String key) {
+            return getOptional(key).filter(n -> n instanceof TagByteArray).map(n -> ((TagByteArray) n).value());
+        }
+
+        public Optional<int[]> getIntArray(String key) {
+            return getOptional(key).filter(n -> n instanceof TagIntArray).map(n -> ((TagIntArray) n).value());
+        }
+
+        public Optional<long[]> getLongArray(String key) {
+            return getOptional(key).filter(n -> n instanceof TagLongArray).map(n -> ((TagLongArray) n).value());
         }
 
         public TagCompound with(String key, TagNode value) {

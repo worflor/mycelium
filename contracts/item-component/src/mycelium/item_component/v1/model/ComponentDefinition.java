@@ -24,6 +24,7 @@ public record ComponentDefinition<T>(
     }
 
     public boolean isDefault(T value) {
-        return Objects.equals(defaultValue, value);
+        return Objects.deepEquals(defaultValue, value);
     }
 }
+

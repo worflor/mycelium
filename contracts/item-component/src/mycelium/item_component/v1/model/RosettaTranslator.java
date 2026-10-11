@@ -29,4 +29,10 @@ public interface RosettaTranslator {
      * @return the deserialized carrier snapshot
      */
     CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry);
+
+    /** Returns the standard reference implementation of the translator. */
+    static RosettaTranslator standard() {
+        return StandardRosettaTranslator.INSTANCE;
+    }
 }
+

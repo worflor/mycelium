@@ -17,9 +17,15 @@ public final class CarrierSnapshot {
     }
 
     public CarrierSnapshot(Map<ComponentId, Object> components, Map<String, TagNode> unmappedTags, Set<ComponentId> removals) {
-        this.components = components == null || components.isEmpty()
-                ? Collections.emptyMap()
-                : Collections.unmodifiableMap(new TreeMap<>(components));
+        if (components == null || components.isEmpty()) {
+            this.components = Collections.emptyMap();
+        } else {
+            Map<ComponentId, Object> copy = new TreeMap<>();
+            for (Map.Entry<ComponentId, Object> e : components.entrySet()) {
+                copy.put(e.getKey(), cloneIfArray(e.getValue()));
+            }
+            this.components = Collections.unmodifiableMap(copy);
+        }
         this.unmappedTags = unmappedTags == null || unmappedTags.isEmpty()
                 ? Collections.emptyMap()
                 : Collections.unmodifiableMap(new TreeMap<>(unmappedTags));
@@ -32,6 +38,10 @@ public final class CarrierSnapshot {
 
     public static CarrierSnapshot empty() {
         return EMPTY;
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 
     public boolean isEmpty() {
@@ -51,14 +61,15 @@ public final class CarrierSnapshot {
     }
 
     public Object get(ComponentId id) {
-        return components.get(id);
+        return cloneIfArray(components.get(id));
     }
 
     @SuppressWarnings("unchecked")
     public <T> T get(ComponentDefinition<T> def) {
         Object val = components.get(def.id());
-        return val != null ? (T) val : def.defaultValue();
+        return val != null ? (T) cloneIfArray(val) : (T) cloneIfArray(def.defaultValue());
     }
+
 
     public Map<ComponentId, Object> components() {
         return components;
@@ -70,10 +81,16 @@ public final class CarrierSnapshot {
 
     public CarrierSnapshot with(ComponentId id, Object value) {
         Map<ComponentId, Object> nextComponents = new TreeMap<>(components);
-        nextComponents.put(Objects.requireNonNull(id, "id"), Objects.requireNonNull(value, "value"));
+        nextComponents.put(Objects.requireNonNull(id, "id"), cloneIfArray(Objects.requireNonNull(value, "value")));
         Set<ComponentId> nextRemovals = new TreeSet<>(removals);
         nextRemovals.remove(id);
-        return new CarrierSnapshot(nextComponents, unmappedTags, nextRemovals);
+        Map<String, TagNode> nextUnmapped = new TreeMap<>(unmappedTags);
+        nextUnmapped.remove(id.toString());
+        return new CarrierSnapshot(nextComponents, nextUnmapped, nextRemovals);
+    }
+
+    public <T> CarrierSnapshot with(ComponentDefinition<T> def, T value) {
+        return with(def.id(), value);
     }
 
     public CarrierSnapshot withRemoval(ComponentId id) {
@@ -82,7 +99,9 @@ public final class CarrierSnapshot {
         nextComponents.remove(id);
         Set<ComponentId> nextRemovals = new TreeSet<>(removals);
         nextRemovals.add(id);
-        return new CarrierSnapshot(nextComponents, unmappedTags, nextRemovals);
+        Map<String, TagNode> nextUnmapped = new TreeMap<>(unmappedTags);
+        nextUnmapped.remove(id.toString());
+        return new CarrierSnapshot(nextComponents, nextUnmapped, nextRemovals);
     }
 
     public CarrierSnapshot without(ComponentId id) {
@@ -93,6 +112,59 @@ public final class CarrierSnapshot {
         nextRemovals.remove(id);
         return new CarrierSnapshot(nextComponents, unmappedTags, nextRemovals);
     }
+
+    private static Object cloneIfArray(Object val) {
+        if (val == null) return null;
+        if (val instanceof byte[]) return ((byte[]) val).clone();
+        if (val instanceof short[]) return ((short[]) val).clone();
+        if (val instanceof int[]) return ((int[]) val).clone();
+        if (val instanceof long[]) return ((long[]) val).clone();
+        if (val instanceof float[]) return ((float[]) val).clone();
+        if (val instanceof double[]) return ((double[]) val).clone();
+        if (val instanceof boolean[]) return ((boolean[]) val).clone();
+        if (val instanceof Object[]) return ((Object[]) val).clone();
+        return val;
+    }
+
+    public static final class Builder {
+        private final Map<ComponentId, Object> components = new TreeMap<>();
+        private final Map<String, TagNode> unmappedTags = new TreeMap<>();
+        private final Set<ComponentId> removals = new TreeSet<>();
+
+        public Builder with(ComponentId id, Object value) {
+            components.put(Objects.requireNonNull(id, "id"), cloneIfArray(Objects.requireNonNull(value, "value")));
+            removals.remove(id);
+            unmappedTags.remove(id.toString());
+            return this;
+        }
+
+        public <T> Builder with(ComponentDefinition<T> def, T value) {
+            return with(def.id(), value);
+        }
+
+        public Builder withRemoval(ComponentId id) {
+            removals.add(Objects.requireNonNull(id, "id"));
+            components.remove(id);
+            unmappedTags.remove(id.toString());
+            return this;
+        }
+
+        public Builder without(ComponentId id) {
+            components.remove(id);
+            removals.remove(id);
+            return this;
+        }
+
+        public Builder withUnmappedTag(String key, TagNode tag) {
+            unmappedTags.put(Objects.requireNonNull(key, "key"), Objects.requireNonNull(tag, "tag"));
+            return this;
+        }
+
+        public CarrierSnapshot build() {
+            return new CarrierSnapshot(components, unmappedTags, removals);
+        }
+    }
+
 
     /** Returns a canonical snapshot with all default-valued components elided (Law T2). */
     @SuppressWarnings("unchecked")
