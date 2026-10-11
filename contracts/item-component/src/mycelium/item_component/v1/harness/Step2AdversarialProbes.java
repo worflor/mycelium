@@ -10,7 +10,7 @@ import java.util.*;
  */
 public final class Step2AdversarialProbes {
 
-    public static void runAll() {
+    public static void runAll(RosettaTranslator translator) {
         System.out.println("Running Step 2 Adversarial Probes...");
         int failures = 0;
 
@@ -23,11 +23,20 @@ public final class Step2AdversarialProbes {
         try { testEffectiveReadWithPrototype(); System.out.println("  [PASS] testEffectiveReadWithPrototype"); }
         catch (Throwable t) { System.out.println("  [FAIL] testEffectiveReadWithPrototype: " + t.getMessage()); failures++; }
 
-        try { testPrototypeCanonicalizationLaw(); System.out.println("  [PASS] testPrototypeCanonicalizationLaw"); }
+        try { testPrototypeCanonicalizationLaw(translator); System.out.println("  [PASS] testPrototypeCanonicalizationLaw"); }
         catch (Throwable t) { System.out.println("  [FAIL] testPrototypeCanonicalizationLaw: " + t.getMessage()); failures++; }
 
-        try { testDecoderAliasCollision(); System.out.println("  [PASS] testDecoderAliasCollision"); }
+        try { testCaseAExplicitPresenceRetainedUnderCanonicalization(); System.out.println("  [PASS] testCaseAExplicitPresenceRetainedUnderCanonicalization"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testCaseAExplicitPresenceRetainedUnderCanonicalization: " + t.getMessage()); failures++; }
+
+        try { testCaseBSerializationPreservesPrototypeOverride(translator); System.out.println("  [PASS] testCaseBSerializationPreservesPrototypeOverride"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testCaseBSerializationPreservesPrototypeOverride: " + t.getMessage()); failures++; }
+
+        try { testDecoderAliasCollision(translator); System.out.println("  [PASS] testDecoderAliasCollision"); }
         catch (Throwable t) { System.out.println("  [FAIL] testDecoderAliasCollision: " + t.getMessage()); failures++; }
+
+        try { testAliasConflictResolutionSupersedesShortAlias(translator); System.out.println("  [PASS] testAliasConflictResolutionSupersedesShortAlias"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testAliasConflictResolutionSupersedesShortAlias: " + t.getMessage()); failures++; }
 
         if (failures > 0) {
             throw new AssertionError("Step 2 Adversarial Probes: " + failures + " failures detected!");
@@ -35,11 +44,10 @@ public final class Step2AdversarialProbes {
         System.out.println("Step 2 Adversarial Probes: ALL PASSED");
     }
 
-    /**
-     * Audit Observation B1:
-     * snapshot.withRemoval(def.id()); snapshot.get(def) currently ignores removal and returns 99.
-     * Explicit removal must resolve to absence (null), not secretly restore default.
-     */
+    public static void runAll() {
+        runAll(RosettaTranslator.standard());
+    }
+
     public static void testRemovedComponentTypedReadAbsence() {
         ComponentId id = ComponentId.of("test:val");
         ComponentDefinition<Integer> def = new ComponentDefinition<>(id, ComponentCodec.INT, 99);
@@ -58,117 +66,157 @@ public final class Step2AdversarialProbes {
         }
     }
 
-    /**
-     * Audit Requirement B2:
-     * readPatch(id) -> Inherit | Set(value) | Remove
-     */
     public static void testPatchAlgebraInheritSetRemove() {
         ComponentId id = ComponentId.of("test:patch");
         CarrierSnapshot empty = CarrierSnapshot.empty();
-        ComponentPatch<Integer> p1 = empty.readPatch(id);
-        if (!(p1 instanceof ComponentPatch.Inherit)) {
-            throw new AssertionError("Expected Inherit for untouched key, got " + p1);
+        ComponentPatch<Integer> p0 = empty.readPatch(id);
+        if (!(p0 instanceof ComponentPatch.Inherit)) {
+            throw new AssertionError("Empty snapshot should return Inherit patch!");
         }
 
-        CarrierSnapshot setSnap = empty.with(id, 42);
-        ComponentPatch<Integer> p2 = setSnap.readPatch(id);
-        if (!(p2 instanceof ComponentPatch.Set<Integer> setPatch) || !Objects.equals(setPatch.value(), 42)) {
-            throw new AssertionError("Expected Set(42), got " + p2);
+        CarrierSnapshot withVal = empty.with(id, 42);
+        ComponentPatch<Integer> p1 = withVal.readPatch(id);
+        if (!(p1 instanceof ComponentPatch.Set<Integer> s) || s.value() != 42) {
+            throw new AssertionError("Snapshot with value should return Set(42) patch!");
         }
 
-        CarrierSnapshot remSnap = empty.withRemoval(id);
-        ComponentPatch<Integer> p3 = remSnap.readPatch(id);
-        if (!(p3 instanceof ComponentPatch.Remove)) {
-            throw new AssertionError("Expected Remove, got " + p3);
+        CarrierSnapshot withRem = withVal.withRemoval(id);
+        ComponentPatch<Integer> p2 = withRem.readPatch(id);
+        if (!(p2 instanceof ComponentPatch.Remove)) {
+            throw new AssertionError("Snapshot with removal should return Remove patch!");
         }
     }
 
-    /**
-     * Audit Requirement B3:
-     * readEffective(id, prototype) -> Present(v) | Absent
-     * readEffectiveOrElse(..., fallback)
-     */
     public static void testEffectiveReadWithPrototype() {
-        ComponentId id = ComponentId.of("test:durability");
-        ItemPrototype swordProto = ItemPrototype.builder()
-                .withBaseComponent(id, 100)
+        ComponentId id = ComponentId.of("test:max_durability");
+        ComponentDefinition<Integer> def = new ComponentDefinition<>(id, ComponentCodec.INT, 100);
+
+        ItemPrototype prototype = ItemPrototype.builder()
+                .withBaseComponent(id, 250)
                 .build();
 
-        // 1. Inherit case: effective read sees base prototype
-        CarrierSnapshot untouched = CarrierSnapshot.empty();
-        Optional<Integer> eff1 = untouched.readEffective(id, swordProto);
-        if (!eff1.isPresent() || eff1.get() != 100) {
-            throw new AssertionError("Expected prototype base value 100, got " + eff1);
+        CarrierSnapshot stackDefault = CarrierSnapshot.empty();
+        if (stackDefault.readEffectiveOrElse(def, prototype, 0) != 250) {
+            throw new AssertionError("Inherited stack should read prototype base durability 250!");
         }
 
-        // 2. Override case: effective read sees override
-        CarrierSnapshot damaged = untouched.with(id, 75);
-        Optional<Integer> eff2 = damaged.readEffective(id, swordProto);
-        if (!eff2.isPresent() || eff2.get() != 75) {
-            throw new AssertionError("Expected override value 75, got " + eff2);
+        CarrierSnapshot stackOverride = stackDefault.with(id, 500);
+        if (stackOverride.readEffectiveOrElse(def, prototype, 0) != 500) {
+            throw new AssertionError("Overridden stack should read stack durability 500!");
         }
 
-        // 3. Removal case: effective read sees ABSENCE despite prototype having base value
-        CarrierSnapshot removed = untouched.withRemoval(id);
-        Optional<Integer> eff3 = removed.readEffective(id, swordProto);
-        if (eff3.isPresent()) {
-            throw new AssertionError("Removal must yield Absent even if prototype has base value! Got " + eff3);
-        }
-        Integer fallback = removed.readEffectiveOrElse(id, swordProto, -1);
-        if (fallback != -1) {
-            throw new AssertionError("Expected fallback -1, got " + fallback);
+        CarrierSnapshot stackRemoved = stackOverride.withRemoval(id);
+        if (stackRemoved.readEffective(def, prototype).isPresent()) {
+            throw new AssertionError("Removed component must resolve to absence under prototype!");
         }
     }
 
-    /**
-     * Audit Requirement B4:
-     * decode_P(encode_P(S)) = canonicalize_P(S)
-     * Setting damage back to prototype default eliminates the override in canonicalization.
-     */
-    public static void testPrototypeCanonicalizationLaw() {
-        ComponentId id = ComponentId.of("test:durability");
-        ItemPrototype swordProto = ItemPrototype.builder()
-                .withBaseComponent(id, 100)
-                .build();
-        ComponentRegistry reg = ComponentRegistry.builder()
-                .register(id, ComponentCodec.INT, 100)
+    public static void testPrototypeCanonicalizationLaw(RosettaTranslator translator) {
+        ComponentId damageId = ComponentId.of("minecraft:damage");
+        ComponentDefinition<Integer> damageDef = new ComponentDefinition<>(damageId, ComponentCodec.INT, 0);
+
+        ComponentRegistry registry = ComponentRegistry.builder()
+                .register(damageDef)
                 .build();
 
-        // An override identical to prototype base value canonicalizes away
-        CarrierSnapshot explicitDefault = CarrierSnapshot.empty().with(id, 100);
-        CarrierSnapshot canonical = explicitDefault.canonicalize(swordProto, reg);
-        if (canonical.has(id)) {
-            throw new AssertionError("Canonicalization must elide override matching prototype base value!");
+        ItemPrototype diamondSword = ItemPrototype.builder()
+                .withBaseComponent(damageId, 0)
+                .build();
+
+        CarrierSnapshot damaged = CarrierSnapshot.empty().with(damageId, 15);
+        CarrierSnapshot repairedToZero = damaged.with(damageId, 0);
+
+        CarrierSnapshot canonical = repairedToZero.canonicalize(diamondSword, registry);
+
+        if (canonical.has(damageId)) {
+            throw new AssertionError("CANONICALIZATION FAILED: Setting damage to prototype default did not elide override back to Inherit!");
+        }
+
+        TagNode.TagCompound nbt = translator.toLegacyNbt(canonical, registry, diamondSword);
+        CarrierSnapshot decoded = translator.fromLegacyNbt(nbt, registry, diamondSword);
+
+        if (!ValueSemantics.deepEquals(canonical, decoded)) {
+            throw new AssertionError("Round-trip canonicalization failed law: decode_P(encode_P(S)) = canonicalize_P(S)");
         }
     }
 
-    /**
-     * Audit Observation D3:
-     * "damage" vs "minecraft:damage" alias collision must not silently choose last iterated alias.
-     */
-    public static void testDecoderAliasCollision() {
-        ComponentId id = ComponentId.of("minecraft:damage");
-        ComponentRegistry reg = ComponentRegistry.builder()
-                .register(id, ComponentCodec.INT, 0)
+    public static void testCaseAExplicitPresenceRetainedUnderCanonicalization() {
+        ComponentId id = ComponentId.of("test:counter");
+        ComponentDefinition<Integer> def = new ComponentDefinition<>(id, ComponentCodec.INT, 0);
+        ComponentRegistry registry = ComponentRegistry.builder().register(def).build();
+
+        ItemPrototype emptyPrototype = ItemPrototype.empty();
+        CarrierSnapshot snapshot = CarrierSnapshot.empty().with(id, 0);
+
+        CarrierSnapshot canonical = snapshot.canonicalize(emptyPrototype, registry);
+
+        if (!canonical.has(id)) {
+            throw new AssertionError("Case A Violation: Explicit presence was removed during canonicalization when prototype lacks component!");
+        }
+        if (!Objects.equals(canonical.get(id), 0)) {
+            throw new AssertionError("Case A Violation: Canonical value mismatch!");
+        }
+    }
+
+    public static void testCaseBSerializationPreservesPrototypeOverride(RosettaTranslator translator) {
+        ComponentId id = ComponentId.of("test:stat");
+        ComponentDefinition<Integer> def = new ComponentDefinition<>(id, ComponentCodec.INT, 0);
+        ComponentRegistry registry = ComponentRegistry.builder().register(def).build();
+
+        ItemPrototype prototype = ItemPrototype.builder().withBaseComponent(id, 100).build();
+        CarrierSnapshot stack = CarrierSnapshot.empty().with(id, 0);
+
+        TagNode.TagCompound nbt = translator.toLegacyNbt(stack, registry, prototype);
+        CarrierSnapshot restored = translator.fromLegacyNbt(nbt, registry, prototype);
+
+        Optional<Integer> effective = restored.readEffective(def, prototype);
+        if (!effective.isPresent() || effective.get() != 0) {
+            throw new AssertionError("Case B Violation: Serialization reversed prototype override! Expected effective 0, got " + effective.orElse(null));
+        }
+    }
+
+    public static void testDecoderAliasCollision(RosettaTranslator translator) {
+        TagNode.TagCompound fenced = TagNode.TagCompound.empty()
+                .with("damage", TagNode.TagInt.of(10))
+                .with("minecraft:damage", TagNode.TagInt.of(20));
+
+        TagNode.TagCompound root = TagNode.TagCompound.empty()
+                .with(RosettaTranslator.FENCED_NAMESPACE, fenced);
+
+        ComponentRegistry registry = ComponentRegistry.builder()
+                .register(ComponentId.of("minecraft:damage"), ComponentCodec.INT, 0)
                 .build();
 
-        // Two entries in same fenced compound normalizing to same canonical ID
-        Map<String, TagNode> tags = new LinkedHashMap<>();
-        tags.put("damage", TagNode.TagInt.of(5));
-        tags.put("minecraft:damage", TagNode.TagInt.of(10));
+        CarrierSnapshot decoded = translator.fromLegacyNbt(root, registry);
 
-        TagNode.TagCompound nbt = TagNode.TagCompound.empty()
-                .with(RosettaTranslator.FENCED_NAMESPACE, new TagNode.TagCompound(tags));
-
-        RosettaTranslator translator = RosettaTranslator.standard();
-        CarrierSnapshot decoded = translator.fromLegacyNbt(nbt, reg);
-
-        // A deterministic conflict must not silently overwrite one with the other as a valid component
-        if (decoded.has(id)) {
-            throw new AssertionError("Alias collision between 'damage' and 'minecraft:damage' must be flagged as conflict/quarantined, not silently resolved!");
+        if (decoded.has(ComponentId.of("minecraft:damage"))) {
+            throw new AssertionError("Decoder picked an arbitrary winner during alias collision!");
         }
         if (!decoded.unmappedTags().containsKey("damage") || !decoded.unmappedTags().containsKey("minecraft:damage")) {
-            throw new AssertionError("Both colliding tags must be preserved in unmapped/quarantine! Got: " + decoded.unmappedTags());
+            throw new AssertionError("Colliding candidate aliases were not safely retained in unmapped quarantine tags!");
+        }
+    }
+
+    public static void testAliasConflictResolutionSupersedesShortAlias(RosettaTranslator translator) {
+        TagNode.TagCompound fenced = TagNode.TagCompound.empty()
+                .with("damage", TagNode.TagInt.of(10))
+                .with("minecraft:damage", TagNode.TagInt.of(20));
+        TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, fenced);
+
+        ComponentId damageId = ComponentId.of("minecraft:damage");
+        ComponentRegistry registry = ComponentRegistry.builder().register(damageId, ComponentCodec.INT, 0).build();
+
+        CarrierSnapshot decoded = translator.fromLegacyNbt(root, registry);
+        CarrierSnapshot repaired = decoded.with(damageId, 5);
+
+        TagNode.TagCompound reSaved = translator.toLegacyNbt(repaired, registry);
+        CarrierSnapshot reloaded = translator.fromLegacyNbt(reSaved, registry);
+
+        if (!reloaded.has(damageId) || !Objects.equals(reloaded.get(damageId), 5)) {
+            throw new AssertionError("Repaired value 5 was not preserved on reload!");
+        }
+        if (reloaded.unmappedTags().containsKey("damage")) {
+            throw new AssertionError("Short alias 'damage' resurrected after explicit repair of canonical component!");
         }
     }
 }

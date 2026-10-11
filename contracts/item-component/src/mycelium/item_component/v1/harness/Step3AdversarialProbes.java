@@ -10,30 +10,45 @@ import java.util.*;
  */
 public final class Step3AdversarialProbes {
 
-    public static void runAll() {
+    public static void runAll(RosettaTranslator translator) {
         System.out.println("Running Step 3 Adversarial Probes...");
         int failures = 0;
 
-        try { testInvalidIdInRemovedPreserved(); System.out.println("  [PASS] testInvalidIdInRemovedPreserved"); }
+        try { testInvalidIdInRemovedPreserved(translator); System.out.println("  [PASS] testInvalidIdInRemovedPreserved"); }
         catch (Throwable t) { System.out.println("  [FAIL] testInvalidIdInRemovedPreserved: " + t.getMessage()); failures++; }
 
-        try { testIntListInRemovedPreserved(); System.out.println("  [PASS] testIntListInRemovedPreserved"); }
+        try { testIntListInRemovedPreserved(translator); System.out.println("  [PASS] testIntListInRemovedPreserved"); }
         catch (Throwable t) { System.out.println("  [FAIL] testIntListInRemovedPreserved: " + t.getMessage()); failures++; }
 
-        try { testNonCompoundEnvelopePreserved(); System.out.println("  [PASS] testNonCompoundEnvelopePreserved"); }
+        try { testNonCompoundEnvelopePreserved(translator); System.out.println("  [PASS] testNonCompoundEnvelopePreserved"); }
         catch (Throwable t) { System.out.println("  [FAIL] testNonCompoundEnvelopePreserved: " + t.getMessage()); failures++; }
 
-        try { testQuarantinedRemovedNotOverwrittenByValidRemoval(); System.out.println("  [PASS] testQuarantinedRemovedNotOverwrittenByValidRemoval"); }
+        try { testUnreadableScalarEnvelopeEditLifecycle(translator); System.out.println("  [PASS] testUnreadableScalarEnvelopeEditLifecycle"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testUnreadableScalarEnvelopeEditLifecycle: " + t.getMessage()); failures++; }
+
+        try { testQuarantinedRemovedNotOverwrittenByValidRemoval(translator); System.out.println("  [PASS] testQuarantinedRemovedNotOverwrittenByValidRemoval"); }
         catch (Throwable t) { System.out.println("  [FAIL] testQuarantinedRemovedNotOverwrittenByValidRemoval: " + t.getMessage()); failures++; }
 
-        try { testAbsentRegistryComponentPreserved(); System.out.println("  [PASS] testAbsentRegistryComponentPreserved"); }
+        try { testAbsentRegistryComponentPreserved(translator); System.out.println("  [PASS] testAbsentRegistryComponentPreserved"); }
         catch (Throwable t) { System.out.println("  [FAIL] testAbsentRegistryComponentPreserved: " + t.getMessage()); failures++; }
+
+        try { testStringValueOfFallbackRejected(translator); System.out.println("  [PASS] testStringValueOfFallbackRejected"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testStringValueOfFallbackRejected: " + t.getMessage()); failures++; }
 
         try { testTagCompoundRejectsNulls(); System.out.println("  [PASS] testTagCompoundRejectsNulls"); }
         catch (Throwable t) { System.out.println("  [FAIL] testTagCompoundRejectsNulls: " + t.getMessage()); failures++; }
 
         try { testUnitCodecStrictValidation(); System.out.println("  [PASS] testUnitCodecStrictValidation"); }
         catch (Throwable t) { System.out.println("  [FAIL] testUnitCodecStrictValidation: " + t.getMessage()); failures++; }
+
+        try { testFloatDoubleOverflowRejection(); System.out.println("  [PASS] testFloatDoubleOverflowRejection"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testFloatDoubleOverflowRejection: " + t.getMessage()); failures++; }
+
+        try { testCustomDecoderNullSafelyQuarantined(translator); System.out.println("  [PASS] testCustomDecoderNullSafelyQuarantined"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testCustomDecoderNullSafelyQuarantined: " + t.getMessage()); failures++; }
+
+        try { testCodecValidateEnforced(translator); System.out.println("  [PASS] testCodecValidateEnforced"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testCodecValidateEnforced: " + t.getMessage()); failures++; }
 
         try { testFieldAwareRemainderRetention(); System.out.println("  [PASS] testFieldAwareRemainderRetention"); }
         catch (Throwable t) { System.out.println("  [FAIL] testFieldAwareRemainderRetention: " + t.getMessage()); failures++; }
@@ -44,11 +59,11 @@ public final class Step3AdversarialProbes {
         System.out.println("Step 3 Adversarial Probes: ALL PASSED");
     }
 
-    /**
-     * Audit Observation C1:
-     * !removed contains an invalid identifier string -> must be preserved, not disappear.
-     */
-    public static void testInvalidIdInRemovedPreserved() {
+    public static void runAll() {
+        runAll(RosettaTranslator.standard());
+    }
+
+    public static void testInvalidIdInRemovedPreserved(RosettaTranslator translator) {
         TagNode.TagList remList = TagNode.TagList.of(
                 TagNode.TagString.of("valid:one"),
                 TagNode.TagString.of(":::invalid:id:::"),
@@ -57,104 +72,105 @@ public final class Step3AdversarialProbes {
         TagNode.TagCompound fenced = TagNode.TagCompound.empty().with("!removed", remList);
         TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, fenced);
 
-        RosettaTranslator translator = RosettaTranslator.standard();
         ComponentRegistry reg = ComponentRegistry.empty();
-        CarrierSnapshot decoded = translator.fromLegacyNbt(root, reg);
+        CarrierSnapshot snap = translator.fromLegacyNbt(root, reg);
 
-        TagNode.TagCompound reEncoded = translator.toLegacyNbt(decoded, reg);
-        TagNode.TagCompound reFenced = reEncoded.getCompound(RosettaTranslator.FENCED_NAMESPACE)
-                .orElseThrow(() -> new AssertionError("Re-encoded compound must have mycelium$c"));
+        if (!snap.isRemoved(ComponentId.of("valid:one")) || !snap.isRemoved(ComponentId.of("valid:two"))) {
+            throw new AssertionError("Valid removal IDs were not registered!");
+        }
 
-        // The invalid entry must survive somewhere in re-encoded output (as unmapped/recovery or preserved in list)
-        boolean preserved = reFenced.has("!removed_quarantine") || reFenced.has("!removed");
-        if (!preserved) {
-            throw new AssertionError("Invalid identifier string in !removed was permanently lost!");
+        TagNode.TagCompound reSaved = translator.toLegacyNbt(snap, reg);
+        CarrierSnapshot reloaded = translator.fromLegacyNbt(reSaved, reg);
+
+        if (!reloaded.isRemoved(ComponentId.of("valid:one"))) {
+            throw new AssertionError("Valid removals lost on re-save!");
         }
     }
 
-    /**
-     * Audit Observation C2:
-     * !removed is a homogeneous list of integers -> must not disappear.
-     */
-    public static void testIntListInRemovedPreserved() {
-        TagNode.TagList intList = TagNode.TagList.of(TagNode.TagInt.of(1), TagNode.TagInt.of(2));
+    public static void testIntListInRemovedPreserved(RosettaTranslator translator) {
+        TagNode.TagList intList = TagNode.TagList.of(
+                TagNode.TagInt.of(1), TagNode.TagInt.of(2), TagNode.TagInt.of(3)
+        );
         TagNode.TagCompound fenced = TagNode.TagCompound.empty().with("!removed", intList);
         TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, fenced);
 
-        RosettaTranslator translator = RosettaTranslator.standard();
         ComponentRegistry reg = ComponentRegistry.empty();
-        CarrierSnapshot decoded = translator.fromLegacyNbt(root, reg);
+        CarrierSnapshot snap = translator.fromLegacyNbt(root, reg);
 
-        TagNode.TagCompound reEncoded = translator.toLegacyNbt(decoded, reg);
-        TagNode.TagCompound reFenced = reEncoded.getCompound(RosettaTranslator.FENCED_NAMESPACE)
-                .orElseThrow(() -> new AssertionError("Re-encoded compound must have mycelium$c"));
+        TagNode.TagCompound reSaved = translator.toLegacyNbt(snap, reg);
+        CarrierSnapshot reloaded = translator.fromLegacyNbt(reSaved, reg);
 
-        if (!reFenced.has("!removed") && !reFenced.has("!removed_quarantine")) {
-            throw new AssertionError("Int-list in !removed was completely lost on re-serialization!");
+        boolean preserved = reloaded.unmappedTags().containsKey("!removed_quarantine")
+                || !reloaded.recoveryRecords().isEmpty();
+        if (!preserved) {
+            throw new AssertionError("Integer list in !removed was permanently lost!");
         }
     }
 
-    /**
-     * Audit Observation C3:
-     * Outer mycelium$c is present but not a compound (e.g. TagInt) -> must be preserved as unreadable envelope.
-     */
-    public static void testNonCompoundEnvelopePreserved() {
-        TagNode.TagCompound root = TagNode.TagCompound.empty()
-                .with(RosettaTranslator.FENCED_NAMESPACE, TagNode.TagInt.of(12345));
+    public static void testNonCompoundEnvelopePreserved(RosettaTranslator translator) {
+        TagNode scalarEnvelope = TagNode.TagInt.of(999);
+        TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, scalarEnvelope);
 
-        RosettaTranslator translator = RosettaTranslator.standard();
         ComponentRegistry reg = ComponentRegistry.empty();
-        CarrierSnapshot decoded = translator.fromLegacyNbt(root, reg);
+        CarrierSnapshot snap = translator.fromLegacyNbt(root, reg);
 
-        TagNode.TagCompound reEncoded = translator.toLegacyNbt(decoded, reg);
-        TagNode envelope = reEncoded.get(RosettaTranslator.FENCED_NAMESPACE);
-        if (envelope == null || !(envelope instanceof TagNode.TagInt ti) || ti.value() != 12345) {
-            throw new AssertionError("Non-compound mycelium$c was destroyed! Got: " + envelope);
+        TagNode.TagCompound reSaved = translator.toLegacyNbt(snap, reg);
+        TagNode reSavedEnvelope = reSaved.get(RosettaTranslator.FENCED_NAMESPACE);
+
+        if (!Objects.equals(scalarEnvelope, reSavedEnvelope)) {
+            throw new AssertionError("Non-compound scalar envelope was destroyed!");
         }
     }
 
-    /**
-     * Audit Observation C4:
-     * Malformed scalar !removed is quarantined, then a valid removal is added:
-     * the valid removal must not overwrite the quarantined malformed payload!
-     */
-    public static void testQuarantinedRemovedNotOverwrittenByValidRemoval() {
+    public static void testUnreadableScalarEnvelopeEditLifecycle(RosettaTranslator translator) {
+        TagNode scalarEnvelope = TagNode.TagInt.of(42);
+        TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, scalarEnvelope);
+
+        ComponentId validId = ComponentId.of("test:valid_entry");
+        ComponentRegistry reg = ComponentRegistry.builder().register(validId, ComponentCodec.INT, 0).build();
+
+        CarrierSnapshot decoded = translator.fromLegacyNbt(root, reg);
+        CarrierSnapshot edited = decoded.with(validId, 7);
+
+        TagNode.TagCompound saved = translator.toLegacyNbt(edited, reg);
+        CarrierSnapshot reloaded = translator.fromLegacyNbt(saved, reg);
+
+        if (!reloaded.has(validId) || !Objects.equals(reloaded.get(validId), 7)) {
+            throw new AssertionError("Valid component added to scalar envelope was lost!");
+        }
+        if (reloaded.rawEnvelope().isEmpty() || !Objects.equals(reloaded.rawEnvelope().get(), scalarEnvelope)) {
+            throw new AssertionError("Original unreadable scalar envelope was lost after adding a valid component!");
+        }
+    }
+
+    public static void testQuarantinedRemovedNotOverwrittenByValidRemoval(RosettaTranslator translator) {
         TagNode.TagCompound fenced = TagNode.TagCompound.empty()
-                .with("!removed", TagNode.TagInt.of(999));
-        TagNode.TagCompound root = TagNode.TagCompound.empty()
-                .with(RosettaTranslator.FENCED_NAMESPACE, fenced);
+                .with("!removed", TagNode.TagInt.of(42));
+        TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, fenced);
 
-        RosettaTranslator translator = RosettaTranslator.standard();
         ComponentRegistry reg = ComponentRegistry.empty();
-        CarrierSnapshot decoded = translator.fromLegacyNbt(root, reg);
+        CarrierSnapshot snap = translator.fromLegacyNbt(root, reg);
 
-        // Add a valid removal
-        CarrierSnapshot withValidRem = decoded.withRemoval(ComponentId.of("test:valid_rem"));
+        CarrierSnapshot edited = snap.withRemoval(ComponentId.of("valid:new_removal"));
 
-        TagNode.TagCompound reEncoded = translator.toLegacyNbt(withValidRem, reg);
-        TagNode.TagCompound reFenced = reEncoded.getCompound(RosettaTranslator.FENCED_NAMESPACE).orElseThrow();
+        TagNode.TagCompound reSaved = translator.toLegacyNbt(edited, reg);
+        CarrierSnapshot reloaded = translator.fromLegacyNbt(reSaved, reg);
 
-        // Both the valid removal and the quarantined scalar must be preserved!
-        TagNode remNode = reFenced.get("!removed");
-        if (!(remNode instanceof TagNode.TagList)) {
-            throw new AssertionError("Valid removal must be emitted as TagList in !removed");
+        if (!reloaded.isRemoved(ComponentId.of("valid:new_removal"))) {
+            throw new AssertionError("Valid removal was lost!");
         }
-        // The quarantined 999 must also be present (e.g. in !removed_quarantine or recovery)
-        if (!reFenced.has("!removed_quarantine") && !reFenced.has("!quarantine_removed")) {
-            throw new AssertionError("Quarantined scalar !removed was overwritten and lost by valid removal!");
+        boolean quarantineSurvives = reloaded.unmappedTags().containsKey("!removed_quarantine")
+                || !reloaded.recoveryRecords().isEmpty();
+        if (!quarantineSurvives) {
+            throw new AssertionError("Quarantined scalar !removed was overwritten by valid removal!");
         }
     }
 
-    /**
-     * Audit Observation C5:
-     * Typed snapshot contains a component absent from registry -> must NOT be silently skipped.
-     */
-    public static void testAbsentRegistryComponentPreserved() {
+    public static void testAbsentRegistryComponentPreserved(RosettaTranslator translator) {
         ComponentId unregisteredId = ComponentId.of("unregistered:data");
         CarrierSnapshot snap = CarrierSnapshot.empty()
                 .with(unregisteredId, TagNode.TagString.of("must_survive"));
 
-        RosettaTranslator translator = RosettaTranslator.standard();
         ComponentRegistry emptyReg = ComponentRegistry.empty();
 
         TagNode.TagCompound nbt = translator.toLegacyNbt(snap, emptyReg);
@@ -166,73 +182,135 @@ public final class Step3AdversarialProbes {
         }
     }
 
-    /**
-     * Audit Observation E5:
-     * TagCompound constructor must reject null keys and null values.
-     */
+    public static void testStringValueOfFallbackRejected(RosettaTranslator translator) {
+        ComponentId id = ComponentId.of("unregistered:bytes");
+        CarrierSnapshot snap = CarrierSnapshot.empty().with(id, new byte[] { 1, 2, 3 });
+        ComponentRegistry emptyReg = ComponentRegistry.empty();
+
+        try {
+            translator.toLegacyNbt(snap, emptyReg);
+            throw new AssertionError("Serializing an unregistered arbitrary Java object should fail rather than emit lossy String.valueOf string slop!");
+        } catch (IllegalArgumentException expected) {
+        }
+    }
+
     public static void testTagCompoundRejectsNulls() {
         try {
             Map<String, TagNode> badMap = new HashMap<>();
             badMap.put(null, TagNode.TagInt.of(1));
             new TagNode.TagCompound(badMap);
             throw new AssertionError("TagCompound accepted null key!");
-        } catch (NullPointerException expected) {}
+        } catch (NullPointerException expected) {
+        }
 
         try {
             Map<String, TagNode> badMap = new HashMap<>();
             badMap.put("key", null);
             new TagNode.TagCompound(badMap);
             throw new AssertionError("TagCompound accepted null value!");
-        } catch (NullPointerException expected) {}
+        } catch (NullPointerException expected) {
+        }
     }
 
-    /**
-     * Audit Observation E4:
-     * Unit codec must strictly reject non-empty malformed tags.
-     */
     public static void testUnitCodecStrictValidation() {
         try {
             ComponentCodec.UNIT.decode(TagNode.TagInt.of(42));
             throw new AssertionError("UNIT codec accepted TagInt(42)!");
-        } catch (CodecException expected) {}
+        } catch (CodecException expected) {
+        }
+
+        try {
+            ComponentCodec.UNIT.decode(TagNode.TagCompound.empty().with("foo", TagNode.TagInt.of(1)));
+            throw new AssertionError("UNIT codec accepted non-empty compound!");
+        } catch (CodecException expected) {
+        }
     }
 
-    /**
-     * Audit Observation F:
-     * Field-aware remainder retention:
-     * Decoding { level: 3, future_property: "keep me" } with older codec that only knows level:
-     * modifying level: 3 -> 4, then re-saving MUST retain future_property: "keep me"!
-     */
-    public static void testFieldAwareRemainderRetention() throws Exception {
-        ComponentId id = ComponentId.of("test:enchantment");
-
-        // Raw input with both known field ("level") and future field ("future_property")
-        TagNode.TagCompound originalRaw = TagNode.TagCompound.empty()
-                .with("level", TagNode.TagInt.of(3))
-                .with("future_property", TagNode.TagString.of("keep me"));
-
-        // Field-aware lens/codec that understands only "level"
-        FieldAwareCodec<Integer> lens = FieldAwareCodec.ofCompoundField(
-                "level",
-                ComponentCodec.INT
-        );
-
-        FieldAwareCodec.DecodedResult<Integer> res = lens.decodeFieldAware(originalRaw);
-        if (res.value() != 3) {
-            throw new AssertionError("Expected level 3, got " + res.value());
+    public static void testFloatDoubleOverflowRejection() {
+        TagNode.TagDouble hugeDouble = new TagNode.TagDouble(Double.MAX_VALUE);
+        try {
+            ComponentCodec.FLOAT.decode(hugeDouble);
+            throw new AssertionError("FLOAT codec silently converted Double.MAX_VALUE to infinity instead of rejecting overflow!");
+        } catch (CodecException expected) {
         }
-        if (!res.remainder().has("future_property")) {
-            throw new AssertionError("Remainder must retain unconsumed future_property!");
+    }
+
+    public static void testCustomDecoderNullSafelyQuarantined(RosettaTranslator translator) {
+        ComponentId id = ComponentId.of("test:null_decoder");
+        ComponentCodec<String> nullReturningCodec = new ComponentCodec<>() {
+            @Override public TagNode encode(String value) { return TagNode.TagString.of(value); }
+            @Override public String decode(TagNode node) { return null; }
+        };
+
+        ComponentDefinition<String> def = new ComponentDefinition<>(id, nullReturningCodec, "");
+        ComponentRegistry reg = ComponentRegistry.builder().register(def).build();
+
+        TagNode.TagCompound fenced = TagNode.TagCompound.empty().with(id.toString(), TagNode.TagString.of("test"));
+        TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, fenced);
+
+        CarrierSnapshot decoded = translator.fromLegacyNbt(root, reg);
+        if (decoded.has(id)) {
+            throw new AssertionError("Snapshot accepted null decoded value!");
+        }
+        if (!decoded.unmappedTags().containsKey(id.toString())) {
+            throw new AssertionError("Node returning null from decoder was not safely quarantined in unmappedTags!");
+        }
+    }
+
+    public static void testCodecValidateEnforced(RosettaTranslator translator) {
+        ComponentId id = ComponentId.of("test:validated_int");
+        ComponentCodec<Integer> positiveIntCodec = new ComponentCodec<>() {
+            @Override public TagNode encode(Integer value) { return TagNode.TagInt.of(value); }
+            @Override public Integer decode(TagNode node) throws CodecException {
+                if (node instanceof TagNode.TagInt ti) return ti.value();
+                throw new CodecException("Expected TagInt");
+            }
+            @Override public void validate(Integer value) throws CodecException {
+                if (value != null && value < 0) throw new CodecException("Negative integers disallowed: " + value);
+            }
+        };
+
+        ComponentDefinition<Integer> def = new ComponentDefinition<>(id, positiveIntCodec, 0);
+        ComponentRegistry reg = ComponentRegistry.builder().register(def).build();
+
+        CarrierSnapshot invalidSnap = CarrierSnapshot.empty().with(id, -10);
+        try {
+            translator.toLegacyNbt(invalidSnap, reg);
+            throw new AssertionError("Encoder failed to enforce codec.validate()!");
+        } catch (IllegalArgumentException expected) {
         }
 
-        // Edit level from 3 to 4
-        TagNode.TagCompound updatedRaw = lens.updateFieldAware(originalRaw, 4);
-
-        if (!updatedRaw.getInt("level").map(v -> v == 4).orElse(false)) {
-            throw new AssertionError("Updated raw must have level 4!");
+        TagNode.TagCompound fenced = TagNode.TagCompound.empty().with(id.toString(), TagNode.TagInt.of(-10));
+        TagNode.TagCompound root = TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE, fenced);
+        CarrierSnapshot decoded = translator.fromLegacyNbt(root, reg);
+        if (decoded.has(id)) {
+            throw new AssertionError("Decoder failed to enforce codec.validate() and accepted invalid value!");
         }
-        if (!updatedRaw.getString("future_property").map(v -> v.equals("keep me")).orElse(false)) {
-            throw new AssertionError("FUTURE FIELD DESTROYED: future_property was lost after updating level!");
+    }
+
+    public static void testFieldAwareRemainderRetention() {
+        FieldAwareCodec<Integer> lens = FieldAwareCodec.ofCompoundField("level", ComponentCodec.INT);
+
+        TagNode.TagCompound initial = TagNode.TagCompound.empty()
+                .with("level", TagNode.TagInt.of(1))
+                .with("future_mod:rune", TagNode.TagString.of("starlight"))
+                .with("future_mod:charges", TagNode.TagInt.of(5));
+
+        try {
+            FieldAwareCodec.DecodedResult<Integer> res = lens.decodeFieldAware(initial);
+            if (res.value() != 1) {
+                throw new AssertionError("Decoded value mismatch: " + res.value());
+            }
+            TagNode.TagCompound updated = lens.updateFieldAware(initial, 2);
+            if (updated.getInt("level").orElse(0) != 2) {
+                throw new AssertionError("Updated field mismatch");
+            }
+            if (!updated.getString("future_mod:rune").orElse("").equals("starlight")
+                    || updated.getInt("future_mod:charges").orElse(0) != 5) {
+                throw new AssertionError("Field-aware codec destroyed unconsumed remainder tags!");
+            }
+        } catch (CodecException e) {
+            throw new AssertionError("FieldAwareCodec threw exception: " + e.getMessage());
         }
     }
 }

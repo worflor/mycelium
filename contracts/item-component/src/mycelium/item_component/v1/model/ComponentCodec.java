@@ -144,7 +144,11 @@ public interface ComponentCodec<T> {
                 return tf.value();
             }
             if (node instanceof TagNode.TagDouble td) {
-                return (float) td.value();
+                double d = td.value();
+                if (!Double.isInfinite(d) && (d > Float.MAX_VALUE || d < -Float.MAX_VALUE)) {
+                    throw new CodecException("Double value " + d + " exceeds finite float range");
+                }
+                return (float) d;
             }
             throw new CodecException("Expected TagFloat, got " + (node == null ? "null" : node.getClass().getSimpleName()));
         }
@@ -210,25 +214,22 @@ public interface ComponentCodec<T> {
         }
     };
 
-    ComponentCodec<Boolean> UNIT = new ComponentCodec<>() {
+    ComponentCodec<Unit> UNIT = new ComponentCodec<>() {
         @Override
-        public TagNode encode(Boolean value) {
+        public TagNode encode(Unit value) {
             Objects.requireNonNull(value, "value");
             return TagNode.TagCompound.empty();
         }
 
         @Override
-        public Boolean decode(TagNode node) throws CodecException {
+        public Unit decode(TagNode node) throws CodecException {
             if (node instanceof TagNode.TagCompound tc && tc.isEmpty()) {
-                return true;
+                return Unit.INSTANCE;
             }
             if (node instanceof TagNode.TagByte tb && tb.value() == 1) {
-                return true;
+                return Unit.INSTANCE;
             }
-            if (node instanceof TagNode.TagByte tb && tb.value() == 0) {
-                return false;
-            }
-            throw new CodecException("Expected empty TagCompound or boolean TagByte for UNIT, got "
+            throw new CodecException("Expected empty TagCompound or boolean TagByte 1 for UNIT, got "
                     + (node == null ? "null" : node.getClass().getSimpleName()));
         }
     };
@@ -243,15 +244,16 @@ public interface ComponentCodec<T> {
                 for (E item : list) {
                     nodes.add(elementCodec.encode(item));
                 }
-                return new TagNode.TagList(nodes);
+                return LogicalNbtBridge.toPhysicalList(nodes);
             }
 
             @Override
             public List<E> decode(TagNode node) throws CodecException {
                 if (node instanceof TagNode.TagList listNode) {
-                    List<E> result = new ArrayList<>(listNode.size());
-                    for (int i = 0; i < listNode.size(); i++) {
-                        result.add(elementCodec.decode(listNode.get(i)));
+                    List<TagNode> logicalNodes = LogicalNbtBridge.toLogicalList(listNode);
+                    List<E> result = new ArrayList<>(logicalNodes.size());
+                    for (TagNode elemNode : logicalNodes) {
+                        result.add(elementCodec.decode(elemNode));
                     }
                     return Collections.unmodifiableList(result);
                 }

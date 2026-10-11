@@ -26,7 +26,7 @@ public final class ValueSemantics {
         if (o instanceof char[]) return (T) ((char[]) o).clone();
         if (o instanceof Object[]) {
             Object[] arr = (Object[]) o;
-            Object[] copy = new Object[arr.length];
+            Object[] copy = (Object[]) java.lang.reflect.Array.newInstance(arr.getClass().getComponentType(), arr.length);
             for (int i = 0; i < arr.length; i++) {
                 copy[i] = freeze(arr[i]);
             }
@@ -55,6 +55,71 @@ public final class ValueSemantics {
                 frozen.add(freeze(item));
             }
             return (T) Collections.unmodifiableSet(frozen);
+        }
+
+        // Deep freeze records containing mutable fields via reflection
+        return freezeRecord(o);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T freezeRecord(T o) {
+        try {
+            boolean isRecord = false;
+            try {
+                java.lang.reflect.Method isRecordMethod = Class.class.getMethod("isRecord");
+                isRecord = Boolean.TRUE.equals(isRecordMethod.invoke(o.getClass()));
+            } catch (Throwable ignored) {
+            }
+            if (!isRecord) {
+                Class<?> superclass = o.getClass().getSuperclass();
+                if (superclass != null && (superclass.getName().equals("java.lang.Record") || superclass.getName().endsWith("Record"))) {
+                    isRecord = true;
+                }
+            }
+
+            if (isRecord) {
+                try {
+                    java.lang.reflect.Method getComponentsMethod = Class.class.getMethod("getRecordComponents");
+                    Object[] components = (Object[]) getComponentsMethod.invoke(o.getClass());
+                    if (components != null && components.length > 0) {
+                        Class<?>[] paramTypes = new Class<?>[components.length];
+                        Object[] args = new Object[components.length];
+                        for (int i = 0; i < components.length; i++) {
+                            java.lang.reflect.Method getType = components[i].getClass().getMethod("getType");
+                            java.lang.reflect.Method getAccessor = components[i].getClass().getMethod("getAccessor");
+                            paramTypes[i] = (Class<?>) getType.invoke(components[i]);
+                            java.lang.reflect.Method accessor = (java.lang.reflect.Method) getAccessor.invoke(components[i]);
+                            accessor.setAccessible(true);
+                            args[i] = freeze(accessor.invoke(o));
+                        }
+                        java.lang.reflect.Constructor<?> ctor = o.getClass().getDeclaredConstructor(paramTypes);
+                        ctor.setAccessible(true);
+                        return (T) ctor.newInstance(args);
+                    }
+                } catch (NoSuchMethodException e) {
+                    // Java 8 / downgraded bytecode fallback: inspect declared instance fields
+                    List<java.lang.reflect.Field> instanceFields = new ArrayList<>();
+                    for (java.lang.reflect.Field f : o.getClass().getDeclaredFields()) {
+                        if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                            instanceFields.add(f);
+                        }
+                    }
+                    if (!instanceFields.isEmpty()) {
+                        Class<?>[] paramTypes = new Class<?>[instanceFields.size()];
+                        Object[] args = new Object[instanceFields.size()];
+                        for (int i = 0; i < instanceFields.size(); i++) {
+                            java.lang.reflect.Field f = instanceFields.get(i);
+                            f.setAccessible(true);
+                            paramTypes[i] = f.getType();
+                            args[i] = freeze(f.get(o));
+                        }
+                        java.lang.reflect.Constructor<?> ctor = o.getClass().getDeclaredConstructor(paramTypes);
+                        ctor.setAccessible(true);
+                        return (T) ctor.newInstance(args);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
         }
         return o;
     }
@@ -117,10 +182,13 @@ public final class ValueSemantics {
             Set<?> sA = (Set<?>) a;
             Set<?> sB = (Set<?>) b;
             if (sA.size() != sB.size()) return false;
+            List<Object> bList = new ArrayList<>(sB);
+            boolean[] matched = new boolean[bList.size()];
             for (Object itemA : sA) {
                 boolean found = false;
-                for (Object itemB : sB) {
-                    if (deepEquals(itemA, itemB)) {
+                for (int i = 0; i < bList.size(); i++) {
+                    if (!matched[i] && deepEquals(itemA, bList.get(i))) {
+                        matched[i] = true;
                         found = true;
                         break;
                     }
@@ -183,82 +251,18 @@ public final class ValueSemantics {
     }
 
     /**
-     * Wraps a component map in an unmodifiable defensive view where getting any value
-     * returns a cloned copy of mutable data, preventing leaks of internal snapshot state.
+     * Creates an unmodifiable defensive snapshot view of a component map where mutable values
+     * are deeply cloned so external callers cannot mutate internal snapshot state.
+     * Conforms strictly to Oracle Java Map contracts.
      */
     public static Map<ComponentId, Object> defensiveMapView(Map<ComponentId, Object> internal) {
-        return new AbstractMap<ComponentId, Object>() {
-            @Override
-            public int size() {
-                return internal.size();
-            }
-
-            @Override
-            public boolean isEmpty() {
-                return internal.isEmpty();
-            }
-
-            @Override
-            public boolean containsKey(Object key) {
-                return internal.containsKey(key);
-            }
-
-            @Override
-            public boolean containsValue(Object value) {
-                for (Object v : internal.values()) {
-                    if (deepEquals(v, value)) return true;
-                }
-                return false;
-            }
-
-            @Override
-            public Object get(Object key) {
-                return deepClone(internal.get(key));
-            }
-
-            @Override
-            public Set<Entry<ComponentId, Object>> entrySet() {
-                Set<Entry<ComponentId, Object>> entries = new LinkedHashSet<>();
-                for (Entry<ComponentId, Object> e : internal.entrySet()) {
-                    entries.add(new SimpleImmutableEntry<>(e.getKey(), deepClone(e.getValue())));
-                }
-                return Collections.unmodifiableSet(entries);
-            }
-
-            @Override
-            public Set<ComponentId> keySet() {
-                return Collections.unmodifiableSet(internal.keySet());
-            }
-
-            @Override
-            public Collection<Object> values() {
-                List<Object> vals = new ArrayList<>(internal.size());
-                for (Object v : internal.values()) {
-                    vals.add(deepClone(v));
-                }
-                return Collections.unmodifiableList(vals);
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof Map<?, ?> other)) return false;
-                if (size() != other.size()) return false;
-                for (Entry<ComponentId, Object> e : internal.entrySet()) {
-                    if (!other.containsKey(e.getKey())) return false;
-                    if (!deepEquals(e.getValue(), other.get(e.getKey()))) return false;
-                }
-                return true;
-            }
-
-            @Override
-            public int hashCode() {
-                int h = 0;
-                for (Entry<ComponentId, Object> e : internal.entrySet()) {
-                    h += Objects.hashCode(e.getKey()) ^ deepHashCode(e.getValue());
-                }
-                return h;
-            }
-        };
+        if (internal == null || internal.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<ComponentId, Object> copy = new TreeMap<>();
+        for (Map.Entry<ComponentId, Object> e : internal.entrySet()) {
+            copy.put(e.getKey(), deepClone(e.getValue()));
+        }
+        return Collections.unmodifiableMap(copy);
     }
 }

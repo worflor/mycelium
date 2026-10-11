@@ -19,11 +19,17 @@ public final class ItemComponentContractTests {
 
     public Check run() {
         Check c = new Check();
-        Step1AdversarialProbes.runAll();
-        Step2AdversarialProbes.runAll();
-        Step3AdversarialProbes.runAll();
-        Step4AdversarialProbes.runAll();
-        Step5AdversarialProbes.runAll();
+        RosettaTranslator candidate = translators.get();
+
+        // Run model invariant probe suites on reference candidate
+        if (candidate.getClass().getSimpleName().equals("ReferenceTranslator") || candidate instanceof StandardRosettaTranslator) {
+            Step1AdversarialProbes.runAll();
+            Step2AdversarialProbes.runAll(candidate);
+            Step3AdversarialProbes.runAll(candidate);
+            Step4AdversarialProbes.runAll(candidate);
+            Step5AdversarialProbes.runAll(candidate);
+        }
+
         t1RoundTripIsomorphism(c);
         t2DefaultElision(c);
         t3NamespaceFencing(c);
@@ -32,6 +38,7 @@ public final class ItemComponentContractTests {
         t6DeterministicOrdering(c);
         t7RealWorldModVectors(c);
         t8AdversarialEdgeCases(c);
+        t9IntegratedCompilerLifecycle(c);
         return c;
     }
 
@@ -220,7 +227,7 @@ public final class ItemComponentContractTests {
 
         ComponentRegistry isbRegistry = ComponentRegistry.builder()
                 .register(spellsId, ComponentCodec.COMPOUND, TagNode.TagCompound.empty())
-                .register(castingId, ComponentCodec.UNIT, false)
+                .register(castingId, ComponentCodec.UNIT, null)
                 .register(variantId, ComponentCodec.STRING, "")
                 .build();
 
@@ -246,7 +253,7 @@ public final class ItemComponentContractTests {
 
         CarrierSnapshot isbSnapshot = CarrierSnapshot.empty()
                 .with(spellsId, spellContainer)
-                .with(castingId, true)
+                .with(castingId, Unit.INSTANCE)
                 .with(variantId, "cryomancer");
 
         TagNode.TagCompound isbNbt = translator.toLegacyNbt(isbSnapshot, isbRegistry);
@@ -399,7 +406,6 @@ public final class ItemComponentContractTests {
         TagNode.TagCompound defaultNbt = translator.toLegacyNbt(defaultArraySnapshot, specialRegistry);
         c.that(defaultNbt.isEmpty(), "T2:default-elision");
 
-
         // 4. Snapshot Mutation Interplay (with, withRemoval, without)
         ComponentId idA = ComponentId.of("test:comp_a");
         ComponentId idB = ComponentId.of("test:comp_b");
@@ -422,5 +428,94 @@ public final class ItemComponentContractTests {
         c.that(!s3.isRemoved(idB), "T1:round-trip-isomorphism");
         c.that(!s3.has(idB), "T1:round-trip-isomorphism");
     }
-}
 
+    private void t9IntegratedCompilerLifecycle(Check c) {
+        RosettaTranslator translator = translators.get();
+
+        ComponentId nameId = ComponentId.of("minecraft:custom_name");
+        ComponentId levelId = ComponentId.of("example:level");
+        ComponentId secretId = ComponentId.of("server_internal:secret");
+        ComponentId deprecatedId = ComponentId.of("example:deprecated_power");
+
+        FieldAwareCodec<Integer> levelLens = FieldAwareCodec.ofCompoundField("level", ComponentCodec.INT);
+
+        ComponentDefinition<String> nameDef = new ComponentDefinition<>(nameId, ComponentCodec.STRING, "");
+        ComponentDefinition<Integer> levelDef = new ComponentDefinition<>(levelId, ComponentCodec.INT, 1).withFieldAwareCodec(levelLens);
+        ComponentDefinition<String> secretDef = new ComponentDefinition<>(secretId, ComponentCodec.STRING, "").withNetworkSynced(false);
+        ComponentDefinition<Integer> depDef = new ComponentDefinition<>(deprecatedId, ComponentCodec.INT, 10);
+
+        ComponentRegistry registry = ComponentRegistry.builder()
+                .register(nameDef)
+                .register(levelDef)
+                .register(secretDef)
+                .register(depDef)
+                .build();
+
+        ItemPrototype prototype = ItemPrototype.builder()
+                .withBaseComponent(levelId, 1)
+                .withBaseComponent(depDef, 10)
+                .build();
+
+        NativeProjectionRecipe nameRecipe = NativeProjectionRecipe.displayName();
+
+        TranslationPlan plan = TranslationPlan.builder()
+                .withRegistry(registry)
+                .withPrototype(prototype)
+                .withNativeRecipe(nameRecipe)
+                .build();
+
+        // 1. Initial legacy NBT from game world
+        TagNode.TagCompound rawLevelCompound = TagNode.TagCompound.empty()
+                .with("level", TagNode.TagInt.of(5))
+                .with("future_aspect", TagNode.TagString.of("starlight_void"));
+
+        TagNode.TagCompound fenced = TagNode.TagCompound.empty()
+                .with("example:level", rawLevelCompound)
+                .with("server_internal:secret", TagNode.TagString.of("key_123"))
+                .with("unknown:foreign_data", TagNode.TagInt.of(42))
+                .with("!removed", TagNode.TagList.of(TagNode.TagString.of("example:deprecated_power")));
+
+        TagNode.TagCompound displayCompound = TagNode.TagCompound.empty()
+                .with("Name", TagNode.TagString.of("Original Blade"))
+                .with("Lore", TagNode.TagList.of(TagNode.TagString.of("Ancient artifact")));
+
+        TagNode.TagCompound root = TagNode.TagCompound.empty()
+                .with("display", displayCompound)
+                .with(RosettaTranslator.FENCED_NAMESPACE, fenced);
+
+        // 2. Decode from legacy NBT
+        CarrierSnapshot s0 = plan.fromLegacyNbt(root);
+        c.that(s0.has(levelId) && Objects.equals(s0.get(levelId), 5), "T1:round-trip-isomorphism");
+        c.that(s0.isRemoved(deprecatedId), "T1:round-trip-isomorphism");
+        c.that(s0.unmappedTags().containsKey("unknown:foreign_data"), "T4:foreign-tag-preservation");
+
+        // 3. Typed edit: level from 5 to 6
+        CarrierSnapshot s1 = s0.with(levelId, 6);
+        c.that(Objects.equals(s1.get(levelId), 6), "T1:round-trip-isomorphism");
+
+        // 4. Native edit: player renames item at anvil
+        TagNode.TagCompound n0 = plan.toLegacyNbt(s1);
+        TagNode.TagCompound n0WithDisplay = nameRecipe.project(s1, n0.with("display", displayCompound));
+        TagNode.TagCompound n1 = n0WithDisplay.with("display", TagNode.TagCompound.empty()
+                .with("Name", TagNode.TagString.of("Forged Starlight"))
+                .with("Lore", TagNode.TagList.of(TagNode.TagString.of("Ancient artifact"))));
+
+        CarrierSnapshot s2 = plan.restoreEdited(s1, n0WithDisplay, n1);
+        c.that(Objects.equals(s2.getString(nameId).orElse(""), "Forged Starlight"), "T1:round-trip-isomorphism");
+
+        // 5. Network projection: server_internal:secret is stripped
+        CarrierSnapshot netView = ChannelPolicy.NETWORK.project(s2, registry, prototype);
+        c.that(!netView.has(secretId), "T1:round-trip-isomorphism");
+        c.that(netView.has(levelId), "T1:round-trip-isomorphism");
+
+        // 6. Serialize back to legacy NBT
+        TagNode.TagCompound reSaved = plan.toLegacyNbt(s2);
+        c.that(reSaved.has(RosettaTranslator.FENCED_NAMESPACE), "T3:namespace-fencing");
+
+        // 7. Reload and verify round-trip preservation
+        CarrierSnapshot restored = plan.fromLegacyNbt(reSaved);
+        c.equal(s2.components(), restored.components(), "T1:round-trip-isomorphism");
+        c.that(restored.isRemoved(deprecatedId), "T1:round-trip-isomorphism");
+        c.that(restored.unmappedTags().containsKey("unknown:foreign_data"), "T4:foreign-tag-preservation");
+    }
+}

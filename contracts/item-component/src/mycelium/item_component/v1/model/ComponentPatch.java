@@ -50,6 +50,18 @@ public sealed interface ComponentPatch<T> permits
         public T value() {
             return ValueSemantics.deepClone(value);
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Set<?> other)) return false;
+            return ValueSemantics.deepEquals(this.value, other.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return ValueSemantics.deepHashCode(this.value);
+        }
     }
 
     final class Remove<T> implements ComponentPatch<T> {

@@ -35,13 +35,20 @@ public interface NativeProjectionRecipe {
                 Objects.requireNonNull(semanticState, "semanticState");
                 TagNode.TagCompound root = currentNativeRoot == null ? TagNode.TagCompound.empty() : currentNativeRoot;
 
+                TagNode existingDisplayNode = root.get("display");
+                if (existingDisplayNode != null && !(existingDisplayNode instanceof TagNode.TagCompound)) {
+                    // Non-compound display node is malformed native data: never delete it!
+                    return root;
+                }
+
                 Optional<String> nameOpt = semanticState.getString(nameId);
                 TagNode.TagCompound display = root.getCompound("display").orElse(TagNode.TagCompound.empty());
-
                 Map<String, TagNode> displayEntries = new LinkedHashMap<>(display.entries());
+
                 if (nameOpt.isPresent()) {
                     displayEntries.put("Name", TagNode.TagString.of(nameOpt.get()));
-                } else if (semanticState.isRemoved(nameId)) {
+                } else {
+                    // Desired-state: absence, removal, or reset to inherit clears the owned display.Name field
                     displayEntries.remove("Name");
                 }
 
@@ -68,18 +75,42 @@ public interface NativeProjectionRecipe {
                 for (ComponentId rem : s0.removals()) {
                     builder.withRemoval(rem);
                 }
+                for (RecoveryRecord rec : s0.recoveryRecords()) {
+                    builder.withRecovery(rec);
+                }
+                s0.rawEnvelope().ifPresent(builder::withRawEnvelope);
+                for (Map.Entry<ComponentId, TagNode.TagCompound> res : s0.retainedResiduals().entrySet()) {
+                    builder.withResidual(res.getKey(), res.getValue());
+                }
 
-                // Inspect difference between n0 (baseline) and n1 (observed)
+                // Inspect baseline n0 Name
                 Optional<String> n0Name = n0 != null ? n0.getCompound("display").flatMap(d -> d.getString("Name")) : Optional.empty();
-                Optional<String> n1Name = n1.getCompound("display").flatMap(d -> d.getString("Name"));
 
-                if (!Objects.equals(n0Name, n1Name)) {
-                    // A native change occurred on display.Name (e.g. legacy anvil rename)!
-                    if (n1Name.isPresent()) {
-                        builder.with(nameId, n1Name.get());
+                // Inspect observed n1 Name
+                Optional<TagNode.TagCompound> n1Display = n1.getCompound("display");
+                if (n1Display.isPresent()) {
+                    TagNode rawName = n1Display.get().get("Name");
+                    if (rawName instanceof TagNode.TagString ts) {
+                        String n1NameStr = ts.value();
+                        if (!Objects.equals(n0Name.orElse(null), n1NameStr)) {
+                            // Legitimate native rename (e.g. anvil rename)
+                            builder.with(nameId, n1NameStr);
+                        }
+                    } else if (rawName != null) {
+                        // Malformed native name: do NOT interpret as removal!
+                        // Preserve original semantic state and record a recovery record
+                        builder.withRecovery(RecoveryRecord.of("display.Name", rawName,
+                                RecoveryRecord.FailureCategory.MALFORMED_CONTROL_SYNTAX, nameId,
+                                "Malformed non-string native display.Name: " + rawName.getClass().getSimpleName()));
                     } else {
-                        builder.withRemoval(nameId);
+                        // Name was deleted in native compound
+                        if (n0Name.isPresent()) {
+                            builder.withRemoval(nameId);
+                        }
                     }
+                } else if (n0Name.isPresent()) {
+                    // display compound was completely deleted natively
+                    builder.withRemoval(nameId);
                 }
 
                 return builder.build();

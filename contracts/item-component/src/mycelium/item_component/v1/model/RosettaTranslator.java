@@ -30,9 +30,33 @@ public interface RosettaTranslator {
      */
     CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry);
 
+    /**
+     * Translates a carrier snapshot into a legacy NBT compound with prototype baseline awareness.
+     * Overrides matching prototype base components are elided (Law T7).
+     */
+    default TagNode.TagCompound toLegacyNbt(CarrierSnapshot snapshot, ComponentRegistry registry, ItemPrototype prototype) {
+        return compilePlan(registry, prototype).toLegacyNbt(snapshot);
+    }
+
+    /**
+     * Translates a legacy NBT compound into a typed carrier snapshot with prototype baseline awareness.
+     */
+    default CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry, ItemPrototype prototype) {
+        return compilePlan(registry, prototype).fromLegacyNbt(nbt);
+    }
+
+    /**
+     * Compiles a schema-bound translation plan for this registry and prototype context.
+     */
+    default TranslationPlan compilePlan(ComponentRegistry registry, ItemPrototype prototype) {
+        return TranslationPlan.builder()
+                .withRegistry(registry)
+                .withPrototype(prototype)
+                .build();
+    }
+
     /** Returns the standard reference implementation of the translator. */
     static RosettaTranslator standard() {
         return StandardRosettaTranslator.INSTANCE;
     }
 }
-

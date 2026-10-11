@@ -18,6 +18,11 @@ public interface ItemPrototype {
         public Map<ComponentId, Object> baseComponents() {
             return Collections.emptyMap();
         }
+
+        @Override
+        public boolean isEmpty() {
+            return true;
+        }
     };
 
     static ItemPrototype empty() {
@@ -36,6 +41,10 @@ public interface ItemPrototype {
     }
 
     Map<ComponentId, Object> baseComponents();
+
+    default boolean isEmpty() {
+        return baseComponents().isEmpty();
+    }
 
     final class Builder {
         private final Map<ComponentId, Object> base = new TreeMap<>();
@@ -63,6 +72,11 @@ public interface ItemPrototype {
                 @Override
                 public Map<ComponentId, Object> baseComponents() {
                     return ValueSemantics.defensiveMapView(frozen);
+                }
+
+                @Override
+                public boolean isEmpty() {
+                    return frozen.isEmpty();
                 }
             };
         }

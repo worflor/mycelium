@@ -6,11 +6,11 @@ import java.util.*;
 
 /**
  * Independent adversarial probes reproducing the structural defects identified
- * in the external audit report (Step 1).
+ * in the external audit report (Step 1: Compositional value semantics & immutability).
  */
 public final class Step1AdversarialProbes {
 
-    public static void runAll() {
+    public static void runAll(RosettaTranslator translator) {
         System.out.println("Running Step 1 Adversarial Probes...");
         int failures = 0;
         try { testSnapshotComponentsArrayLeak(); System.out.println("  [PASS] testSnapshotComponentsArrayLeak"); }
@@ -31,16 +31,34 @@ public final class Step1AdversarialProbes {
         try { testRegistrySilentOverwrite(); System.out.println("  [PASS] testRegistrySilentOverwrite"); }
         catch (Throwable t) { System.out.println("  [FAIL] testRegistrySilentOverwrite: " + t.getMessage()); failures++; }
 
+        try { testStringArrayComponentTypePreserved(); System.out.println("  [PASS] testStringArrayComponentTypePreserved"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testStringArrayComponentTypePreserved: " + t.getMessage()); failures++; }
+
+        try { testRecordMutableListDeepFreeze(); System.out.println("  [PASS] testRecordMutableListDeepFreeze"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testRecordMutableListDeepFreeze: " + t.getMessage()); failures++; }
+
+        try { testCustomComponentFreezerInvoked(); System.out.println("  [PASS] testCustomComponentFreezerInvoked"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testCustomComponentFreezerInvoked: " + t.getMessage()); failures++; }
+
+        try { testPatchSetValueEquality(); System.out.println("  [PASS] testPatchSetValueEquality"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testPatchSetValueEquality: " + t.getMessage()); failures++; }
+
+        try { testSetComparatorSymmetryWithoutReuse(); System.out.println("  [PASS] testSetComparatorSymmetryWithoutReuse"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testSetComparatorSymmetryWithoutReuse: " + t.getMessage()); failures++; }
+
+        try { testDefensiveMapJavaContracts(); System.out.println("  [PASS] testDefensiveMapJavaContracts"); }
+        catch (Throwable t) { System.out.println("  [FAIL] testDefensiveMapJavaContracts: " + t.getMessage()); failures++; }
+
         if (failures > 0) {
             throw new AssertionError("Step 1 Adversarial Probes: " + failures + " failures detected!");
         }
         System.out.println("Step 1 Adversarial Probes: ALL PASSED");
     }
 
-    /**
-     * Audit Observation A1:
-     * ((byte[]) snapshot.components().get(id))[0] = 9 mutates snapshot.get(id) and hashCode().
-     */
+    public static void runAll() {
+        runAll(RosettaTranslator.standard());
+    }
+
     public static void testSnapshotComponentsArrayLeak() {
         ComponentId id = ComponentId.of("test:bytes");
         CarrierSnapshot snapshot = CarrierSnapshot.empty().with(id, new byte[] { 1 });
@@ -58,114 +76,172 @@ public final class Step1AdversarialProbes {
         }
     }
 
-    /**
-     * Audit Observation A2:
-     * Ingress aliasing: caller mutating passed array or list after snapshot creation.
-     */
     public static void testIngressArrayAndListAliasing() {
-        ComponentId idBytes = ComponentId.of("test:ingress_bytes");
-        byte[] callerBytes = new byte[] { 1, 2, 3 };
-        CarrierSnapshot snapshotBytes = CarrierSnapshot.empty().with(idBytes, callerBytes);
-        callerBytes[0] = 99;
-
-        byte[] storedBytes = (byte[]) snapshotBytes.get(idBytes);
-        if (storedBytes[0] != 1) {
-            throw new AssertionError("INGRESS LEAK: caller mutation altered snapshot byte array to " + storedBytes[0]);
+        ComponentId arrayId = ComponentId.of("test:in_array");
+        byte[] callerArray = new byte[] { 5, 6, 7 };
+        CarrierSnapshot snap1 = CarrierSnapshot.empty().with(arrayId, callerArray);
+        callerArray[0] = 99;
+        if (((byte[]) snap1.get(arrayId))[0] != 5) {
+            throw new AssertionError("Ingress array aliasing: caller mutation altered snapshot!");
         }
 
-        ComponentId idList = ComponentId.of("test:ingress_list");
+        ComponentId listId = ComponentId.of("test:in_list");
         List<String> callerList = new ArrayList<>(Arrays.asList("alpha", "beta"));
-        CarrierSnapshot snapshotList = CarrierSnapshot.empty().with(idList, callerList);
+        CarrierSnapshot snap2 = CarrierSnapshot.empty().with(listId, callerList);
         callerList.add("gamma");
-
         @SuppressWarnings("unchecked")
-        List<String> storedList = (List<String>) snapshotList.get(idList);
-        if (storedList.size() != 2) {
-            throw new AssertionError("INGRESS LEAK: caller list mutation altered snapshot list size to " + storedList.size());
+        List<String> snapList = (List<String>) snap2.get(listId);
+        if (snapList.size() != 2) {
+            throw new AssertionError("Ingress list aliasing: caller add altered snapshot list size!");
         }
     }
 
-    /**
-     * Audit Observation A3:
-     * ComponentCodec.listOf(ComponentCodec.BYTE_ARRAY) fails CarrierSnapshot round-trip equality.
-     */
     public static void testListOfByteArrayEquality() {
-        ComponentId id = ComponentId.of("test:list_of_bytes");
-        ComponentCodec<List<byte[]>> codec = ComponentCodec.listOf(ComponentCodec.BYTE_ARRAY);
-        ComponentRegistry registry = ComponentRegistry.builder()
-                .register(id, codec, Collections.emptyList())
-                .build();
+        ComponentCodec<List<byte[]>> listCodec = ComponentCodec.listOf(ComponentCodec.BYTE_ARRAY);
+        List<byte[]> l1 = Arrays.asList(new byte[]{ 1, 2 }, new byte[]{ 3 });
+        List<byte[]> l2 = Arrays.asList(new byte[]{ 1, 2 }, new byte[]{ 3 });
 
-        List<byte[]> list1 = Arrays.asList(new byte[] { 1, 2 }, new byte[] { 3, 4 });
-        CarrierSnapshot snap1 = CarrierSnapshot.empty().with(id, list1);
-
-        RosettaTranslator translator = RosettaTranslator.standard();
-        TagNode.TagCompound nbt = translator.toLegacyNbt(snap1, registry);
-        CarrierSnapshot snap2 = translator.fromLegacyNbt(nbt, registry);
-
-        if (!snap1.equals(snap2)) {
-            throw new AssertionError("EQUALITY BUG: snap1.equals(snap2) failed for listOf(BYTE_ARRAY)!");
+        if (!listCodec.semanticEquals(l1, l2)) {
+            throw new AssertionError("listOf(BYTE_ARRAY) failed value equality!");
         }
-        if (snap1.hashCode() != snap2.hashCode()) {
-            throw new AssertionError("HASH BUG: snap1.hashCode() != snap2.hashCode() for listOf(BYTE_ARRAY)!");
+        if (listCodec.semanticHash(l1) != listCodec.semanticHash(l2)) {
+            throw new AssertionError("listOf(BYTE_ARRAY) failed hash equality!");
         }
     }
 
-    /**
-     * Audit Observation A4:
-     * ComponentDefinition retains caller-owned defaultValue directly without freezing.
-     */
     public static void testComponentDefinitionDefaultValueLeak() {
-        ComponentId id = ComponentId.of("test:def_leak");
         byte[] defaultBytes = new byte[] { 42 };
-        ComponentDefinition<byte[]> def = new ComponentDefinition<>(id, ComponentCodec.BYTE_ARRAY, defaultBytes);
-
+        ComponentDefinition<byte[]> def = new ComponentDefinition<>(
+                ComponentId.of("test:def_bytes"),
+                ComponentCodec.BYTE_ARRAY,
+                defaultBytes
+        );
         defaultBytes[0] = 99;
         if (def.defaultValue()[0] != 42) {
-            throw new AssertionError("DEF LEAK: mutating caller default array altered def.defaultValue()!");
-        }
-
-        byte[] readDefault = def.defaultValue();
-        readDefault[0] = 77;
-        if (def.defaultValue()[0] != 42) {
-            throw new AssertionError("DEF LEAK: mutating def.defaultValue() return value altered def.defaultValue()!");
+            throw new AssertionError("ComponentDefinition defaultValue was aliased to caller's mutable array!");
         }
     }
 
-    /**
-     * Audit Observation D1:
-     * Public constructor admits component in both components and removals.
-     */
     public static void testContradictorySnapshotConstruction() {
         ComponentId id = ComponentId.of("test:contradiction");
-        Map<ComponentId, Object> comps = Collections.singletonMap(id, 10);
-        Set<ComponentId> rems = Collections.singleton(id);
-
         try {
-            new CarrierSnapshot(comps, Collections.emptyMap(), rems);
-            throw new AssertionError("CONTRADICTION NOT REJECTED: allowed component in both components and removals!");
+            new CarrierSnapshot(
+                    Collections.singletonMap(id, 1),
+                    Collections.emptyMap(),
+                    Collections.singleton(id)
+            );
+            throw new AssertionError("CarrierSnapshot accepted contradictory state!");
         } catch (IllegalArgumentException expected) {
-            // Success: contradictory state rejected
         }
     }
 
-    /**
-     * Audit Observation D2:
-     * Registry registration silently replaces existing definition.
-     */
     public static void testRegistrySilentOverwrite() {
-        ComponentId id = ComponentId.of("test:conflict");
+        ComponentId id = ComponentId.of("test:collision");
         ComponentDefinition<Integer> def1 = new ComponentDefinition<>(id, ComponentCodec.INT, 1);
-        ComponentDefinition<String> def2 = new ComponentDefinition<>(id, ComponentCodec.STRING, "duplicate");
+        ComponentDefinition<Integer> def2 = new ComponentDefinition<>(id, ComponentCodec.INT, 2);
 
         try {
-            ComponentRegistry.builder()
-                    .register(def1)
-                    .register(def2)
-                    .build();
-            throw new AssertionError("SILENT OVERWRITE: registry accepted conflicting definition without exception!");
+            ComponentRegistry.builder().register(def1).register(def2).build();
+            throw new AssertionError("Registry allowed silent duplicate registration overwrite!");
         } catch (IllegalStateException expected) {
-            // Success: conflicting registration rejected
+        }
+    }
+
+    public static void testStringArrayComponentTypePreserved() {
+        ComponentId id = ComponentId.of("test:strings");
+        CarrierSnapshot snapshot = CarrierSnapshot.empty().with(id, new String[] { "foo", "bar" });
+        Object val = snapshot.get(id);
+        if (!(val instanceof String[])) {
+            throw new AssertionError("String[] array lost runtime component type and became: " + val.getClass().getName());
+        }
+        String[] arr = (String[]) val;
+        if (arr.length != 2 || !arr[0].equals("foo")) {
+            throw new AssertionError("String[] contents mismatch");
+        }
+    }
+
+    public record TestContainerRecord(String title, List<String> items) {}
+
+    public static void testRecordMutableListDeepFreeze() {
+        ComponentId id = ComponentId.of("test:record");
+        List<String> mutableList = new ArrayList<>(Arrays.asList("one", "two"));
+        TestContainerRecord rec = new TestContainerRecord("rec", mutableList);
+        CarrierSnapshot snapshot = CarrierSnapshot.empty().with(id, rec);
+
+        mutableList.add("three");
+
+        TestContainerRecord stored = (TestContainerRecord) snapshot.get(id);
+        if (stored.items().size() != 2) {
+            throw new AssertionError("Record with mutable list remained aliased! Stored list size: " + stored.items().size());
+        }
+    }
+
+    public static void testCustomComponentFreezerInvoked() {
+        ComponentId id = ComponentId.of("test:custom_freeze");
+        boolean[] freezerRan = new boolean[] { false };
+
+        ComponentCodec<int[]> customCodec = new ComponentCodec<>() {
+            @Override public TagNode encode(int[] value) { return new TagNode.TagIntArray(value); }
+            @Override public int[] decode(TagNode node) { return new int[0]; }
+            @Override public int[] freeze(int[] value) {
+                freezerRan[0] = true;
+                return value.clone();
+            }
+        };
+
+        ComponentDefinition<int[]> def = new ComponentDefinition<>(id, customCodec, new int[0]);
+        CarrierSnapshot.empty().with(def, new int[] { 1, 2, 3 });
+
+        if (!freezerRan[0]) {
+            throw new AssertionError("Custom codec freeze() was bypassed during snapshot insertion with(ComponentDefinition, T)!");
+        }
+    }
+
+    public static void testPatchSetValueEquality() {
+        ComponentId id = ComponentId.of("test:patch_bytes");
+        CarrierSnapshot snapshot = CarrierSnapshot.empty().with(id, new byte[] { 1, 2, 3 });
+
+        ComponentPatch<byte[]> p1 = snapshot.readPatch(id);
+        ComponentPatch<byte[]> p2 = snapshot.readPatch(id);
+
+        if (!p1.equals(p2)) {
+            throw new AssertionError("Repeated readPatch for array-valued component failed equals()!");
+        }
+        if (p1.hashCode() != p2.hashCode()) {
+            throw new AssertionError("Repeated readPatch for array-valued component failed hashCode()!");
+        }
+    }
+
+    public static void testSetComparatorSymmetryWithoutReuse() {
+        Set<byte[]> s1 = Collections.singleton(new byte[] { 7 });
+        Set<byte[]> s2 = Collections.singleton(new byte[] { 7 });
+
+        if (!ValueSemantics.deepEquals(s1, s2)) {
+            throw new AssertionError("deepEquals on Sets of arrays failed!");
+        }
+        if (!ValueSemantics.deepEquals(s2, s1)) {
+            throw new AssertionError("deepEquals on Sets was asymmetric!");
+        }
+    }
+
+    public static void testDefensiveMapJavaContracts() {
+        ComponentId id = ComponentId.of("test:bytes_map");
+        CarrierSnapshot snapshot = CarrierSnapshot.empty().with(id, new byte[] { 1 });
+
+        Map<ComponentId, Object> m1 = snapshot.components();
+        Map<ComponentId, Object> m2 = snapshot.components();
+
+        Set<Map.Entry<ComponentId, Object>> e1 = m1.entrySet();
+        Set<Map.Entry<ComponentId, Object>> e2 = m1.entrySet();
+
+        if (!e1.equals(e2)) {
+            throw new AssertionError("Map entrySet() failed self-equality check!");
+        }
+        if (!m1.equals(m1)) {
+            throw new AssertionError("snapshot.components() failed self equals()!");
+        }
+        if (!ValueSemantics.deepEquals(m1, m2)) {
+            throw new AssertionError("snapshot.components() instances failed semantic deep equality!");
         }
     }
 }

@@ -19,21 +19,30 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
 
     @Override
     public TagNode.TagCompound toLegacyNbt(CarrierSnapshot snapshot, ComponentRegistry registry) {
+        return toLegacyNbt(snapshot, registry, ItemPrototype.empty());
+    }
+
+    @Override
+    public CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry) {
+        return fromLegacyNbt(nbt, registry, ItemPrototype.empty());
+    }
+
+    @Override
+    public TagNode.TagCompound toLegacyNbt(CarrierSnapshot snapshot, ComponentRegistry registry, ItemPrototype prototype) {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(registry, "registry");
+        Objects.requireNonNull(prototype, "prototype");
 
-        // Preserved unreadable non-compound envelope
-        if (snapshot.components().isEmpty() && snapshot.removals().isEmpty() && snapshot.unmappedTags().containsKey("!unreadable_envelope")) {
-            return TagNode.TagCompound.empty().with(FENCED_NAMESPACE, snapshot.unmappedTags().get("!unreadable_envelope"));
+        // Preserved unreadable non-compound envelope with no edits
+        if (snapshot.components().isEmpty() && snapshot.removals().isEmpty() && snapshot.unmappedTags().isEmpty() && snapshot.rawEnvelope().isPresent()) {
+            return TagNode.TagCompound.empty().with(FENCED_NAMESPACE, snapshot.rawEnvelope().get());
         }
 
         Map<String, TagNode> componentTags = new TreeMap<>();
 
-        // 1. Populate unmapped foreign and quarantined tags (Law T4 & Anti-Data Loss)
+        // 1. Populate unmapped foreign and legacy quarantined tags (Law T4 & Anti-Data Loss)
         for (Map.Entry<String, TagNode> entry : snapshot.unmappedTags().entrySet()) {
-            if (!entry.getKey().equals("!unreadable_envelope")) {
-                componentTags.put(entry.getKey(), entry.getValue());
-            }
+            componentTags.put(entry.getKey(), entry.getValue());
         }
 
         // 2. Encode explicit removals (negative patches)
@@ -45,8 +54,33 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
             componentTags.put("!removed", new TagNode.TagList(removalNodes));
         }
 
-        // 3. Encode typed components (Law T1, Law T2 default elision)
-        // Valid components override any stale quarantined tag for the same key.
+        // 3. Encode structured recovery records
+        if (!snapshot.recoveryRecords().isEmpty() || snapshot.rawEnvelope().isPresent()) {
+            Map<String, TagNode> recoveryCompound = new TreeMap<>();
+            recoveryCompound.put("version", TagNode.TagInt.of(1));
+
+            if (snapshot.rawEnvelope().isPresent()) {
+                recoveryCompound.put("raw_envelope", snapshot.rawEnvelope().get());
+            }
+
+            if (!snapshot.recoveryRecords().isEmpty()) {
+                List<TagNode> recordList = new ArrayList<>(snapshot.recoveryRecords().size());
+                for (RecoveryRecord rec : snapshot.recoveryRecords()) {
+                    Map<String, TagNode> recEntries = new TreeMap<>();
+                    recEntries.put("loc", TagNode.TagString.of(rec.location()));
+                    recEntries.put("raw", rec.rawNode());
+                    recEntries.put("cat", TagNode.TagString.of(rec.category().name()));
+                    recEntries.put("ver", TagNode.TagInt.of(rec.schemaVersion()));
+                    recEntries.put("diag", TagNode.TagString.of(rec.diagnosticMessage()));
+                    rec.componentId().ifPresent(id -> recEntries.put("id", TagNode.TagString.of(id.toString())));
+                    recordList.add(new TagNode.TagCompound(recEntries));
+                }
+                recoveryCompound.put("records", new TagNode.TagList(recordList));
+            }
+            componentTags.put("!recovery", new TagNode.TagCompound(recoveryCompound));
+        }
+
+        // 4. Encode typed components (Law T1, Law T2 & T7 default elision)
         for (Map.Entry<ComponentId, Object> entry : snapshot.components().entrySet()) {
             ComponentId id = entry.getKey();
             Object value = entry.getValue();
@@ -55,24 +89,46 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
             if (defOpt.isPresent()) {
                 @SuppressWarnings("unchecked")
                 ComponentDefinition<Object> def = (ComponentDefinition<Object>) defOpt.get();
-                if (!def.isDefault(value)) {
-                    TagNode node = def.encodeValue(value);
-                    componentTags.put(id.toString(), node);
-                } else {
-                    // Law T2: Default elision - elide from NBT
-                    componentTags.remove(id.toString());
+
+                // Elision against prototype baseline
+                Optional<Object> protoBase = prototype.getBaseComponent(id);
+                if (protoBase.isPresent()) {
+                    if (ValueSemantics.deepEquals(protoBase.get(), value)) {
+                        componentTags.remove(id.toString());
+                        continue;
+                    }
+                } else if (prototype.isEmpty()) {
+                    // Law T2: Default elision when no prototype baseline exists
+                    if (def.isDefault(value)) {
+                        componentTags.remove(id.toString());
+                        continue;
+                    }
                 }
+
+                TagNode node;
+                if (def.fieldAwareCodec().isPresent() && snapshot.retainedResiduals().containsKey(id)) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        FieldAwareCodec<Object> fac = (FieldAwareCodec<Object>) def.fieldAwareCodec().get();
+                        node = fac.updateFieldAware(snapshot.retainedResiduals().get(id), value);
+                    } catch (CodecException e) {
+                        node = def.encodeValue(value);
+                    }
+                } else {
+                    node = def.encodeValue(value);
+                }
+                componentTags.put(id.toString(), node);
+            } else if (value instanceof TagNode tn) {
+                // Component absent from registry but preserved as raw TagNode
+                componentTags.put(id.toString(), tn);
             } else {
-                // Component absent from supplied registry: preserve as raw TagNode or string
-                if (value instanceof TagNode tn) {
-                    componentTags.put(id.toString(), tn);
-                } else {
-                    componentTags.put(id.toString(), TagNode.TagString.of(String.valueOf(value)));
-                }
+                // Unregistered arbitrary Java object without a codec or TagNode transport representation
+                throw new IllegalArgumentException("Unregistered component " + id + " of type " + value.getClass().getName()
+                        + " cannot be serialized without a registered codec or TagNode representation");
             }
         }
 
-        // Law T2: Default elision - if no components, removals, or unmapped tags survive, omit fenced compound
+        // Law T2: Default elision - if no components, removals, recovery, or unmapped tags survive, omit fenced compound
         if (componentTags.isEmpty()) {
             return TagNode.TagCompound.empty();
         }
@@ -83,9 +139,10 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
     }
 
     @Override
-    public CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry) {
+    public CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry, ItemPrototype prototype) {
         Objects.requireNonNull(nbt, "nbt");
         Objects.requireNonNull(registry, "registry");
+        Objects.requireNonNull(prototype, "prototype");
 
         // Law T3: Only inspect fenced compound
         TagNode fencedNode = nbt.get(FENCED_NAMESPACE);
@@ -94,14 +151,51 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
         }
         if (!(fencedNode instanceof TagNode.TagCompound)) {
             // Unreadable non-compound envelope: preserve without crashing or losing data
-            Map<String, TagNode> unmapped = Collections.singletonMap("!unreadable_envelope", fencedNode);
-            return new CarrierSnapshot(Collections.emptyMap(), unmapped, Collections.emptySet());
+            RecoveryRecord rec = RecoveryRecord.of("mycelium$c", fencedNode,
+                    RecoveryRecord.FailureCategory.UNREADABLE_ENVELOPE, "Non-compound fenced envelope");
+            return new CarrierSnapshot(Collections.emptyMap(), Collections.emptyMap(), Collections.emptySet(),
+                    Collections.singletonList(rec), Optional.of(fencedNode), Collections.emptyMap());
         }
 
         TagNode.TagCompound fenced = (TagNode.TagCompound) fencedNode;
         Map<ComponentId, Object> components = new TreeMap<>();
         Map<String, TagNode> unmapped = new TreeMap<>();
         Set<ComponentId> removals = new TreeSet<>();
+        List<RecoveryRecord> recoveryRecords = new ArrayList<>();
+        Optional<TagNode> rawEnvelope = Optional.empty();
+        Map<ComponentId, TagNode.TagCompound> retainedResiduals = new TreeMap<>();
+
+        // Unpack !recovery compound if present
+        TagNode recoveryNode = fenced.get("!recovery");
+        if (recoveryNode instanceof TagNode.TagCompound recComp) {
+            if (recComp.has("raw_envelope")) {
+                rawEnvelope = Optional.of(recComp.get("raw_envelope"));
+            }
+            TagNode recordsList = recComp.get("records");
+            if (recordsList instanceof TagNode.TagList rList) {
+                for (int i = 0; i < rList.size(); i++) {
+                    if (rList.get(i) instanceof TagNode.TagCompound itemComp) {
+                        String loc = itemComp.getString("loc").orElse("unknown");
+                        TagNode raw = itemComp.get("raw");
+                        String catStr = itemComp.getString("cat").orElse(RecoveryRecord.FailureCategory.CORRUPT_PAYLOAD.name());
+                        RecoveryRecord.FailureCategory cat;
+                        try {
+                            cat = RecoveryRecord.FailureCategory.valueOf(catStr);
+                        } catch (Exception e) {
+                            cat = RecoveryRecord.FailureCategory.CORRUPT_PAYLOAD;
+                        }
+                        int ver = itemComp.getInt("ver").orElse(1);
+                        String diag = itemComp.getString("diag").orElse("");
+                        Optional<ComponentId> compId = itemComp.getString("id").flatMap(s -> {
+                            try { return Optional.of(ComponentId.of(s)); } catch (Exception e) { return Optional.empty(); }
+                        });
+                        if (raw != null) {
+                            recoveryRecords.add(new RecoveryRecord(loc, raw, cat, compId, ver, diag));
+                        }
+                    }
+                }
+            }
+        }
 
         // Decode negative patches
         TagNode removedNode = fenced.get("!removed");
@@ -114,9 +208,13 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
                         removals.add(ComponentId.of(ts.value()));
                     } catch (IllegalArgumentException e) {
                         invalidElements.add(elem);
+                        recoveryRecords.add(RecoveryRecord.of("!removed[" + i + "]", elem,
+                                RecoveryRecord.FailureCategory.MALFORMED_CONTROL_SYNTAX, "Invalid component ID in removals: " + ts.value()));
                     }
                 } else {
                     invalidElements.add(elem);
+                    recoveryRecords.add(RecoveryRecord.of("!removed[" + i + "]", elem,
+                                RecoveryRecord.FailureCategory.MALFORMED_CONTROL_SYNTAX, "Non-string element in removals"));
                 }
             }
             if (!invalidElements.isEmpty()) {
@@ -125,13 +223,15 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
         } else if (removedNode != null) {
             // Anti-Data Loss Quarantine: preserve malformed scalar/non-list !removed under distinct key
             unmapped.put("!removed_quarantine", removedNode);
+            recoveryRecords.add(RecoveryRecord.of("!removed", removedNode,
+                    RecoveryRecord.FailureCategory.MALFORMED_CONTROL_SYNTAX, "Malformed non-list !removed node"));
         }
 
         Map<ComponentId, List<Map.Entry<String, TagNode>>> canonicalGroups = new LinkedHashMap<>();
 
         for (Map.Entry<String, TagNode> entry : fenced.entries().entrySet()) {
             String key = entry.getKey();
-            if (key.equals("!removed")) continue;
+            if (key.equals("!removed") || key.equals("!recovery")) continue;
 
             TagNode node = entry.getValue();
 
@@ -139,7 +239,7 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
             try {
                 id = ComponentId.of(key);
             } catch (IllegalArgumentException e) {
-                // Malformed ID: treat as unmapped tag
+                // Malformed ID or special control key
                 unmapped.put(key, node);
                 continue;
             }
@@ -153,9 +253,10 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
 
             if (rawEntries.size() > 1) {
                 // Contradictory external state / alias collision (e.g. "damage" and "minecraft:damage")
-                // Deterministic conflict: retain all original candidate tags in quarantine
                 for (Map.Entry<String, TagNode> raw : rawEntries) {
                     unmapped.put(raw.getKey(), raw.getValue());
+                    recoveryRecords.add(RecoveryRecord.of(raw.getKey(), raw.getValue(),
+                            RecoveryRecord.FailureCategory.ALIAS_COLLISION, id, "Alias collision on " + id));
                 }
                 continue;
             }
@@ -168,15 +269,22 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
             if (defOpt.isPresent()) {
                 ComponentDefinition<?> def = defOpt.get();
                 try {
-                    Object decoded = def.decodeValue(node);
-                    components.put(id, decoded);
+                    if (def.fieldAwareCodec().isPresent() && node instanceof TagNode.TagCompound tc) {
+                        FieldAwareCodec<?> fac = def.fieldAwareCodec().get();
+                        FieldAwareCodec.DecodedResult<?> res = fac.decodeFieldAware(tc);
+                        components.put(id, res.value());
+                        retainedResiduals.put(id, res.remainder());
+                    } else {
+                        Object decoded = def.decodeValue(node);
+                        components.put(id, decoded);
+                    }
                     // Mutual exclusivity: a valid decoded value supersedes any simultaneous negative removal
                     removals.remove(id);
                 } catch (Exception e) {
                     // Law T5: Diagnostic rejection on corruption - does not throw unchecked exception
-                    // Anti-Data Loss Quarantine: Preserve corrupt tag in unmapped tags so re-saving
-                    // does not permanently destroy user data
                     unmapped.put(key, node);
+                    recoveryRecords.add(RecoveryRecord.of(key, node,
+                            RecoveryRecord.FailureCategory.CORRUPT_PAYLOAD, id, e.getMessage()));
                 }
             } else {
                 // Law T4: Foreign tag preservation - keep unknown tags
@@ -184,6 +292,6 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
             }
         }
 
-        return new CarrierSnapshot(components, unmapped, removals);
+        return new CarrierSnapshot(components, unmapped, removals, recoveryRecords, rawEnvelope, retainedResiduals);
     }
 }

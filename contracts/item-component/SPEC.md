@@ -29,12 +29,14 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
 - `ComponentRegistry`: Catalog of registered component definitions with duplicate conflict rejection and explicit `replace()` semantics.
 - `CarrierSnapshot`: Immutable snapshot of an item's carrier state (typed components, negative patch removals, and preserved foreign/quarantined tags). Guarantees complete immutability via defensive views (`defensiveMapView`), deep array/collection cloning, and compositional deep equality.
 - `ComponentPatch<T>`: Pure algebraic patch states (`Inherit`, `Set<T>`, `Remove<T>`).
+- `Unit`: Pure singleton type (`Unit.INSTANCE`) representing presence of Minecraft 1.20.5+ unit components (e.g. `minecraft:glider`).
 - `ItemPrototype`: Pure model of an item archetype baseline (base components table) separating prototype defaults from per-stack overrides and removals.
 - `RecoveryRecord`: Structured recovery record preserving original locations, raw nodes, schema versions, and failure categories (`UNREADABLE_ENVELOPE`, `MALFORMED_CONTROL_SYNTAX`, `CORRUPT_PAYLOAD`, `UNREGISTERED_COMPONENT`, `ALIAS_COLLISION`) without competing with active component syntax.
 - `FieldAwareCodec<T>`: Lens abstraction tracking consumed field footprints and retaining unconsumed remainder tags across decode-edit-encode cycles.
 - `NativeProjectionRecipe`: Declarative recipes for projecting semantic components into native NBT fields below compound level (e.g. `display.Name`, bitmask fields like `HideFlags`), and tri-state reconciliation: $\operatorname{restoreEdited}(S_0, N_0, N_1)$.
 - `LogicalNbtBridge`: Representation bridge between modern logical heterogeneous lists (1.21.5+) and target physical homogeneous NBT wrappers.
 - `ChannelPolicy`: Specialized projection policies for `PERSISTENT`, `NETWORK`, `EFFECTIVE`, and `IDENTITY` (stacking equivalence).
+- `TranslationPlan`: Compiled schema-bound translation plan coordinating component definitions, source/target prototypes, field-aware lenses, native recipes, and channel policies into an integrated compiler pipeline.
 - `RosettaTranslator`: Pure bidirectional translator interface (`RosettaTranslator.standard()` provides `StandardRosettaTranslator`).
 
 ## 3. Laws

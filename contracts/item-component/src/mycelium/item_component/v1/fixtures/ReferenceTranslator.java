@@ -21,4 +21,19 @@ public final class ReferenceTranslator implements RosettaTranslator {
     public CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry) {
         return delegate.fromLegacyNbt(nbt, registry);
     }
+
+    @Override
+    public TagNode.TagCompound toLegacyNbt(CarrierSnapshot snapshot, ComponentRegistry registry, ItemPrototype prototype) {
+        return delegate.toLegacyNbt(snapshot, registry, prototype);
+    }
+
+    @Override
+    public CarrierSnapshot fromLegacyNbt(TagNode.TagCompound nbt, ComponentRegistry registry, ItemPrototype prototype) {
+        return delegate.fromLegacyNbt(nbt, registry, prototype);
+    }
+
+    @Override
+    public TranslationPlan compilePlan(ComponentRegistry registry, ItemPrototype prototype) {
+        return delegate.compilePlan(registry, prototype);
+    }
 }

@@ -13,6 +13,7 @@ public record RecoveryRecord(
         TagNode rawNode,
         FailureCategory category,
         Optional<ComponentId> componentId,
+        int schemaVersion,
         String diagnosticMessage
 ) {
     public enum FailureCategory {
@@ -21,6 +22,10 @@ public record RecoveryRecord(
         CORRUPT_PAYLOAD,
         UNREGISTERED_COMPONENT,
         ALIAS_COLLISION
+    }
+
+    public RecoveryRecord(String location, TagNode rawNode, FailureCategory category, Optional<ComponentId> componentId, String diagnosticMessage) {
+        this(location, rawNode, category, componentId, 1, diagnosticMessage);
     }
 
     public RecoveryRecord {
@@ -32,10 +37,14 @@ public record RecoveryRecord(
     }
 
     public static RecoveryRecord of(String location, TagNode rawNode, FailureCategory category, String diagnosticMessage) {
-        return new RecoveryRecord(location, rawNode, category, Optional.empty(), diagnosticMessage);
+        return new RecoveryRecord(location, rawNode, category, Optional.empty(), 1, diagnosticMessage);
     }
 
     public static RecoveryRecord of(String location, TagNode rawNode, FailureCategory category, ComponentId id, String diagnosticMessage) {
-        return new RecoveryRecord(location, rawNode, category, Optional.of(id), diagnosticMessage);
+        return new RecoveryRecord(location, rawNode, category, Optional.of(id), 1, diagnosticMessage);
+    }
+
+    public static RecoveryRecord of(String location, TagNode rawNode, FailureCategory category, ComponentId id, int schemaVersion, String diagnosticMessage) {
+        return new RecoveryRecord(location, rawNode, category, Optional.ofNullable(id), schemaVersion, diagnosticMessage);
     }
 }
