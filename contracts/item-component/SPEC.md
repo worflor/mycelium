@@ -24,13 +24,18 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
   - Primitives: `TagByte`, `TagShort`, `TagInt`, `TagLong`, `TagFloat`, `TagDouble`, `TagString`
   - Arrays: `TagByteArray`, `TagIntArray`, `TagLongArray`
   - Collections: `TagList`, `TagCompound`
-- `ComponentCodec<T>`: Pure serializer (`encode: T -> TagNode`, `decode: TagNode -> T throws CodecException`).
-- `ComponentDefinition<T>(id, codec, defaultValue)`: Declares a typed component and its default value.
-- `ComponentRegistry`: Catalog of registered component definitions.
-- `CarrierSnapshot`: Immutable snapshot of an item's carrier state (typed components, negative patch removals, and preserved foreign/quarantined tags). Supports $O(N)$ batch construction via `CarrierSnapshot.builder()`.
-- `RosettaTranslator`: Pure bidirectional translator interface (`RosettaTranslator.standard()` provides the reference implementation `StandardRosettaTranslator` in `model/`):
-  - `toLegacyNbt(CarrierSnapshot, ComponentRegistry) -> TagCompound`
-  - `fromLegacyNbt(TagCompound, ComponentRegistry) -> CarrierSnapshot`
+- `ComponentCodec<T>`: Pure serializer (`encode: T -> TagNode`, `decode: TagNode -> T throws CodecException`). Provides compositional value semantics: `freeze(T)`, `validate(T)`, `semanticEquals(T, T)`, `semanticHash(T)`.
+- `ComponentDefinition<T>(id, codec, defaultValue)`: Declares a typed component and deeply frozen default value.
+- `ComponentRegistry`: Catalog of registered component definitions with duplicate conflict rejection and explicit `replace()` semantics.
+- `CarrierSnapshot`: Immutable snapshot of an item's carrier state (typed components, negative patch removals, and preserved foreign/quarantined tags). Guarantees complete immutability via defensive views (`defensiveMapView`), deep array/collection cloning, and compositional deep equality.
+- `ComponentPatch<T>`: Pure algebraic patch states (`Inherit`, `Set<T>`, `Remove<T>`).
+- `ItemPrototype`: Pure model of an item archetype baseline (base components table) separating prototype defaults from per-stack overrides and removals.
+- `RecoveryRecord`: Structured recovery record preserving original locations, raw nodes, schema versions, and failure categories (`UNREADABLE_ENVELOPE`, `MALFORMED_CONTROL_SYNTAX`, `CORRUPT_PAYLOAD`, `UNREGISTERED_COMPONENT`, `ALIAS_COLLISION`) without competing with active component syntax.
+- `FieldAwareCodec<T>`: Lens abstraction tracking consumed field footprints and retaining unconsumed remainder tags across decode-edit-encode cycles.
+- `NativeProjectionRecipe`: Declarative recipes for projecting semantic components into native NBT fields below compound level (e.g. `display.Name`, bitmask fields like `HideFlags`), and tri-state reconciliation: $\operatorname{restoreEdited}(S_0, N_0, N_1)$.
+- `LogicalNbtBridge`: Representation bridge between modern logical heterogeneous lists (1.21.5+) and target physical homogeneous NBT wrappers.
+- `ChannelPolicy`: Specialized projection policies for `PERSISTENT`, `NETWORK`, `EFFECTIVE`, and `IDENTITY` (stacking equivalence).
+- `RosettaTranslator`: Pure bidirectional translator interface (`RosettaTranslator.standard()` provides `StandardRosettaTranslator`).
 
 ## 3. Laws
 
@@ -40,8 +45,13 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
 | T2 | **Default Elision:** Components whose value equals `defaultValue` are omitted from NBT. If all components are defaults and no unmapped tags or removals exist, the fenced compound is omitted entirely. |
 | T3 | **Namespace Fencing:** All component data in legacy NBT resides strictly inside `"mycelium$c"`. Root NBT contains zero component keys. |
 | T4 | **Foreign Tag Preservation:** Tags under `"mycelium$c"` not present in `ComponentRegistry` survive serialization round-trip unmodified. |
-| T5 | **Diagnostic Rejection & Anti-Data Loss Quarantine:** Malformed tags (type mismatch, invalid syntax) yield a structured fallback to defaults at domain level, while quarantining the raw tag under unmapped tags so that re-saving preserves raw data without world loss. |
+| T5 | **Diagnostic Rejection & Anti-Data Loss Quarantine:** Malformed tags (type mismatch, invalid syntax, non-compound envelopes, malformed control records) yield structured fallback without loss, quarantining raw evidence under distinct recovery keys so re-saving preserves data without destruction. |
 | T6 | **Deterministic Key Ordering:** Serialized legacy NBT entries under `"mycelium$c"` are emitted in lexicographical key order on every platform, guaranteeing byte-reproducible serialization. |
+| T7 | **Prototype Canonicalization:** $\operatorname{decode}_P(\operatorname{encode}_P(S)) = \operatorname{canonicalize}_P(S)$. Overrides matching the prototype's base components are elided back to Inherit. |
+| T8 | **Ingress Immutability & Compositional Equality:** Once a value enters a snapshot, no reference available to the caller can change its meaning, equality, or hash code. Compositional equality correctly traverses nested arrays, lists, maps, and records. |
+| T9 | **Field-Aware Remainder Preservation:** Updating a known subfield in a compound retains all unconsumed future/foreign subfields across edit cycles. |
+| T10 | **Tri-State Native Reconciliation:** Legitimate native edits observed between emitted baseline $N_0$ and later native state $N_1$ are reconciled back into semantic edits: $\operatorname{restoreEdited}(S_0, N_0, N_1)$, preserving unrelated modern retained state. |
+| T11 | **Stacking Identity Invariant:** Two items stack if and only if their `IDENTITY` channel views are equal, guaranteeing that distinct retained modern states never merge. |
 
 ## 4. Rejection Matrix
 

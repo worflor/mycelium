@@ -19,6 +19,11 @@ public final class ItemComponentContractTests {
 
     public Check run() {
         Check c = new Check();
+        Step1AdversarialProbes.runAll();
+        Step2AdversarialProbes.runAll();
+        Step3AdversarialProbes.runAll();
+        Step4AdversarialProbes.runAll();
+        Step5AdversarialProbes.runAll();
         t1RoundTripIsomorphism(c);
         t2DefaultElision(c);
         t3NamespaceFencing(c);

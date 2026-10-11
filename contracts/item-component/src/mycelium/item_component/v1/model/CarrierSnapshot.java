@@ -22,7 +22,8 @@ public final class CarrierSnapshot {
         } else {
             Map<ComponentId, Object> copy = new TreeMap<>();
             for (Map.Entry<ComponentId, Object> e : components.entrySet()) {
-                copy.put(e.getKey(), cloneIfArray(e.getValue()));
+                copy.put(Objects.requireNonNull(e.getKey(), "componentId"),
+                        ValueSemantics.freeze(Objects.requireNonNull(e.getValue(), "componentValue")));
             }
             this.components = Collections.unmodifiableMap(copy);
         }
@@ -32,6 +33,13 @@ public final class CarrierSnapshot {
         this.removals = removals == null || removals.isEmpty()
                 ? Collections.emptySet()
                 : Collections.unmodifiableSet(new TreeSet<>(removals));
+
+        // Invariant: mutual exclusivity between present components and explicit removals
+        for (ComponentId rem : this.removals) {
+            if (this.components.containsKey(rem)) {
+                throw new IllegalArgumentException("Contradictory state: component " + rem + " cannot be both present and removed");
+            }
+        }
     }
 
     public static final CarrierSnapshot EMPTY = new CarrierSnapshot(Collections.emptyMap(), Collections.emptyMap(), Collections.emptySet());
@@ -61,18 +69,79 @@ public final class CarrierSnapshot {
     }
 
     public Object get(ComponentId id) {
-        return cloneIfArray(components.get(id));
+        return ValueSemantics.deepClone(components.get(id));
     }
 
     @SuppressWarnings("unchecked")
     public <T> T get(ComponentDefinition<T> def) {
+        if (isRemoved(def.id())) {
+            return null;
+        }
         Object val = components.get(def.id());
-        return val != null ? (T) cloneIfArray(val) : (T) cloneIfArray(def.defaultValue());
+        return val != null ? (T) ValueSemantics.deepClone(val) : (T) ValueSemantics.deepClone(def.defaultValue());
     }
 
+    public <T> Optional<T> getOptional(ComponentDefinition<T> def) {
+        return Optional.ofNullable(get(def));
+    }
+
+    public Optional<String> getString(ComponentId id) {
+        Object val = get(id);
+        return val instanceof String ? Optional.of((String) val) : Optional.empty();
+    }
+
+    public Optional<Integer> getInt(ComponentId id) {
+        Object val = get(id);
+        return val instanceof Integer ? Optional.of((Integer) val) : Optional.empty();
+    }
+
+    public Optional<Boolean> getBoolean(ComponentId id) {
+        Object val = get(id);
+        return val instanceof Boolean ? Optional.of((Boolean) val) : Optional.empty();
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> ComponentPatch<T> readPatch(ComponentId id) {
+        if (isRemoved(id)) {
+            return ComponentPatch.remove();
+        }
+        if (has(id)) {
+            return ComponentPatch.set((T) get(id));
+        }
+        return ComponentPatch.inherit();
+    }
+
+    public <T> ComponentPatch<T> readPatch(ComponentDefinition<T> def) {
+        return readPatch(def.id());
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> Optional<T> readEffective(ComponentId id, ItemPrototype prototype) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(prototype, "prototype");
+        if (isRemoved(id)) {
+            return Optional.empty();
+        }
+        if (has(id)) {
+            return Optional.of((T) get(id));
+        }
+        return prototype.getBaseComponent(id);
+    }
+
+    public <T> Optional<T> readEffective(ComponentDefinition<T> def, ItemPrototype prototype) {
+        return readEffective(def.id(), prototype);
+    }
+
+    public <T> T readEffectiveOrElse(ComponentId id, ItemPrototype prototype, T fallback) {
+        return this.<T>readEffective(id, prototype).orElse(fallback);
+    }
+
+    public <T> T readEffectiveOrElse(ComponentDefinition<T> def, ItemPrototype prototype, T fallback) {
+        return readEffectiveOrElse(def.id(), prototype, fallback);
+    }
 
     public Map<ComponentId, Object> components() {
-        return components;
+        return ValueSemantics.defensiveMapView(components);
     }
 
     public Map<String, TagNode> unmappedTags() {
@@ -81,7 +150,7 @@ public final class CarrierSnapshot {
 
     public CarrierSnapshot with(ComponentId id, Object value) {
         Map<ComponentId, Object> nextComponents = new TreeMap<>(components);
-        nextComponents.put(Objects.requireNonNull(id, "id"), cloneIfArray(Objects.requireNonNull(value, "value")));
+        nextComponents.put(Objects.requireNonNull(id, "id"), ValueSemantics.freeze(Objects.requireNonNull(value, "value")));
         Set<ComponentId> nextRemovals = new TreeSet<>(removals);
         nextRemovals.remove(id);
         Map<String, TagNode> nextUnmapped = new TreeMap<>(unmappedTags);
@@ -113,26 +182,13 @@ public final class CarrierSnapshot {
         return new CarrierSnapshot(nextComponents, unmappedTags, nextRemovals);
     }
 
-    private static Object cloneIfArray(Object val) {
-        if (val == null) return null;
-        if (val instanceof byte[]) return ((byte[]) val).clone();
-        if (val instanceof short[]) return ((short[]) val).clone();
-        if (val instanceof int[]) return ((int[]) val).clone();
-        if (val instanceof long[]) return ((long[]) val).clone();
-        if (val instanceof float[]) return ((float[]) val).clone();
-        if (val instanceof double[]) return ((double[]) val).clone();
-        if (val instanceof boolean[]) return ((boolean[]) val).clone();
-        if (val instanceof Object[]) return ((Object[]) val).clone();
-        return val;
-    }
-
     public static final class Builder {
         private final Map<ComponentId, Object> components = new TreeMap<>();
         private final Map<String, TagNode> unmappedTags = new TreeMap<>();
         private final Set<ComponentId> removals = new TreeSet<>();
 
         public Builder with(ComponentId id, Object value) {
-            components.put(Objects.requireNonNull(id, "id"), cloneIfArray(Objects.requireNonNull(value, "value")));
+            components.put(Objects.requireNonNull(id, "id"), ValueSemantics.freeze(Objects.requireNonNull(value, "value")));
             removals.remove(id);
             unmappedTags.remove(id.toString());
             return this;
@@ -167,22 +223,40 @@ public final class CarrierSnapshot {
 
 
     /** Returns a canonical snapshot with all default-valued components elided (Law T2). */
-    @SuppressWarnings("unchecked")
     public CarrierSnapshot normalized(ComponentRegistry registry) {
+        return canonicalize(ItemPrototype.empty(), registry);
+    }
+
+    /**
+     * Canonicalizes this snapshot against a given item archetype prototype and schema registry.
+     * Satisfies: decode_P(encode_P(S)) = canonicalize_P(S).
+     */
+    @SuppressWarnings("unchecked")
+    public CarrierSnapshot canonicalize(ItemPrototype prototype, ComponentRegistry registry) {
+        Objects.requireNonNull(prototype, "prototype");
         Objects.requireNonNull(registry, "registry");
-        Map<ComponentId, Object> norm = new TreeMap<>();
+        Map<ComponentId, Object> canon = new TreeMap<>();
         for (Map.Entry<ComponentId, Object> e : components.entrySet()) {
-            Optional<ComponentDefinition<?>> defOpt = registry.get(e.getKey());
-            if (!defOpt.isPresent()) {
-                norm.put(e.getKey(), e.getValue());
+            ComponentId id = e.getKey();
+            Object val = e.getValue();
+            Optional<Object> protoBase = prototype.getBaseComponent(id);
+            if (protoBase.isPresent()) {
+                if (!ValueSemantics.deepEquals(protoBase.get(), val)) {
+                    canon.put(id, val);
+                }
             } else {
-                ComponentDefinition<Object> def = (ComponentDefinition<Object>) defOpt.get();
-                if (!def.isDefault(e.getValue())) {
-                    norm.put(e.getKey(), e.getValue());
+                Optional<ComponentDefinition<?>> defOpt = registry.get(id);
+                if (defOpt.isPresent()) {
+                    ComponentDefinition<Object> def = (ComponentDefinition<Object>) defOpt.get();
+                    if (!def.isDefault(val)) {
+                        canon.put(id, val);
+                    }
+                } else {
+                    canon.put(id, val);
                 }
             }
         }
-        return new CarrierSnapshot(norm, unmappedTags, removals);
+        return new CarrierSnapshot(canon, unmappedTags, removals);
     }
 
     public CarrierSnapshot withUnmappedTag(String key, TagNode tag) {
@@ -195,65 +269,17 @@ public final class CarrierSnapshot {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof CarrierSnapshot that)) return false;
-        return mapValuesEqual(components, that.components) &&
+        return ValueSemantics.deepEquals(components, that.components) &&
                 Objects.equals(unmappedTags, that.unmappedTags) &&
                 Objects.equals(removals, that.removals);
     }
 
     @Override
     public int hashCode() {
-        int result = mapHashCode(components);
+        int result = ValueSemantics.deepHashCode(components);
         result = 31 * result + Objects.hashCode(unmappedTags);
         result = 31 * result + Objects.hashCode(removals);
         return result;
-    }
-
-    private static boolean mapValuesEqual(Map<?, ?> a, Map<?, ?> b) {
-        if (a == b) return true;
-        if (a.size() != b.size()) return false;
-        for (Map.Entry<?, ?> e : a.entrySet()) {
-            Object key = e.getKey();
-            if (!b.containsKey(key)) return false;
-            if (!deepEquals(e.getValue(), b.get(key))) return false;
-        }
-        return true;
-    }
-
-    private static boolean deepEquals(Object a, Object b) {
-        if (a == b) return true;
-        if (a == null || b == null) return false;
-        if (a instanceof byte[] && b instanceof byte[]) return Arrays.equals((byte[]) a, (byte[]) b);
-        if (a instanceof short[] && b instanceof short[]) return Arrays.equals((short[]) a, (short[]) b);
-        if (a instanceof int[] && b instanceof int[]) return Arrays.equals((int[]) a, (int[]) b);
-        if (a instanceof long[] && b instanceof long[]) return Arrays.equals((long[]) a, (long[]) b);
-        if (a instanceof float[] && b instanceof float[]) return Arrays.equals((float[]) a, (float[]) b);
-        if (a instanceof double[] && b instanceof double[]) return Arrays.equals((double[]) a, (double[]) b);
-        if (a instanceof boolean[] && b instanceof boolean[]) return Arrays.equals((boolean[]) a, (boolean[]) b);
-        if (a instanceof Object[] && b instanceof Object[]) return Arrays.deepEquals((Object[]) a, (Object[]) b);
-        return Objects.equals(a, b);
-    }
-
-    private static int mapHashCode(Map<?, ?> map) {
-        int h = 0;
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            int keyHash = Objects.hashCode(entry.getKey());
-            int valHash = valueHashCode(entry.getValue());
-            h += keyHash ^ valHash;
-        }
-        return h;
-    }
-
-    private static int valueHashCode(Object val) {
-        if (val == null) return 0;
-        if (val instanceof byte[]) return Arrays.hashCode((byte[]) val);
-        if (val instanceof short[]) return Arrays.hashCode((short[]) val);
-        if (val instanceof int[]) return Arrays.hashCode((int[]) val);
-        if (val instanceof long[]) return Arrays.hashCode((long[]) val);
-        if (val instanceof float[]) return Arrays.hashCode((float[]) val);
-        if (val instanceof double[]) return Arrays.hashCode((double[]) val);
-        if (val instanceof boolean[]) return Arrays.hashCode((boolean[]) val);
-        if (val instanceof Object[]) return Arrays.deepHashCode((Object[]) val);
-        return val.hashCode();
     }
 
     @Override

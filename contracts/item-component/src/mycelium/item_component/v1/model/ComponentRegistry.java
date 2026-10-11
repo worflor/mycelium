@@ -42,6 +42,20 @@ public final class ComponentRegistry {
 
         public <T> Builder register(ComponentDefinition<T> def) {
             Objects.requireNonNull(def, "def");
+            ComponentDefinition<?> existing = defs.get(def.id());
+            if (existing != null) {
+                if (!existing.equals(def)) {
+                    throw new IllegalStateException("Conflicting registration for component '" + def.id()
+                            + "': existing=" + existing + ", new=" + def);
+                }
+                return this;
+            }
+            defs.put(def.id(), def);
+            return this;
+        }
+
+        public <T> Builder replace(ComponentDefinition<T> def) {
+            Objects.requireNonNull(def, "def");
             defs.put(def.id(), def);
             return this;
         }

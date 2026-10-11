@@ -13,6 +13,12 @@ public record ComponentDefinition<T>(
     public ComponentDefinition {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(codec, "codec");
+        defaultValue = codec.freeze(defaultValue);
+    }
+
+    @Override
+    public T defaultValue() {
+        return codec.freeze(defaultValue);
     }
 
     public TagNode encodeValue(T value) {
@@ -24,7 +30,7 @@ public record ComponentDefinition<T>(
     }
 
     public boolean isDefault(T value) {
-        return Objects.deepEquals(defaultValue, value);
+        return codec.semanticEquals(defaultValue, value);
     }
 }
 

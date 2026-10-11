@@ -102,7 +102,13 @@ public sealed interface TagNode permits
             if (entries == null || entries.isEmpty()) {
                 entries = Collections.emptyMap();
             } else {
-                entries = Collections.unmodifiableMap(new LinkedHashMap<>(entries));
+                Map<String, TagNode> copy = new LinkedHashMap<>();
+                for (Map.Entry<String, TagNode> e : entries.entrySet()) {
+                    Objects.requireNonNull(e.getKey(), "TagCompound key cannot be null");
+                    Objects.requireNonNull(e.getValue(), "TagCompound value cannot be null for key '" + e.getKey() + "'");
+                    copy.put(e.getKey(), e.getValue());
+                }
+                entries = Collections.unmodifiableMap(copy);
             }
         }
 

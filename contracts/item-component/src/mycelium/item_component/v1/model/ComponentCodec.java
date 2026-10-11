@@ -10,6 +10,35 @@ public interface ComponentCodec<T> {
 
     T decode(TagNode node) throws CodecException;
 
+    /**
+     * Deeply freezes the value so no external mutation of the argument
+     * or any returned reference can alter the snapshot's state.
+     */
+    default T freeze(T value) {
+        return ValueSemantics.freeze(value);
+    }
+
+    /**
+     * Validates that the value conforms to the codec's domain constraints.
+     */
+    default void validate(T value) throws CodecException {
+    }
+
+    /**
+     * Value equality for domain values produced or consumed by this codec.
+     * Composes correctly through nested arrays, collections, and records.
+     */
+    default boolean semanticEquals(T a, T b) {
+        return ValueSemantics.deepEquals(a, b);
+    }
+
+    /**
+     * Value hash code for domain values produced or consumed by this codec.
+     */
+    default int semanticHash(T value) {
+        return ValueSemantics.deepHashCode(value);
+    }
+
     ComponentCodec<Integer> INT = new ComponentCodec<>() {
         @Override
         public TagNode encode(Integer value) {
@@ -184,12 +213,23 @@ public interface ComponentCodec<T> {
     ComponentCodec<Boolean> UNIT = new ComponentCodec<>() {
         @Override
         public TagNode encode(Boolean value) {
+            Objects.requireNonNull(value, "value");
             return TagNode.TagCompound.empty();
         }
 
         @Override
         public Boolean decode(TagNode node) throws CodecException {
-            return true;
+            if (node instanceof TagNode.TagCompound tc && tc.isEmpty()) {
+                return true;
+            }
+            if (node instanceof TagNode.TagByte tb && tb.value() == 1) {
+                return true;
+            }
+            if (node instanceof TagNode.TagByte tb && tb.value() == 0) {
+                return false;
+            }
+            throw new CodecException("Expected empty TagCompound or boolean TagByte for UNIT, got "
+                    + (node == null ? "null" : node.getClass().getSimpleName()));
         }
     };
 
@@ -217,6 +257,37 @@ public interface ComponentCodec<T> {
                 }
                 throw new CodecException("Expected TagList, got " + (node == null ? "null" : node.getClass().getSimpleName()));
             }
+
+            @Override
+            public List<E> freeze(List<E> list) {
+                if (list == null) return null;
+                List<E> frozen = new ArrayList<>(list.size());
+                for (E item : list) {
+                    frozen.add(elementCodec.freeze(item));
+                }
+                return Collections.unmodifiableList(frozen);
+            }
+
+            @Override
+            public boolean semanticEquals(List<E> a, List<E> b) {
+                if (a == b) return true;
+                if (a == null || b == null) return false;
+                if (a.size() != b.size()) return false;
+                for (int i = 0; i < a.size(); i++) {
+                    if (!elementCodec.semanticEquals(a.get(i), b.get(i))) return false;
+                }
+                return true;
+            }
+
+            @Override
+            public int semanticHash(List<E> list) {
+                if (list == null) return 0;
+                int h = 1;
+                for (E item : list) {
+                    h = 31 * h + elementCodec.semanticHash(item);
+                }
+                return h;
+            }
         };
     }
 
@@ -243,6 +314,38 @@ public interface ComponentCodec<T> {
                     return Collections.unmodifiableMap(result);
                 }
                 throw new CodecException("Expected TagCompound for map, got " + (node == null ? "null" : node.getClass().getSimpleName()));
+            }
+
+            @Override
+            public Map<String, V> freeze(Map<String, V> map) {
+                if (map == null) return null;
+                Map<String, V> frozen = new TreeMap<>();
+                for (Map.Entry<String, V> entry : map.entrySet()) {
+                    frozen.put(entry.getKey(), valueCodec.freeze(entry.getValue()));
+                }
+                return Collections.unmodifiableMap(frozen);
+            }
+
+            @Override
+            public boolean semanticEquals(Map<String, V> a, Map<String, V> b) {
+                if (a == b) return true;
+                if (a == null || b == null) return false;
+                if (a.size() != b.size()) return false;
+                for (Map.Entry<String, V> entry : a.entrySet()) {
+                    if (!b.containsKey(entry.getKey())) return false;
+                    if (!valueCodec.semanticEquals(entry.getValue(), b.get(entry.getKey()))) return false;
+                }
+                return true;
+            }
+
+            @Override
+            public int semanticHash(Map<String, V> map) {
+                if (map == null) return 0;
+                int h = 0;
+                for (Map.Entry<String, V> entry : map.entrySet()) {
+                    h += Objects.hashCode(entry.getKey()) ^ valueCodec.semanticHash(entry.getValue());
+                }
+                return h;
             }
         };
     }
