@@ -68,6 +68,8 @@ Safety alone is satisfiable by doing nothing (a `NoOp` port that never persists 
 
 Required trait for durable persistence: `DURABLE`. `RESPAWN_SAFE` is advertised by the reference port but not required by the executor — `L2` is exercised directly by fixture-simulated lifecycle events regardless of the trait's presence, because a trait declaration is a claim, not evidence (mirrors `flow`'s DESIGN §8.1 basis note). The harness does not trust `MigrationChain.total()` either, for the identical reason: `SkippingMigrationChain` in the rejection matrix declares totality it does not have, and the correct executor still catches the gap because it walks the real steps (§4 L4).
 
+What a value does at a respawn, a clone or a logout is a policy declared per slot in `state.lifecycle@1` (`../state-lifecycle/SPEC.md`), which the lifecycle engine carries out; this port stays the storage medium, and `RESPAWN_SAFE` stays a claim about that medium that its tests check, not the policy.
+
 ## 8. Fixtures (normative)
 
 Reference fixture set executed by `PlayerStateContractTests`:

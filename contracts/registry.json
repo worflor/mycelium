@@ -108,6 +108,14 @@
       "status": "reference",
       "requires": ["item.component@1"],
       "provenance": "written for Somnium"
+    },
+    {
+      "id": "state.lifecycle@1",
+      "path": "state-lifecycle",
+      "package": "mycelium.state_lifecycle.v1",
+      "status": "reference",
+      "requires": ["item.component@1"],
+      "provenance": "written for Somnium"
     }
   ]
 }
