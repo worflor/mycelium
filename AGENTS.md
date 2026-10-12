@@ -111,6 +111,10 @@ mycelium/
 | `ImportContractsTask.java` | `myceliumImport`: copies each selected model under the consumer's namespace |
 | `VerifyContractsTask.java` | `myceliumVerify`: compiles and runs each harness; collects each harness's own report |
 | `Harness.java` | what every runner shares: the harness's sources, and the bundle an era gate runs |
+| `Presentation.java` | what `myceliumPresentation` and `myceliumPresentationLock` do apart from Gradle: reads a consumer's presentation sources, compiles `item.presentation@1`'s model with the models it requires, and runs its build tool |
+| `PresentationSpec.java` | `mycelium { presentation { } }`: where the programs, the component catalog and the lock are (defaults under `src/main/presentation`) |
+| `PresentationTask.java` | `myceliumPresentation`: the programs compiled for the target's realization into generated resources; any law broken fails the build |
+| `PresentationLockTask.java` | `myceliumPresentationLock`: appends the legacy codes the programs need to the committed lock, on request, never in a build |
 | `UsageTask.java` | `myceliumUsage`: reports imported contracts the artifact's sources never use |
 | `IsolationTask.java` | `myceliumIsolation`: optional integrations stay in their home packages (`docs/integrations.md`) |
 | `PurityTask.java` | `myceliumPurity`: the pure layer's source laws, P1 and P3 (`docs/eras.md`) |

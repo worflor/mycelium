@@ -53,6 +53,15 @@ every `since`, `outerJava` and name step names a loader the era lists, beginning
   is and the syntax it is written in (`semver` for Fabric and Quilt, `maven` for Forge and NeoForge, `api-version`
   for Bukkit). `CompatExpr` reads and writes the three.
 
+### The presentation table
+
+Beside `eras`, `eras/minecraft.json` holds `presentation`: ranges of versions (`from`, `to`, bounds as an era's are) and the
+mechanism a version draws an item's state with, `item-definition` (an item definition selecting a model on the custom model data
+strings), `model-overrides` (one item model with `overrides` on the custom model data float) or `none`. It is its own table because the
+ranges cross the eras: model overrides run through four of them. The `item.presentation@1` compiler reads the row for the
+target and holds no version number of its own (`Eras.presentationFor`, `docs/decisions/0012-sigil-item-presentation.md`). The
+repository check proves every real version falls in exactly one range, each bound is a real version, and no range runs backwards.
+
 ### Name data
 
 `runtime` says what a loader runs the game as; `eras/names.json` holds what the game *has* under each naming on each
