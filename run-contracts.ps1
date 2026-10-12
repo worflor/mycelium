@@ -47,7 +47,9 @@ foreach ($slug in $Slugs) {
     $out = Join-Path $pkg "out"
     if (Test-Path $out) { Remove-Item -Recurse -Force $out }
     New-Item -ItemType Directory -Force $out | Out-Null
-    $files = @(($harness + @(Get-ChildItem -Recurse -Filter *.java $src | ForEach-Object FullName)) | Sort-Object -Unique)
+    $required = @(& $java harness\tools\RequiredModels.java $slug | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $reqFiles = @($required | ForEach-Object { Get-ChildItem -Recurse -Filter *.java $_ } | ForEach-Object FullName)
+    $files = @(($harness + @(Get-ChildItem -Recurse -Filter *.java $src | ForEach-Object FullName) + $reqFiles) | Sort-Object -Unique)
     & $javac --release 17 -d $out $files
     if ($LASTEXITCODE -ne 0) { Write-Host "[$slug] COMPILE FAILED"; $total += 1; continue }
     $rel = $runs[0].FullName.Substring((Resolve-Path $src).Path.Length + 1)

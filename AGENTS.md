@@ -90,7 +90,7 @@ mycelium/
 │   ├── src/                Check, Suite, ContractRun (the rules every matrix keeps), Seeded
 │   └── test/               the harness's own checks, each a main; every runner runs them first
 ├── contracts/
-│   ├── registry.json       id, path, package, status, supersedes, provenance: the only such mapping
+│   ├── registry.json       id, path, package, status, supersedes, requires, provenance: the only such mapping
 │   ├── patterns.json       code copied between packages on purpose, kept identical
 │   └── <slug>/             one package per contract (CONTRACT-PACKAGE.md)
 ├── gradle-plugin/          the plugins, an included build (map below)
@@ -107,7 +107,7 @@ mycelium/
 | `MyceliumPlugin.java` | `dev.woflo.mycelium`, for consumers: registers the tasks and wires them into `check` and every jar |
 | `MyceliumExtension.java` | the `mycelium { }` block: contracts, namespace, target, eras, pure layer, integrations, ports, artifact Jar selection |
 | `PureSpec.java` | `mycelium { pure { } }`: the artifact's pure layer and its suites |
-| `ContractRegistry.java` | reads `contracts/registry.json`, strictly; resolves selections and `supersedes` |
+| `ContractRegistry.java` | reads `contracts/registry.json`, strictly; resolves selections, `supersedes` and `requires` |
 | `ImportContractsTask.java` | `myceliumImport`: copies each selected model under the consumer's namespace |
 | `VerifyContractsTask.java` | `myceliumVerify`: compiles and runs each harness; collects each harness's own report |
 | `Harness.java` | what every runner shares: the harness's sources, and the bundle an era gate runs |
@@ -160,8 +160,9 @@ repository in each way a check exists for, and prove the check names the break.
    it is not a contract; that work is a provider's.
 2. `fixtures/` and `harness/` never ship. `myceliumImport` copies `model/` only, and refuses a model that reaches the
    harness.
-3. A model never mentions another contract's package. Contracts compose in the consumer
-   (`docs/decisions/0005-what-a-contract-is-made-of.md`).
+3. A model mentions no other contract's package, except the `model` package of one its registry row `requires`
+   (exact ids, acyclic, never retired). Contracts otherwise compose in the consumer
+   (`docs/decisions/0005-what-a-contract-is-made-of.md`, `docs/decisions/0014-contracts-compose-by-declared-requirement.md`).
 4. Labels are a contract's public surface. Renaming one, or changing a law, an outcome or a required method, is a new
    major (`CONTRACT-PACKAGE.md`, rule 12).
 5. The plugin never gains loader-specific logic. Loader knowledge is data (`eras/`) or a consumer's buildscript.

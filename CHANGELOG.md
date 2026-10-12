@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-12 - Contracts compose by declared requirement
+
+A registry row may carry `requires`: exact ids of the contracts whose `model` packages its model may import
+(`docs/decisions/0014-contracts-compose-by-declared-requirement.md`, amending the rule of decision 0005 that a model mentions no
+other package). `ContractRegistry` refuses a requirement that does not exist, is retired, is the contract itself, or closes a
+cycle; `myceliumRepository` fails a model that reaches an undeclared package or a required one's fixtures or harness;
+`myceliumImport` imports a contract's requirements with it under the consumer's namespace (so the importing model refers to the
+consumer's private copy), `myceliumUsage` does not call a contract imported only as a requirement unused, `myceliumVerify` and
+both runner scripts compile a package with its requirements' models (`harness/tools/RequiredModels.java` reads the registry for
+the scripts), and the evidence manifest lists each contract's `requires`. `AGENTS.md` hard rule 3 and `CONTRACT-PACKAGE.md`
+rule 10 state the new rule. Additive: no existing row declares a requirement.
+
+Ran: `./gradlew -p gradle-plugin selfTest` (a requirement chain, an unknown, a retired, a self and a cyclic requirement are
+refused; an undeclared, a fixtures and a harness import fail the repository check; a declared one passes; importing a contract
+with a requirement yields both, namespaced, with no fixtures).
+
+
 ## 2026-10-12 - item.component@1: a lens with nothing left over retains nothing
 
 Reading a component whose definition has a `FieldAwareCodec` recorded its remainder even when it was empty, so a value read

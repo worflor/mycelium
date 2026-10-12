@@ -41,7 +41,9 @@ for slug in "${slugs[@]}"; do
   if [ "$count" -ne 1 ]; then echo "[$slug] expected exactly one harness/Run.java, found $count"; total=$((total+1)); continue; fi
   out="$pkg/out"
   rm -rf "$out"; mkdir -p "$out"
-  files=$( { harness_files; find "$pkg/src" -name '*.java'; } | sort -u)
+  # the models this package requires, from the registry (docs/decisions/0014): their model packages only
+  required=$("$JAVA" harness/tools/RequiredModels.java "$slug" | tr -d '\015')
+  files=$( { harness_files; find "$pkg/src" -name '*.java'; for d in $required; do find "$d" -name '*.java'; done; } | sort -u)
   if ! "$JAVAC" --release 17 -d "$out" $files; then
     echo "[$slug] COMPILE FAILED"; total=$((total+1)); continue
   fi

@@ -216,6 +216,9 @@ public abstract class EvidenceTask extends DefaultTask {
             c.addProperty("id", id);
             c.addProperty("path", entry.path());
             c.addProperty("status", entry.status());
+            JsonArray requires = new JsonArray();
+            entry.requires().forEach(requires::add);
+            c.add("requires", requires);
             Path modelDir = root.resolve("contracts").resolve(entry.path()).resolve("src")
                     .resolve(entry.pkg().replace('.', '/')).resolve("model");
             c.addProperty("modelSha256", Fingerprint.ofDirectory(modelDir));

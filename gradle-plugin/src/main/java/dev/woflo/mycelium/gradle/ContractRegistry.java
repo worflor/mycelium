@@ -25,7 +25,7 @@ import java.util.Set;
  */
 public final class ContractRegistry {
     /** The fields a row may carry. Anything else is refused. */
-    static final Set<String> FIELDS = Set.of("id", "path", "package", "status", "supersedes", "provenance");
+    static final Set<String> FIELDS = Set.of("id", "path", "package", "status", "supersedes", "requires", "provenance");
     static final Set<String> TOP = Set.of("schema", "note", "contracts");
     static final int SCHEMA = 2;
 
@@ -34,9 +34,20 @@ public final class ContractRegistry {
      *
      * @param status     what exists for it (the file's note defines each value); copied into the evidence manifest
      * @param supersedes the id this one replaces, or null; a build may import one of the two, never both
+     * @param requires   the contracts whose models this one's model may import (exact ids; docs/decisions/0014): they
+     *                   exist, are not retired and are acyclic, which {@link #parse} refuses otherwise
      * @param provenance who it was written for and where it came from: history, not checked
      */
-    public record Entry(String id, String path, String pkg, String status, String supersedes, String provenance) {
+    public record Entry(String id, String path, String pkg, String status, String supersedes, List<String> requires,
+                        String provenance) {
+        public Entry {
+            requires = List.copyOf(requires);
+        }
+
+        public Entry(String id, String path, String pkg, String status, String supersedes, String provenance) {
+            this(id, path, pkg, status, supersedes, List.of(), provenance);
+        }
+
         public String slug() {
             return path;
         }
@@ -103,7 +114,7 @@ public final class ContractRegistry {
                 }
             }
             Entry entry = new Entry(id, o.get("path").getAsString(), o.get("package").getAsString(),
-                    o.get("status").getAsString(), text(o, "supersedes"), text(o, "provenance"));
+                    o.get("status").getAsString(), text(o, "supersedes"), requires(o, id, where), text(o, "provenance"));
             if (registry.byId.put(entry.id(), entry) != null) {
                 throw new IllegalStateException(where + ": contract " + id + " is listed twice");
             }
@@ -113,7 +124,106 @@ public final class ContractRegistry {
                 throw new IllegalStateException(where + ": " + e.id() + " supersedes unknown contract " + e.supersedes());
             }
         }
+        registry.checkRequirements(where);
         return registry;
+    }
+
+    private static List<String> requires(JsonObject o, String id, String where) {
+        List<String> out = new ArrayList<>();
+        if (o.has("requires")) {
+            if (!o.get("requires").isJsonArray()) {
+                throw new IllegalStateException(where + ": contract " + id + ": 'requires' is an array of contract ids");
+            }
+            for (JsonElement e : o.getAsJsonArray("requires")) {
+                String r = e.isJsonPrimitive() ? e.getAsString() : "";
+                if (r.isBlank() || out.contains(r)) {
+                    throw new IllegalStateException(where + ": contract " + id + ": 'requires' lists exact contract ids, once each");
+                }
+                out.add(r);
+            }
+        }
+        return out;
+    }
+
+    /** Every required id exists, is not retired and is not the contract itself, and no requirement leads back to its origin. */
+    private void checkRequirements(String where) {
+        for (Entry e : byId.values()) {
+            for (String r : e.requires()) {
+                Entry target = byId.get(r);
+                if (target == null) {
+                    throw new IllegalStateException(where + ": " + e.id() + " requires unknown contract " + r);
+                }
+                if (target.status().equals("retired")) {
+                    throw new IllegalStateException(where + ": " + e.id() + " requires " + r + ", which is retired");
+                }
+                if (r.equals(e.id())) {
+                    throw new IllegalStateException(where + ": " + e.id() + " requires itself");
+                }
+            }
+        }
+        for (Entry e : byId.values()) {
+            List<String> path = new ArrayList<>();
+            path.add(e.id());
+            cycle(e, e.id(), path, where);
+        }
+    }
+
+    private void cycle(Entry at, String origin, List<String> path, String where) {
+        for (String r : at.requires()) {
+            if (r.equals(origin)) {
+                throw new IllegalStateException(where + ": requirements form a cycle: " + String.join(" -> ", path) + " -> " + r);
+            }
+            if (!path.contains(r)) {
+                path.add(r);
+                cycle(byId.get(r), origin, path, where);
+                path.remove(path.size() - 1);
+            }
+        }
+    }
+
+    /**
+     * What {@code entry} needs imported with it, transitively and dependencies first (a requirement comes before what
+     * requires it); {@code entry} itself is not in the list.
+     */
+    public List<Entry> closure(Entry entry) {
+        List<Entry> out = new ArrayList<>();
+        collect(entry, out);
+        return out;
+    }
+
+    private void collect(Entry entry, List<Entry> out) {
+        for (String r : entry.requires()) {
+            Entry target = require(r);
+            if (!out.contains(target)) {
+                collect(target, out);
+                out.add(target);
+            }
+        }
+    }
+
+    /**
+     * A selection plus everything it requires, each once, requirements first. A contract and the one it supersedes are
+     * refused here too, whichever of them came in as a requirement.
+     */
+    public List<Entry> withRequirements(List<Entry> selected) {
+        List<Entry> out = new ArrayList<>();
+        for (Entry e : selected) {
+            for (Entry r : closure(e)) {
+                if (!out.contains(r)) {
+                    out.add(r);
+                }
+            }
+            if (!out.contains(e)) {
+                out.add(e);
+            }
+        }
+        for (Entry e : out) {
+            if (e.supersedes() != null && out.stream().anyMatch(o -> o.id().equals(e.supersedes()))) {
+                throw new IllegalStateException("Mycelium: " + e.id() + " supersedes " + e.supersedes()
+                        + ", and both would be imported (one as a requirement of another selected contract)");
+            }
+        }
+        return out;
     }
 
     private static String text(JsonObject o, String key) {

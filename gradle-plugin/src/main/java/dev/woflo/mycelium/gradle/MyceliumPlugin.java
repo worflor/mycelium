@@ -83,7 +83,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 }
             }
             ContractRegistry registry = ContractRegistry.load(root.toFile());
-            for (ContractRegistry.Entry entry : registry.resolve(ext.getContracts().get())) {
+            for (ContractRegistry.Entry entry : registry.withRequirements(registry.resolve(ext.getContracts().get()))) {
                 dirs.add(root.resolve("contracts").resolve(entry.path()).resolve("src"));
             }
             return Fingerprint.ofDirectories(dirs);

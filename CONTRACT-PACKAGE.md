@@ -33,7 +33,7 @@ Each rule says what keeps it. A rule nothing keeps is a wish; add the check or s
 
 1. **Registered.** A row in `contracts/registry.json` declares the id (`domain.capability@N`), the path (the slug,
    kebab-case) and the package, in the same change as the package. `supersedes` names the contract a new major
-   replaces; a build may import one of the two, never both. `provenance` says in words who it was written for.
+   replaces; a build may import one of the two, never both. `requires` lists the contracts whose models this one's model may import. `provenance` says in words who it was written for.
    *Kept by `myceliumRepository` (rows against directories, both ways) and `ContractRegistry` (unknown fields refused).*
 2. **Shaped.** `SPEC.md`, then `model/`, `fixtures/` and `harness/` under the package path, and exactly one
    `Run.java`, in that `harness/`, where every runner starts. *Kept by `myceliumRepository` and both runner scripts.*
@@ -55,9 +55,12 @@ Each rule says what keeps it. A rule nothing keeps is a wish; add the check or s
 9. **Pure.** The model mentions no platform package (every root in `eras/loaders.json`), reads no clock or
    environment, draws no unseeded chance, and holds on every Java an era runs on. Variety in fixtures comes from
    `mycelium.harness.Seeded`. *Kept by `myceliumPurity`, `myceliumPureCompile` and `myceliumEras` (`docs/eras.md`).*
-10. **Its own.** A model never mentions another contract's package or `mycelium.harness`. Contracts share no
-    vocabulary; a consumer composes them in its own seams (`docs/decisions/0005-what-a-contract-is-made-of.md`).
-    *Kept by `myceliumRepository`; `myceliumImport` refuses a model that reaches the harness.*
+10. **Its own.** A model never mentions `mycelium.harness`, nor another contract's package unless its registry row
+    `requires` that contract, and then only its `model` package, never its fixtures or harness. Requirements are exact
+    ids, acyclic and never retired; `myceliumImport` brings a contract's requirements with it under the consumer's
+    namespace. Otherwise contracts share no vocabulary and a consumer composes them in its own seams
+    (`docs/decisions/0005-what-a-contract-is-made-of.md`, `docs/decisions/0014-contracts-compose-by-declared-requirement.md`).
+    *Kept by `myceliumRepository` and `ContractRegistry`; `myceliumImport` refuses a model that reaches the harness.*
 11. **Copied patterns stay copied.** A transaction type (`Tx`, `*Tx`, `*Transaction`) is `FlowTransaction` with its
     name changed: copy it, never invent a transaction shape. `contracts/patterns.json` declares each pattern, its
     canonical file and any exemption with its reason. *Kept by `myceliumRepository`.*

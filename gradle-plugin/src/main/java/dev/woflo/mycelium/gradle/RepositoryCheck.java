@@ -183,7 +183,7 @@ public final class RepositoryCheck {
 
     // --- models: pure, and their own ---------------------------------------------------------------------------
 
-    static final Pattern CONTRACT_REF = Pattern.compile("(?<![\\w.])mycelium\\.([a-z_][a-z0-9_]*)\\.v(\\d+)\\b");
+    static final Pattern CONTRACT_REF = Pattern.compile("(?<![\\w.])mycelium\\.([a-z_][a-z0-9_]*)\\.v(\\d+)\\b(?:\\.([a-z_][a-z0-9_]*))?");
 
     static void models(Path root, ContractRegistry registry, Report report) throws IOException {
         int files = 0;
@@ -191,6 +191,10 @@ public final class RepositoryCheck {
             Path model = root.resolve("contracts").resolve(e.path()).resolve("src").resolve(e.pkg().replace('.', '/')).resolve("model");
             if (!Files.isDirectory(model)) {
                 continue;
+            }
+            Set<String> allowed = new HashSet<>();
+            for (ContractRegistry.Entry r : registry.closure(e)) {
+                allowed.add(r.pkg());
             }
             for (Path p : Harness.javaFiles(List.of(model))) {
                 files++;
@@ -201,10 +205,19 @@ public final class RepositoryCheck {
                 Matcher m = CONTRACT_REF.matcher(code);
                 while (m.find()) {
                     String ref = "mycelium." + m.group(1) + ".v" + m.group(2);
-                    if (!ref.equals(e.pkg())) {
-                        report.find("model", rel(root, p) + " reaches " + ref + ": a model imports only its own contract"
-                                + " (a consumer imports the contracts it selects; a reference to another would not compile there)");
+                    if (ref.equals(e.pkg())) {
+                        continue;
                     }
+                    if (allowed.contains(ref)) {
+                        // a required contract is reached through its model package, and nothing else of it
+                        if (m.group(3) != null && !m.group(3).equals("model")) {
+                            report.find("model", rel(root, p) + " reaches " + ref + "." + m.group(3) + ": a model imports only the model"
+                                    + " package of a contract it requires, never its fixtures or harness");
+                        }
+                        continue;
+                    }
+                    report.find("model", rel(root, p) + " reaches " + ref + ": a model imports only its own contract and the models"
+                            + " of the contracts it requires (declare one in contracts/registry.json, docs/decisions/0014)");
                 }
             }
         }

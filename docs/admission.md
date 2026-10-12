@@ -38,7 +38,8 @@ Admit it when every answer is yes:
 - **Is it pure?** It can be stated without Minecraft types. If it needs them, it is a provider concern or a native
   extension.
 - **Is its vocabulary its own?** It declares its own reasons, traits and ids, and composes with other contracts in
-  the consumer (`docs/decisions/0005-what-a-contract-is-made-of.md`).
+  the consumer, or builds on one it declares as a requirement (`docs/decisions/0005-what-a-contract-is-made-of.md`,
+  `docs/decisions/0014-contracts-compose-by-declared-requirement.md`).
 
 Not admitted:
 - a wrapper over one platform API with no laws of its own (the platform already is that contract);

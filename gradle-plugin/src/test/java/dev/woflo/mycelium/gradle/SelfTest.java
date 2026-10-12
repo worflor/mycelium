@@ -38,6 +38,7 @@ public final class SelfTest {
         Path root = Path.of(args.length > 0 ? args[0] : "..").toAbsolutePath().normalize();
         eras(root);
         registry();
+        requirementsImport();
         integrations();
         evidence();
         loaders(root);
@@ -1099,6 +1100,56 @@ public final class SelfTest {
         that(reg.resolve(List.of("x.a@2")).size() == 1, "registry:a build selecting the successor alone is fine");
         that(reg.require("x.a@1").runFile().equals("contracts/a/src/mycelium/a/v1/harness/Run.java"),
                 "registry:the harness main lives where every runner looks");
+
+        // requirements (docs/decisions/0014)
+        String rowC = "{\"id\":\"x.c@1\",\"path\":\"c\",\"package\":\"mycelium.c.v1\",\"status\":\"reference\",\"requires\":[\"x.b@1\"]}";
+        String rowB = "{\"id\":\"x.b@1\",\"path\":\"b\",\"package\":\"mycelium.b.v1\",\"status\":\"reference\",\"requires\":[\"x.a@1\"]}";
+        ContractRegistry chain = ContractRegistry.parse(registryText(ROW_A, rowB, rowC), "t");
+        that(chain.closure(chain.require("x.c@1")).stream().map(ContractRegistry.Entry::id).toList().equals(List.of("x.a@1", "x.b@1")),
+                "registry:a contract's requirements are its closure, requirements first");
+        that(chain.withRequirements(chain.resolve(List.of("x.c@1", "x.b@1"))).size() == 3,
+                "registry:a selection plus its requirements holds each contract once");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A, rowB.replace("x.a@1", "x.zzz@1")), "t"), "requires unknown contract"),
+                "registry:requiring a contract that does not exist is refused");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("\"reference\"", "\"retired\""), rowB), "t"), "which is retired"),
+                "registry:requiring a retired contract is refused");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("}", ",\"requires\":[\"x.c@1\"]}"), rowB, rowC), "t"), "cycle"),
+                "registry:a requirement cycle is refused, naming it");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("}", ",\"requires\":[\"x.a@1\"]}")), "t"), "requires itself"),
+                "registry:requiring itself is refused");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("}", ",\"requires\":\"x.b@1\"}")), "t"), "array of contract ids"),
+                "registry:requires is an array");
+        that(refuses(() -> chain.withRequirements(List.of(chain.require("x.c@1"), ContractRegistry.parse(registryText(ROW_A, ROW_B), "t").require("x.a@2"))),
+                "both would be imported"), "registry:a successor selected beside a contract that requires its predecessor is refused");
+    }
+
+    /** A consumer importing a contract with requirements gets both models, under its own namespace. */
+    static void requirementsImport() throws IOException {
+        Path root = Files.createTempDirectory("mycelium-requires");
+        try {
+            write(root.resolve("contracts/registry.json"), "{\"schema\":2,\"note\":\"n\",\"contracts\":["
+                    + "{\"id\":\"x.base@1\",\"path\":\"base\",\"package\":\"mycelium.base.v1\",\"status\":\"reference\"},"
+                    + "{\"id\":\"x.top@1\",\"path\":\"top\",\"package\":\"mycelium.top.v1\",\"status\":\"reference\",\"requires\":[\"x.base@1\"]}]}");
+            write(root.resolve("contracts/base/src/mycelium/base/v1/model/Base.java"),
+                    "package mycelium.base.v1.model; public final class Base {}");
+            write(root.resolve("contracts/base/src/mycelium/base/v1/fixtures/Broken.java"),
+                    "package mycelium.base.v1.fixtures; public final class Broken {}");
+            write(root.resolve("contracts/top/src/mycelium/top/v1/model/Top.java"),
+                    "package mycelium.top.v1.model; import mycelium.base.v1.model.Base; public final class Top { Base b; }");
+            Path out = root.resolve("out");
+            ContractRegistry registry = ContractRegistry.load(root.toFile());
+            List<ContractRegistry.Entry> imported = ImportContractsTask.importInto(root, registry, List.of("x.top@1"), "app.mycelium", out);
+            that(imported.stream().map(ContractRegistry.Entry::id).toList().equals(List.of("x.base@1", "x.top@1")),
+                    "requirements:importing a contract imports what it requires, requirements first");
+            Path top = out.resolve("app/mycelium/top/v1/model/Top.java");
+            that(Files.isRegularFile(out.resolve("app/mycelium/base/v1/model/Base.java")) && Files.isRegularFile(top),
+                    "requirements:both models land under the consumer's namespace");
+            that(Files.readString(top).contains("import app.mycelium.base.v1.model.Base;") && !Files.readString(top).contains("import mycelium."),
+                    "requirements:the importing model refers to the consumer's private copy of its requirement");
+            that(!Files.exists(out.resolve("app/mycelium/base/v1/fixtures")), "requirements:a requirement's fixtures are never imported");
+        } finally {
+            delete(root);
+        }
     }
 
     // --- integrations ------------------------------------------------------------------------------------------------
@@ -1947,6 +1998,37 @@ public final class SelfTest {
         expect(root, "a model reaching another contract", r -> append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"),
                         "\nclass Reach { mycelium.flow.v1.model.Receipt r; }\n"),
                 f -> f.contains("reaches mycelium.flow.v1"), baseline);
+        Break declares = r -> replace(r.resolve("contracts/registry.json"), "\"id\": \"presentation.particle-cue@1\",",
+                "\"id\": \"presentation.particle-cue@1\",\n      \"requires\": [\"inventory.transfer@1\"],");
+        expect(root, "a model reaching a contract it declared a requirement on", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.flow.v1.model.Receipt r; }\n");
+                },
+                f -> f.contains("reaches mycelium.flow.v1"), baseline, false);
+        expect(root, "a model reaching a required contract's fixtures", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.flow.v1.fixtures.Anything r; }\n");
+                },
+                f -> f.contains("mycelium.flow.v1.fixtures") && f.contains("never its fixtures or harness"), baseline);
+        expect(root, "a model reaching a required contract's harness", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.flow.v1.harness.Run r; }\n");
+                },
+                f -> f.contains("mycelium.flow.v1.harness"), baseline);
+        expect(root, "a model reaching a contract that is required only by another", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.world_copy.v1.model.X r; }\n");
+                },
+                f -> f.contains("reaches mycelium.world_copy.v1"), baseline);
+        expect(root, "requirements that form a cycle", r -> {
+                    declares.apply(r);
+                    replace(r.resolve("contracts/registry.json"), "\"id\": \"inventory.transfer@1\",",
+                            "\"id\": \"inventory.transfer@1\",\n      \"requires\": [\"presentation.particle-cue@1\"],");
+                },
+                f -> f.contains("requirements form a cycle"), baseline);
+        expect(root, "a requirement on a contract that does not exist", r -> replace(r.resolve("contracts/registry.json"),
+                        "\"id\": \"presentation.particle-cue@1\",", "\"id\": \"presentation.particle-cue@1\",\n      \"requires\": [\"nowhere.at.all@1\"],"),
+                f -> f.contains("requires unknown contract nowhere.at.all@1"), baseline);
         expect(root, "a plugin class the map does not name", r -> write(r.resolve("gradle-plugin/src/main/java/dev/woflo/mycelium/gradle/Unmapped.java"),
                         "package dev.woflo.mycelium.gradle; final class Unmapped {}"),
                 f -> f.contains("Unmapped.java"), baseline);

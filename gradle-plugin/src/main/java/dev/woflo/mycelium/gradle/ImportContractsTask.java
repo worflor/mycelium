@@ -57,9 +57,19 @@ public abstract class ImportContractsTask extends DefaultTask {
             getLogger().lifecycle("Mycelium: no contracts selected; nothing imported");
             return;
         }
-        int files = 0;
-        for (String id : ids) {
-            ContractRegistry.Entry entry = registry.require(id);
+        List<ContractRegistry.Entry> entries = importInto(root, registry, ids, namespace, out);
+        getLogger().lifecycle("Mycelium: imported {} contract(s) (requirements included) under {}", entries.size(), namespace);
+    }
+
+    /**
+     * Copies the selected contracts' models, and the models they require (transitively), under {@code namespace}: a
+     * contract's requirements come with it, so what it imports is the consumer's own copy. Returns what was imported.
+     */
+    static List<ContractRegistry.Entry> importInto(Path root, ContractRegistry registry, List<String> ids, String namespace, Path out)
+            throws IOException {
+        List<ContractRegistry.Entry> entries = registry.withRequirements(registry.resolve(ids));
+        for (ContractRegistry.Entry entry : entries) {
+            String id = entry.id();
             Path modelDir = root.resolve("contracts").resolve(entry.path()).resolve("src")
                     .resolve(entry.pkg().replace('.', '/')).resolve("model");
             if (!Files.isDirectory(modelDir)) {
@@ -81,11 +91,10 @@ public abstract class ImportContractsTask extends DefaultTask {
                     Path dest = target.resolve(modelDir.relativize(source).toString());
                     Files.createDirectories(dest.getParent());
                     Files.writeString(dest, rewritten, StandardCharsets.UTF_8);
-                    files++;
                 }
             }
         }
-        getLogger().lifecycle("Mycelium: imported {} model file(s) for {} contract(s) under {}", files, ids.size(), namespace);
+        return entries;
     }
 
     static String rewrite(String text, String namespace) {
