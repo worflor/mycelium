@@ -28,6 +28,20 @@ for consumers with immutable component definitions.
 Ran: `.\run-contracts.ps1 item-component` (clean, 6 rejections caught), `.\run-contracts.ps1` (all 19 packages PASS,
 142 rejections caught), and `./gradlew check` (all 18 tasks green: `myceliumRepository`, `myceliumPurity`,
 `myceliumVerify`, and era gates from Java 8 to Java 25).
+## 2026-10-08 - Dedicated-server linkage surface
+
+The optional `linkage.serverRuntimeArchive` input lets a target provide its exact dedicated-server game jar in the artifact's runtime
+names. The linkage gate checks references against that class inventory as well as published names when available, or against the
+inventory alone when a version has no name row. The task records its version, namespace and SHA-256; class scope is explicit and
+must agree with published name data when present. This catches a mapping-listed client-only member without starting a server.
+
+The `linkage-consumer` fixture includes a positive exact-server inventory, `-PlinkageServerBreak=1.21.1` (which leaves the method
+in Tiny mappings but removes it from the server surface), and `-PlinkageServerRuntime=false` (which leaves the optional input unset).
+`LinkageSelfTest` covers an inherited server method, that
+mapping-present/server-absent failure, an unknown hierarchy reported as unverified, and a runtime-only version with no name row.
+Verification: `./gradlew check` passes on Java 21 with the installed Java 8, 16, 17 and 25 toolchains; the positive and optional-unset
+fixtures pass, and the server-surface rejection fixture fails on the expected mapping-present/server-absent method. The launcher
+self-test selects the platform's Java executable, and `gradlew` is executable in source control.
 
 ## 2026-10-07 - License
 

@@ -43,6 +43,7 @@ final class LinkageSelfTest {
             "MD: e/c ()V " + BASE + "/toString ()V") + "\n";
 
     static void run(Path root) throws IOException {
+        serverRuntimeValidation();
         references();
         names();
         inventory();
@@ -52,6 +53,28 @@ final class LinkageSelfTest {
         exclusions(root);
         bundle();
         refresh(root);
+    }
+
+    private static void serverRuntimeValidation() {
+        LinkageTask.validateServerRuntime("fixture", "1.21.1", "intermediary", "intermediary",
+                List.of("net/minecraft/"), true, List.of("net/minecraft/"));
+        LinkageTask.validateServerRuntime("fixture", "1.21.1", "intermediary", "intermediary",
+                List.of("net/minecraft/", "com/mojang/"), true, List.of("com/mojang/", "net/minecraft/"));
+        SelfTest.that(SelfTest.refuses(() -> LinkageTask.validateServerRuntime("fixture", "1.21.1", "intermediary", "srg",
+                        List.of("net/minecraft/"), true, List.of("net/minecraft/")), "server runtime namespace"),
+                "linkage:the server inventory namespace must match the artifact");
+        SelfTest.that(SelfTest.refuses(() -> LinkageTask.validateServerRuntime("fixture", "1.21.1", "intermediary", "intermediary",
+                        List.of(), true, List.of("net/minecraft/")), "serverRuntimeOwns"),
+                "linkage:an empty server inventory scope is refused");
+        SelfTest.that(SelfTest.refuses(() -> LinkageTask.validateServerRuntime("fixture", "1.21.1", "intermediary", "intermediary",
+                        List.of("net/minecraft"), true, null), "serverRuntimeOwns"),
+                "linkage:server inventory prefixes must end at a package boundary");
+        SelfTest.that(SelfTest.refuses(() -> LinkageTask.validateServerRuntime("fixture", "1.21.1", "intermediary", "intermediary",
+                        List.of("net/minecraft/"), false, List.of("net/minecraft/")), "outside the declared range"),
+                "linkage:an out-of-range server inventory is refused");
+        SelfTest.that(SelfTest.refuses(() -> LinkageTask.validateServerRuntime("fixture", "1.21.1", "intermediary", "intermediary",
+                        List.of("net/minecraft/"), true, List.of("net/minecraft/", "org/minecraft/")), "differs from the published"),
+                "linkage:the server inventory scope must match published game scope when present");
     }
 
     // --- the game's own classes ------------------------------------------------------------------------------------------
@@ -269,6 +292,32 @@ final class LinkageSelfTest {
         SelfTest.that(inter.hasField(List.of("x"), "field_10", "Lnet/minecraft/class_2;") == Names.Verdict.PRESENT
                         && inter.hasField(List.of("x"), "field_10", "I") == Names.Verdict.ABSENT,
                 "linkage:a Tiny field is held to its descriptor as well as its name");
+
+        References.Found clientCall = new References.Found(Map.of(
+                new References.Ref('M', List.of("net/minecraft/class_1"), "method_20", "(Lnet/minecraft/class_1;I)Lnet/minecraft/class_2;"), "fixture/Uses#read"), 1, 0);
+        Map<String, byte[]> serverClasses = new LinkedHashMap<>();
+        serverClasses.put("net/minecraft/class_1", clazz("net/minecraft/class_1", "net/minecraft/class_2", null,
+                new String[0], new String[0]));
+        serverClasses.put("net/minecraft/class_2", clazz("net/minecraft/class_2", "java/lang/Object", null,
+                new String[0], new String[] {"method_20 (Lnet/minecraft/class_1;I)Lnet/minecraft/class_2;"}));
+        Inventory serverWithInheritedMember = Inventory.over("dedicated server test", serverClasses);
+        LinkageGate.Check serverPositive = LinkageGate.check(clientCall, List.of("net/minecraft/"), inter, serverWithInheritedMember);
+        SelfTest.that(serverPositive.unresolved().isEmpty(),
+                "linkage:an exact server member inherited from a game superclass satisfies a mapped reference");
+        serverClasses.put("net/minecraft/class_2", clazz("net/minecraft/class_2", "java/lang/Object", null,
+                new String[0], new String[0]));
+        Inventory serverWithoutClientMember = Inventory.over("dedicated server test", serverClasses);
+        LinkageGate.Check serverNegative = LinkageGate.check(clientCall, List.of("net/minecraft/"), inter, serverWithoutClientMember);
+        SelfTest.that(serverNegative.unresolved().size() == 1
+                        && serverNegative.unresolved().get(0).text().contains("method net/minecraft/class_1.method_20"),
+                "linkage:a mapping-listed client method absent from the dedicated-server class hierarchy is rejected");
+        Map<String, byte[]> unknownServerClasses = new LinkedHashMap<>();
+        unknownServerClasses.put("net/minecraft/class_1", clazz("net/minecraft/class_1", "external/Base", null,
+                new String[0], new String[0]));
+        Inventory unknownServer = Inventory.over("server hierarchy ending outside game inventory", unknownServerClasses);
+        LinkageGate.Check unknownCheck = LinkageGate.check(clientCall, List.of("net/minecraft/"), inter, unknownServer);
+        SelfTest.that(unknownCheck.unresolved().isEmpty() && unknownCheck.serverRuntimeUnchecked() == 1,
+                "linkage:an unknown server hierarchy stays explicitly unverified instead of borrowing a mapping-only presence");
     }
 
     /** A server bundle, as Mojang ships it from 1.18: the game's jar and its libraries' jars inside one archive. */
@@ -507,6 +556,39 @@ final class LinkageSelfTest {
                             && statusOf(bad, "1.8.8").getAsJsonObject("linkage").get("status").getAsString().equals("linked"),
                     "linkage:only that release is broken");
 
+            Map<String, byte[]> runtimeClasses = new LinkedHashMap<>();
+            runtimeClasses.put(WORLD, clazz(WORLD, "java/lang/Object", null, new String[0], new String[] {"func_1_a (I)V"}));
+            runtimeClasses.put("net/minecraft/block/Blocks", clazz("net/minecraft/block/Blocks", "java/lang/Object",
+                    null, new String[] {"field_9_z Lnet/minecraft/block/Block;"}, new String[0]));
+            runtimeClasses.put("net/minecraft/block/Block", clazz("net/minecraft/block/Block", "java/lang/Object", null,
+                    new String[0], new String[0]));
+            runtimeClasses.put("net/minecraft/entity/Gone", clazz("net/minecraft/entity/Gone", "java/lang/Object", null,
+                    new String[0], new String[0]));
+            runtimeClasses.put(BASE, clazz(BASE, "java/lang/Object", null, new String[0], new String[] {"func_71_b ()V", "toString ()V"}));
+            Names exactRuntime = Inventory.over("server inventory with no mapping row", runtimeClasses);
+            LinkageGate.Result runtimeOnly = LinkageGate.evaluate(range, claim, null, eras, lockOver(dir, Map.of()), found,
+                    loader, Map.of(), Map.of("1.8", exactRuntime), Map.of("1.8", List.of("net/minecraft/")), true);
+            SelfTest.that(runtimeOnly.findings().isEmpty()
+                            && statusOf(runtimeOnly, "1.8").getAsJsonObject("linkage").get("status").getAsString().equals("linked"),
+                    "linkage:an exact server inventory can hold the target version when no published names row exists");
+            Map<String, byte[]> runtimeMissingMethod = new LinkedHashMap<>(runtimeClasses);
+            runtimeMissingMethod.put(WORLD, clazz(WORLD, "java/lang/Object", null, new String[0], new String[0]));
+            LinkageGate.Result runtimeOnlyBroken = LinkageGate.evaluate(range, claim, null, eras, lockOver(dir, Map.of()), found,
+                    loader, Map.of(), Map.of("1.8", Inventory.over("server inventory without mapped method", runtimeMissingMethod)),
+                    Map.of("1.8", List.of("net/minecraft/")), true);
+            SelfTest.that(runtimeOnlyBroken.findings().size() == 1 && runtimeOnlyBroken.findings().get(0).startsWith("1.8:")
+                            && runtimeOnlyBroken.findings().get(0).contains("the supplied dedicated-server inventory"),
+                    "linkage:an exact server-only failure names its inventory when no published row exists");
+            Map<String, byte[]> unknownRuntimeClasses = new LinkedHashMap<>(runtimeClasses);
+            unknownRuntimeClasses.put(WORLD, clazz(WORLD, "external/Base", null, new String[0], new String[0]));
+            Names unknownRuntime = Inventory.over("server hierarchy outside supplied game scope", unknownRuntimeClasses);
+            LinkageGate.Result runtimeUnknown = LinkageGate.evaluate(range, claim, null, eras, fine, found, loader,
+                    Map.of(), Map.of("1.8", unknownRuntime), Map.of("1.8", List.of("net/minecraft/")), false);
+            JsonObject unknownLink = statusOf(runtimeUnknown, "1.8").getAsJsonObject("linkage");
+            SelfTest.that(runtimeUnknown.findings().isEmpty() && unknownLink.get("status").getAsString().equals("unverified")
+                            && unknownLink.getAsJsonObject("checked").get("serverRuntimeUnchecked").getAsInt() > 0,
+                    "linkage:an external hierarchy edge is reported unverified, not as server-linked");
+
             // a method whose descriptor changed, and a field the release lacks
             NameData changed = lockOver(dir, Map.of("1.8.8", SRG_FULL.replace("func_1_a (I)V", "func_1_a (II)V"),
                     "1.8.9", SRG_FULL.replace("FD: b/a net/minecraft/block/Blocks/field_9_z\n", "")));
@@ -529,6 +611,14 @@ final class LinkageSelfTest {
             SelfTest.that(byRuntime.findings().isEmpty() && statusOf(byRuntime, "1.8").get("status").getAsString().equals("linked")
                             && statusOf(byRuntime, "1.8").getAsJsonObject("linkage").get("by").getAsString().equals("a runtime view"),
                     "linkage:a version linked by a runtime the build ran against is linked, and says by what");
+            runtimeClasses.put(WORLD, clazz(WORLD, "java/lang/Object", null, new String[0], new String[0]));
+            Names serverMissingMappedMethod = Inventory.over("dedicated server missing mapped method", runtimeClasses);
+            LinkageGate.Result runtimeAndServer = LinkageGate.evaluate(range, claim, null, eras, fine, found, loader,
+                    Map.of("1.8", "a runtime view"), Map.of("1.8", serverMissingMappedMethod),
+                    Map.of("1.8", List.of("net/minecraft/")), false);
+            SelfTest.that(runtimeAndServer.findings().size() == 1 && runtimeAndServer.findings().get(0).startsWith("1.8:")
+                            && runtimeAndServer.findings().get(0).contains("method " + WORLD + ".func_1_a"),
+                    "linkage:a capsule runtime shortcut cannot bypass an exact dedicated-server surface failure");
 
             // data that is pinned and cannot be had: a failure online, a record offline
             NameData gone = lockOver(dir, Map.of("1.8", SRG_FULL));

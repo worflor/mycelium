@@ -669,7 +669,10 @@ public final class RepositoryCheck {
      */
     static boolean looksLikePath(String token, List<Path> bases) {
         if (token.contains("<") || token.contains("*") || token.contains("{") || token.contains(" ") || token.contains("...")
-                || token.contains("$") || token.contains("://") || token.contains("\\")) {
+                || token.contains("$") || token.contains("://") || token.contains("\\")
+                // code, not a path: a call or a string literal (and on Windows a quote cannot even be resolved)
+                || token.contains("(") || token.contains("\"") || token.contains("'") || token.contains("|")
+                || token.contains("?") || token.contains(">")) {
             return false;
         }
         if (token.contains("/build/") || token.startsWith("build/")) {

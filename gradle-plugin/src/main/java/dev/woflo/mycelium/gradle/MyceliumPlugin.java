@@ -363,6 +363,12 @@ public final class MyceliumPlugin implements Plugin<Project> {
                         t.getSourceFingerprint().set(fingerprint);
                         t.getRangeReport().set(rangeTask.flatMap(RangeTask::getReportFile));
                         t.getArchive().set(spec.getArchive());
+                        t.getServerRuntimeArchive().set(spec.getServerRuntimeArchive());
+                        t.getServerRuntimeNamespace().set(spec.getServerRuntimeNamespace());
+                        t.getServerRuntimeOwns().set(spec.getServerRuntimeOwns());
+                        if (ext.getMinecraft().isPresent()) {
+                            t.getMinecraft().set(ext.getMinecraft());
+                        }
                         t.getNestedJars().set(spec.getNestedJars());
                         t.getNamespace().set(spec.getNamespace());
                         t.getExcluded().from(spec.getExclude());

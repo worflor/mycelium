@@ -75,7 +75,9 @@ an era needs it (`docs/eras.md`); `integration(...)` declares an optional integr
 read from a ledger or written out, and `myceliumRange` holds the claim to the era table, the proofs and the loader's own
 metadata (`docs/decisions/0009-the-range-gate.md`); `range { linkage { } }` adds `myceliumLinkage`, which holds the finished
 artifact's every reference to the game's published names on each version of the range that has name data
-(`docs/decisions/0010-linkage-at-each-version.md`).
+(`docs/decisions/0010-linkage-at-each-version.md`). A loader build can additionally supply the exact dedicated-server game
+archive for its target version, already remapped to the artifact's runtime namespace; this catches members present in merged
+development mappings but absent from the server jar.
 
 `artifactJars("jar")` selects the Jar tasks that receive the artifact's private pure classes and evidence. This keeps
 independent probes and source archives separate. An empty selection preserves attachment to every Jar task; a
@@ -96,7 +98,7 @@ apply regardless of which archives receive the artifact.
 | `myceliumCapsule` | When `mycelium.capsule` is configured, checks outer and nested class-file ceilings, source-to-runtime class mappings, and erased class/member references from bytecode and `StackMapTable` frames against ordered, declared runtime artifacts. Generic `Signature` attributes and source-debug local-variable tables are not checked; the gate does not replace JVM verification. Writes exact SHA-256 inputs to `build/mycelium/capsule/capsule.json` and runs in `check`. |
 | `myceliumSurface` | Reports platform references per package of the mod's own sources, split into declared `ports(...)` and everything else: the cost the next rung would have to eat (`docs/eras.md`). |
 | `myceliumRange` | When `mycelium.range` is declared, holds the claimed Minecraft versions to the era table (the loader exists on each), the proofs (a keystone, and a proof on each side of every wall inside the range) and the metadata the built artifact declares to its loader (it accepts every claimed version). Records each version as `proven`, `pending` or `interpolated` in `build/mycelium/range/range.json`, which the evidence manifest carries. In `check`. |
-| `myceliumLinkage` | When `mycelium.range { linkage { } }` is declared, holds every class, method and field the finished artifact references to the game's published names (`eras/names.json`: Searge, intermediary, Mojang's mappings, the game's own jar, an API's jar, each pinned by SHA-256 and cached) on each version of the claimed range that has name data, and fails the build naming the reference and the version when one does not resolve. Records each version as `proven`, `pending`, `linked` or `interpolated` in `build/mycelium/linkage/linkage.json`. In `check`. |
+| `myceliumLinkage` | When `mycelium.range { linkage { } }` is declared, holds every class, method and field the finished artifact references to the game's published names (`eras/names.json`: Searge, intermediary, Mojang's mappings, the game's own jar, an API's jar, each pinned by SHA-256 and cached) on each version of the claimed range that has name data. Optional `serverRuntimeArchive`, `serverRuntimeNamespace` and `serverRuntimeOwns` inputs also hold the target version to an exact dedicated-server game inventory in the artifact's runtime names. The build fails naming a reference and version when a member is absent; it records the runtime archive's hash. In `check`. |
 | `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (every Jar by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |
@@ -140,7 +142,10 @@ ForgeGradle does, which the task must order itself after `compileJava` to read.
 
 `./gradlew -p gradle-plugin/src/test/fixtures/linkage-consumer check` proves a Fabric artifact whose range's first version is
 linked from name data the build pins itself and whose second stays proven; `-PlinkageBreak=1.21` removes the method the artifact
-calls from 1.21's data, which `myceliumLinkage` must refuse by naming the reference and the version.
+calls from 1.21's data, which `myceliumLinkage` must refuse by naming the reference and the version. The fixture supplies an exact
+server game archive; `-PlinkageServerBreak=1.21.1` leaves the method in Tiny mappings but removes it from that server archive, and
+the same gate must refuse it. `-PlinkageServerRuntime=false` proves the optional inputs may remain unset. A consumer opts into this check with `serverRuntimeArchive.set(...)`,
+`serverRuntimeNamespace.set("intermediary")` (or its actual runtime namespace), and `serverRuntimeOwns.set(listOf("net/minecraft/"))`.
 
 ## License
 

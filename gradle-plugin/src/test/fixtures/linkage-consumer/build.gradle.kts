@@ -14,6 +14,8 @@ plugins {
 repositories { mavenCentral() }
 
 val plantedBreak: String = providers.gradleProperty("linkageBreak").getOrElse("")
+val plantedServerBreak: String = providers.gradleProperty("linkageServerBreak").getOrElse("")
+val useServerRuntime: Boolean = providers.gradleProperty("linkageServerRuntime").getOrElse("true") != "false"
 
 abstract class WriteNames : DefaultTask() {
     @get:Input
@@ -47,6 +49,33 @@ val writeNames = tasks.register<WriteNames>("writeNames") {
     dir.set(layout.buildDirectory.dir("names"))
 }
 
+val serverGame = sourceSets.create("serverGame") {
+    java.srcDir(layout.buildDirectory.dir("generated/server-game"))
+}
+abstract class WriteServerGame : DefaultTask() {
+    @get:Input abstract val broken: Property<String>
+    @get:OutputDirectory abstract val dir: DirectoryProperty
+    @TaskAction fun write() {
+        val source = dir.get().file("net/minecraft/class_1937.java").asFile
+        source.parentFile.mkdirs()
+        source.writeText(buildString {
+            append("package net.minecraft;\npublic class class_1937 { public int field_5;\n")
+            if (broken.getOrElse("") != "1.21.1") append("public int method_8320(int position) { return position; }\n")
+            append("}\n")
+        }, Charsets.UTF_8)
+    }
+}
+val writeServerGame = tasks.register<WriteServerGame>("writeServerGame") {
+    broken.set(plantedServerBreak)
+    dir.set(layout.buildDirectory.dir("generated/server-game"))
+}
+tasks.named(serverGame.compileJavaTaskName) { dependsOn(writeServerGame) }
+val serverJar = tasks.register<Jar>("serverJar") {
+    dependsOn(serverGame.classesTaskName)
+    from(serverGame.output)
+    archiveClassifier.set("dedicated-server")
+}
+
 mycelium {
     root = rootProject.file("../../../../..")
     namespace = "fixture.linkage.mycelium"
@@ -63,6 +92,11 @@ mycelium {
         linkage {
             names.set(writeNames.flatMap { it.dir.file("names.json") })
             cache.set(layout.buildDirectory.dir("names-cache"))
+            if (useServerRuntime) {
+                serverRuntimeArchive.set(serverJar.flatMap { it.archiveFile })
+                serverRuntimeNamespace.set("intermediary")
+                serverRuntimeOwns.set(listOf("net/minecraft/"))
+            }
         }
     }
 }
@@ -89,6 +123,20 @@ val verifyLinkage = tasks.register("verifyLinkage") {
         @Suppress("UNCHECKED_CAST")
         val versions = (parsed["versions"] as List<Map<String, Any>>).associate { it["version"] as String to it["status"] as String }
         check(versions == mapOf("1.21" to "linked", "1.21.1" to "proven")) { "the linkage report says $versions, not 1.21 linked and 1.21.1 proven" }
+        @Suppress("UNCHECKED_CAST")
+        val targetLinkage = (parsed["versions"] as List<Map<String, Any>>).first { it["version"] == "1.21.1" }["linkage"] as Map<String, Any>
+        if (useServerRuntime) {
+            @Suppress("UNCHECKED_CAST")
+            val server = parsed["serverRuntime"] as Map<String, Any>
+            check(server["version"] == "1.21.1" && server["namespace"] == "intermediary"
+                && (server["sha256"] as String).matches(Regex("[0-9a-f]{64}"))) {
+                "the server runtime inventory identity is missing or incomplete: $server"
+            }
+            check(targetLinkage["serverRuntime"] is String) { "the target linkage row does not report its server inventory: $targetLinkage" }
+        } else {
+            check(parsed["serverRuntime"] == null) { "an unset server runtime appears in the report: ${parsed["serverRuntime"]}" }
+            check(!targetLinkage.containsKey("serverRuntime")) { "an unset server runtime appears in a target row: $targetLinkage" }
+        }
         ZipFile(jar.get().asFile).use { zip ->
             check(zip.getEntry("net/minecraft/class_1937.class") == null) { "the game's stand-in class was shipped" }
         }

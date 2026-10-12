@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
@@ -544,7 +545,8 @@ public final class SelfTest {
     }
 
     private static Process launcherFixture(String mode) throws IOException {
-        Path java = Path.of(System.getProperty("java.home"), "bin", "java.exe");
+        String executable = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows") ? "java.exe" : "java";
+        Path java = Path.of(System.getProperty("java.home"), "bin", executable);
         return new ProcessBuilder(java.toString(), "-cp", System.getProperty("java.class.path"),
                 LauncherProcessFixture.class.getName(), mode).redirectErrorStream(true).start();
     }
@@ -1919,6 +1921,10 @@ public final class SelfTest {
                 f -> f.contains("AGENTS.md") && f.contains("twelve contract packages"), baseline);
         expect(root, "a path that does not exist", r -> append(r.resolve("CONTRACT-PACKAGE.md"), "\nSee `harness/src/mycelium/harness/Nowhere.java`.\n"),
                 f -> f.contains("Nowhere.java"), baseline);
+        // code that happens to start with a directory's name is not a path, and must not stop the check (a quote throws on Windows)
+        expect(root, "code in backticks naming a directory", r -> append(r.resolve("CONTRACT-PACKAGE.md"),
+                        "\nSet `harness.set(listOf(\"harness/Nowhere/\"))`.\n"),
+                f -> f.contains("Nowhere"), baseline, false);
         expect(root, "a package keeping its own harness", r -> write(r.resolve("contracts/cue/src/mycelium/cue/v1/harness/Check.java"),
                         "package mycelium.cue.v1.harness; public final class Check {}"),
                 f -> f.contains("cue") && f.contains("own Check.java"), baseline);
