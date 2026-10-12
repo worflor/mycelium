@@ -273,7 +273,11 @@ public final class StandardRosettaTranslator implements RosettaTranslator {
                         FieldAwareCodec<?> fac = def.fieldAwareCodec().get();
                         FieldAwareCodec.DecodedResult<?> res = fac.decodeFieldAware(tc);
                         components.put(id, res.value());
-                        retainedResiduals.put(id, res.remainder());
+                        if (!res.remainder().isEmpty()) {
+                            // only what the lens did not know: nothing left over is nothing retained, so a value
+                            // read and written back is the snapshot it was (T1)
+                            retainedResiduals.put(id, res.remainder());
+                        }
                     } else {
                         Object decoded = def.decodeValue(node);
                         components.put(id, decoded);

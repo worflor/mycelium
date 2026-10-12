@@ -556,6 +556,7 @@ public final class ItemComponentContractTests {
             CarrierSnapshot s = CarrierSnapshot.empty().with(id, charm);
             CarrierSnapshot back = translator.fromLegacyNbt(translator.toLegacyNbt(s, registry), registry);
             c.equal(charm, back.get(id), "T12:record-round-trip");
+            c.equal(s, back, "T12:record-round-trip"); // the whole snapshot: a lens with nothing left over retains nothing
         }
 
         // An absent optional is not written, a present one is

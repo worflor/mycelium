@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-12 - item.component@1: a lens with nothing left over retains nothing
+
+Reading a component whose definition has a `FieldAwareCodec` recorded its remainder even when it was empty, so a value read
+and written back was a `CarrierSnapshot` unequal to the one it came from (T1). `StandardRosettaTranslator` now retains a
+remainder only when it holds something, and the record laws assert whole-snapshot equality. Found by Somnium's first
+record components; additive within `@1`.
+
 ## 2026-10-11 - item.component@1: Data Component <-> NBT Carrier Translation
 
 Added `item.component@1` (`contracts/item-component`): a pure, deterministic bidirectional translation and carrier model
