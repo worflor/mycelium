@@ -39,6 +39,7 @@ public final class SelfTest {
         eras(root);
         registry();
         requirementsImport();
+        presentation(root);
         integrations();
         evidence();
         loaders(root);
@@ -1150,6 +1151,107 @@ public final class SelfTest {
         } finally {
             delete(root);
         }
+    }
+
+    // --- item presentation (docs/decisions/0012) -----------------------------------------------------------------------
+
+    static void presentation(Path root) throws IOException {
+        Eras eras = Eras.load(root.toFile());
+        String[][] expect = {{"26.3", "item-definition"}, {"1.21.11", "item-definition"}, {"1.21.4", "item-definition"},
+                {"1.21.3", "model-overrides"}, {"1.20.1", "model-overrides"}, {"1.14", "model-overrides"},
+                {"1.13.2", "none"}, {"1.12.2", "none"}, {"b1.7.3", "none"}, {"c0.30_01c", "none"}};
+        for (String[] e : expect) {
+            that(e[1].equals(eras.presentationFor(e[0])), "presentation:" + e[0] + " is " + e[1]);
+        }
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"presentation\":[{\"from\":\"1.0\",\"to\":\"1.x\",\"realization\":\"magic\"}]}", "t"),
+                "is not one of"), "presentation:an unknown realization is refused, by name");
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"presentation\":[{\"from\":\"1.0\",\"realization\":\"none\"}]}", "t"),
+                "a presentation row is"), "presentation:a row without its range is refused");
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[]}", "t").presentationFor("1.21.4"), "no presentation row covers"),
+                "presentation:a table without rows answers no version");
+
+        Path base = copy(root);
+        Set<String> baseline = findings(base);
+        delete(base);
+        expect(root, "a gap in the presentation table", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1.14\", \"to\": \"1.21.3\"", "\"from\": \"1.15\", \"to\": \"1.21.3\""),
+                f -> f.contains("Minecraft 1.14 falls in no presentation row"), baseline);
+        expect(root, "an overlap in the presentation table", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"to\": \"1.13.2\", \"realization\": \"none\"", "\"to\": \"1.14\", \"realization\": \"none\""),
+                f -> f.contains("Minecraft 1.14 falls in several presentation rows"), baseline);
+        expect(root, "a presentation bound that names no real version", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1.21.4\", \"to\": \"26.x\"", "\"from\": \"1.21.44\", \"to\": \"26.x\""),
+                f -> f.contains("bound '1.21.44' is not a version the launcher names"), baseline);
+        expect(root, "an unknown realization", r -> replace(r.resolve("eras/minecraft.json"), "\"realization\": \"none\"", "\"realization\": \"nothing\""),
+                f -> f.contains("realization 'nothing' is not one of"), baseline);
+        expect(root, "a presentation row that runs backwards", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1.14\", \"to\": \"1.21.3\"", "\"from\": \"1.21.3\", \"to\": \"1.14\""),
+                f -> f.contains("runs backwards"), baseline);
+
+        // the tasks' core, on the fixture consumer's own sources
+        Path fixture = root.resolve("gradle-plugin/src/test/fixtures/presentation-consumer/src/main/presentation");
+        Path scratch = Files.createTempDirectory("mycelium-presentation");
+        try {
+            Path sources = scratch.resolve("src/main/presentation");
+            mkdirs(sources);
+            for (String name : List.of("components.json", "status_tool.json")) {
+                Files.copy(fixture.resolve(name), sources.resolve(name));
+            }
+            Path components = sources.resolve("components.json");
+            Path lock = sources.resolve("presentation.lock.json");
+            Path work = scratch.resolve("work");
+
+            Presentation.Outcome missing = Presentation.compile(root, work, "1.21.4", sources, components, lock);
+            that(!missing.ok() && missing.diagnostics().stream().anyMatch(d -> d.contains("LOCK_MISSING") && d.contains("\"code\": 1")),
+                    "presentation:a build against a lock that lacks selections fails, with the lines to add: " + missing.diagnostics());
+            that(!Files.exists(lock), "presentation:the build never writes the lock");
+            Presentation.Outcome completed = Presentation.complete(root, work, sources, components, lock);
+            that(completed.ok() && completed.added().size() == 12 && completed.lock() != null,
+                    "presentation:the lock task adds the 12 selections of the band: " + completed.diagnostics());
+            Files.writeString(lock, completed.lock(), StandardCharsets.UTF_8);
+            that(Presentation.complete(root, work, sources, components, lock).added().isEmpty(), "presentation:completing a complete lock adds nothing");
+
+            Presentation.Outcome modern = Presentation.compile(root, work, "1.21.4", sources, components, lock);
+            that(modern.ok() && "item-definition".equals(modern.realization()) && modern.files().containsKey("assets/fixture/items/status_tool.json")
+                            && modern.files().containsKey("META-INF/mycelium/presentation/fixture/status_tool.plan.json") && modern.files().size() == 2,
+                    "presentation:1.21.4 gets an item definition and the plan: " + modern.diagnostics() + modern.files().keySet());
+            Presentation.Outcome legacy = Presentation.compile(root, work, "1.20.1", sources, components, lock);
+            that(legacy.ok() && "model-overrides".equals(legacy.realization()) && legacy.files().containsKey("assets/fixture/models/item/status_tool.json"),
+                    "presentation:1.20.1 gets an item model with overrides: " + legacy.diagnostics());
+            that(modern.files().equals(Presentation.compile(root, work, "1.21.4", sources, components, lock).files()),
+                    "presentation:the same inputs give the same files");
+            Presentation.Outcome none = Presentation.compile(root, work, "1.12.2", sources, components, lock);
+            that(!none.ok() && none.diagnostics().stream().anyMatch(d -> d.contains("NO_REALIZATION") && d.contains("1.12.2")),
+                    "presentation:a version with no mechanism fails, naming it: " + none.diagnostics());
+
+            // the lock is only ever appended to
+            String before = Files.readString(lock, StandardCharsets.UTF_8);
+            Files.writeString(sources.resolve("status_tool.json"), Files.readString(sources.resolve("status_tool.json"), StandardCharsets.UTF_8)
+                    .replace("\"cases\": [", "\"cases\": [\n    {\"when\": {\"seams\": 3, \"cracks\": 2, \"broken\": false}, \"model\": \"fixture:item/aaa_prime\"},"),
+                    StandardCharsets.UTF_8);
+            Presentation.Outcome grown = Presentation.complete(root, work, sources, components, lock);
+            String oldEntries = before.substring(before.indexOf("\"fixture:status_tool\""), before.indexOf("\n    ]\n"));
+            that(grown.ok() && grown.added().size() == 1 && grown.lock().contains(oldEntries),
+                    "presentation:a new case appends one line and keeps every old one: " + grown.diagnostics() + grown.added());
+
+            // a program over a server-private component is refused, by the build and by the lock task
+            Files.writeString(sources.resolve("leak.json"), "{\"item\": \"fixture:leak\", \"base\": \"fixture:item/leak_base\", \"inputs\": {\"late\": "
+                    + "{\"component\": \"fixture:server_state\", \"field\": \"deadline\", \"domain\": {\"int\": [0, 9]}}}, \"cases\": "
+                    + "[{\"when\": {\"late\": {\"min\": 5}}, \"model\": \"fixture:item/leak_late\"}]}", StandardCharsets.UTF_8);
+            Files.writeString(lock, grown.lock(), StandardCharsets.UTF_8);
+            Presentation.Outcome leaked = Presentation.compile(root, work, "1.21.4", sources, components, lock);
+            that(!leaked.ok() && leaked.diagnostics().stream().anyMatch(d -> d.contains("SERVER_PRIVATE") && d.contains("fixture:server_state")),
+                    "presentation:an input over a server-private component fails the build: " + leaked.diagnostics());
+            Presentation.Outcome leakedLock = Presentation.complete(root, work, sources, components, lock);
+            that(!leakedLock.ok() && leakedLock.lock() == null, "presentation:the lock task changes nothing while a program is refused");
+            Files.delete(sources.resolve("leak.json"));
+
+            Files.delete(components);
+            that(!Presentation.compile(root, work, "1.21.4", sources, components, lock).ok(), "presentation:a missing catalog fails the build");
+        } finally {
+            delete(scratch);
+        }
+
     }
 
     // --- integrations ------------------------------------------------------------------------------------------------

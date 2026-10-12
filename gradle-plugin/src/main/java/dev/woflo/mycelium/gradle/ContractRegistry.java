@@ -218,7 +218,9 @@ public final class ContractRegistry {
             }
         }
         for (Entry e : out) {
-            if (e.supersedes() != null && out.stream().anyMatch(o -> o.id().equals(e.supersedes()))) {
+            // two selected contracts are `resolve`'s business (an empty selection verifies both); a requirement is not selected
+            if (e.supersedes() != null && out.stream().anyMatch(o -> o.id().equals(e.supersedes()))
+                    && (!selected.contains(e) || !selected.contains(require(e.supersedes())))) {
                 throw new IllegalStateException("Mycelium: " + e.id() + " supersedes " + e.supersedes()
                         + ", and both would be imported (one as a requirement of another selected contract)");
             }

@@ -99,6 +99,17 @@ public abstract class MyceliumExtension {
     @Nested
     public abstract RangeSpec getRange();
 
+    /**
+     * Where the consumer keeps its item presentation programs (docs/decisions/0012); the defaults are the layout
+     * {@code src/main/presentation/}, so most builds declare nothing.
+     */
+    @Nested
+    public abstract PresentationSpec getPresentation();
+
+    public void presentation(Action<? super PresentationSpec> action) {
+        action.execute(getPresentation());
+    }
+
     public void range(Action<? super RangeSpec> action) {
         action.execute(getRange());
     }

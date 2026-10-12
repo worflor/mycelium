@@ -101,10 +101,25 @@ public final class Eras {
         return value;
     }
 
-    private final List<Era> eras;
+    /** The mechanisms a version can draw an item's state with ({@code presentation} rows of the era table). */
+    public static final java.util.Set<String> REALIZATIONS = java.util.Set.of("item-definition", "model-overrides", "none");
 
-    private Eras(List<Era> eras) {
+    /**
+     * A range of versions and the mechanism they draw an item's state with (docs/decisions/0012): its own table, because
+     * the ranges cross the eras (model overrides run from 1.14 to 1.21.3, through four eras). Bounds are as an era's are.
+     */
+    public record Presentation(String from, String to, String realization, String what) {
+        public boolean covers(String minecraft) {
+            return atLeast(minecraft, from) && atMost(minecraft, to);
+        }
+    }
+
+    private final List<Era> eras;
+    private final List<Presentation> presentation;
+
+    private Eras(List<Era> eras, List<Presentation> presentation) {
         this.eras = eras;
+        this.presentation = presentation;
     }
 
     public static Eras load(File myceliumRoot) {
@@ -130,7 +145,32 @@ public final class Eras {
                     strings(o, "loaders"), names(o, id, where), walls(o, id, where), strings(o, "notes"), since(o),
                     outerJava(o, id, where)));
         }
-        return new Eras(out);
+        return new Eras(out, presentation(root, where));
+    }
+
+    private static List<Presentation> presentation(JsonObject root, String where) {
+        List<Presentation> out = new ArrayList<>();
+        if (!root.has("presentation")) {
+            return out;
+        }
+        for (JsonElement e : root.getAsJsonArray("presentation")) {
+            JsonObject o = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
+            for (String key : o.keySet()) {
+                if (!List.of("from", "to", "realization", "what").contains(key)) {
+                    throw new IllegalStateException(where + ": a presentation row has from, to, realization and what, not '" + key + "'");
+                }
+            }
+            if (!o.has("from") || !o.has("to") || !o.has("realization")) {
+                throw new IllegalStateException(where + ": a presentation row is {\"from\": version, \"to\": version, \"realization\": name}, not " + e);
+            }
+            String realization = o.get("realization").getAsString();
+            if (!REALIZATIONS.contains(realization)) {
+                throw new IllegalStateException(where + ": presentation realization '" + realization + "' is not one of " + new TreeSet<>(REALIZATIONS));
+            }
+            out.add(new Presentation(o.get("from").getAsString(), o.get("to").getAsString(), realization,
+                    o.has("what") ? o.get("what").getAsString() : ""));
+        }
+        return out;
     }
 
     private static Names names(JsonObject era, String id, String where) {
@@ -254,6 +294,20 @@ public final class Eras {
 
     public List<Era> all() {
         return List.copyOf(eras);
+    }
+
+    public List<Presentation> presentation() {
+        return List.copyOf(presentation);
+    }
+
+    /** The realization a Minecraft version draws an item's state with; a version no row covers is a refusal that says so. */
+    public String presentationFor(String minecraft) {
+        for (Presentation p : presentation) {
+            if (p.covers(minecraft)) {
+                return p.realization();
+            }
+        }
+        throw new IllegalArgumentException("Mycelium: no presentation row covers Minecraft '" + minecraft + "' (eras/minecraft.json, \"presentation\")");
     }
 
     /** Whether a bound names a whole line ({@code 26.x}) rather than one version. */

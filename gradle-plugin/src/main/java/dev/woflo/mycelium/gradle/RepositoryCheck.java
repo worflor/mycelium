@@ -376,9 +376,48 @@ public final class RepositoryCheck {
                 covered++;
             }
         }
+        presentation(eras, real, versions, report);
         report.result("eras", covered, all.size() + " eras cover " + covered + " real versions exactly once ("
                 + outside + " before Classic are not targets); " + loaders.loaders().size() + " loaders, "
                 + loaders.platformPackages().size() + " platform package roots");
+    }
+
+    /**
+     * The presentation table (docs/decisions/0012): each row has real bounds in order, and every real version falls in exactly
+     * one row, so the compiler holds no version of its own and a version can never be left without an answer.
+     */
+    private static void presentation(Eras eras, Set<String> real, List<String> versions, Report report) {
+        List<Eras.Presentation> rows = eras.presentation();
+        if (rows.isEmpty()) {
+            report.find("eras", "eras/minecraft.json has no \"presentation\" table: item.presentation has no realization for any version");
+            return;
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            Eras.Presentation p = rows.get(i);
+            for (String bound : List.of(p.from(), p.to())) {
+                if (!Eras.isLine(bound) && !real.contains(bound)) {
+                    report.find("eras", "presentation '" + p.realization() + "': bound '" + bound + "' is not a version the launcher names");
+                }
+            }
+            if (Eras.readable(Eras.lineStart(p.from())) && Eras.readable(Eras.lineStart(p.to())) && !Eras.atMost(Eras.lineStart(p.from()), p.to())) {
+                report.find("eras", "presentation '" + p.realization() + "' runs backwards: from " + p.from() + " to " + p.to());
+            }
+        }
+        for (String v : versions) {
+            if (!Eras.readable(v)) {
+                continue;
+            }
+            List<String> in = new ArrayList<>();
+            for (Eras.Presentation p : rows) {
+                if (p.covers(v)) {
+                    in.add(p.realization() + " " + p.from() + ".." + p.to());
+                }
+            }
+            if (in.size() != 1) {
+                report.find("eras", "Minecraft " + v + " falls in " + (in.isEmpty() ? "no presentation row" : "several presentation rows " + in)
+                        + ": every real version must fall in exactly one");
+            }
+        }
     }
 
     /**

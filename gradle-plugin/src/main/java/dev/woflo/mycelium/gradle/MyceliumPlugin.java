@@ -152,6 +152,51 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.onlyIf(spec -> ext.getCapsule().getArchive().isPresent());
         });
 
+        // Item presentation (docs/decisions/0012): the consumer's programs compiled for the target's era into generated resources,
+        // and the lock of legacy codes completed on request. The layout is a convention; the era table chooses the mechanism.
+        PresentationSpec presentation = ext.getPresentation();
+        presentation.getSources().convention(project.getLayout().getProjectDirectory().dir("src/main/presentation"));
+        presentation.getComponents().convention(presentation.getSources().file("components.json"));
+        presentation.getLock().convention(presentation.getSources().file("presentation.lock.json"));
+        Provider<String> presentationFingerprint = project.provider(() -> {
+            Path root = ext.getRoot().get().getAsFile().toPath();
+            ContractRegistry registry = ContractRegistry.load(root.toFile());
+            List<Path> dirs = new ArrayList<>();
+            dirs.add(root.resolve("contracts/registry.json"));
+            dirs.add(root.resolve("eras"));
+            for (ContractRegistry.Entry e : registry.withRequirements(List.of(registry.require(Presentation.CONTRACT)))) {
+                dirs.add(root.resolve("contracts").resolve(e.path()).resolve("src").resolve(e.pkg().replace('.', '/')).resolve("model"));
+            }
+            return Fingerprint.ofDirectories(dirs);
+        });
+        Provider<Directory> presentationOut = project.getLayout().getBuildDirectory().dir("generated/resources/mycelium/presentation");
+        Provider<Directory> presentationWork = project.getLayout().getBuildDirectory().dir("mycelium/presentation/model");
+        TaskProvider<PresentationTask> presentationTask = project.getTasks().register("myceliumPresentation", PresentationTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Compiles the item presentation programs for the target Minecraft version into its native artefacts and the plan the adapter reads.");
+            t.getRoot().set(ext.getRoot());
+            t.getMinecraft().set(ext.getMinecraft());
+            t.getSourceFingerprint().set(presentationFingerprint);
+            t.getSources().set(presentation.getSources());
+            t.getComponents().set(presentation.getComponents());
+            t.getLock().set(presentation.getLock());
+            t.getSourceFiles().from(presentation.getSources().map(d -> d.getAsFileTree()));
+            t.getWorkDir().set(presentationWork);
+            t.getOutputDir().set(presentationOut);
+            t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/presentation"));
+            // a build with no presentation sources has nothing to compile, and is not made to have any
+            t.onlyIf(spec -> presentation.getSources().get().getAsFile().isDirectory());
+        });
+        project.getTasks().register("myceliumPresentationLock", PresentationLockTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Appends the legacy codes the item presentation programs need to the committed lock; never part of a build.");
+            t.getRoot().set(ext.getRoot());
+            t.getSources().set(presentation.getSources());
+            t.getComponents().set(presentation.getComponents());
+            t.getLock().set(presentation.getLock());
+            t.getWorkDir().set(presentationWork);
+        });
+
         // The pure layer (docs/eras.md): its laws on the source, then compiled on its own into a bundle.
         TaskProvider<PurityTask> purityTask = project.getTasks().register("myceliumPurity", PurityTask.class, t -> {
             t.setGroup("mycelium");
@@ -282,6 +327,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     compile.setClasspath(privateLibraries.plus(compile.getClasspath()))));
             SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
             sourceSets.getByName("main").getJava().srcDir(importTask.flatMap(ImportContractsTask::getOutputDir));
+            // the compiled presentation joins the resources, and the build fails before packaging if the programs break a law
+            sourceSets.getByName("main").getResources().srcDir(presentationTask.flatMap(PresentationTask::getOutputDir));
+            project.getTasks().named("processResources", t -> t.dependsOn(presentationTask));
             // Every other main source is platform: the pure layer may not reach into its packages (P1).
             purityTask.configure(t -> t.getPlatformSources().from(sourceSets.getByName("main").getJava().getSourceDirectories()
                     .filter(dir -> !dir.equals(generated.get().getAsFile()))));

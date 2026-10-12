@@ -1,0 +1,19 @@
+{
+  "items": {
+    "fixture:status_tool": [
+      {"code": 1, "key": "fixture:item/status_tool_broken"},
+      {"code": 2, "key": "fixture:item/status_tool_cracked_1"},
+      {"code": 3, "key": "fixture:item/status_tool_cracked_2"},
+      {"code": 4, "key": "fixture:item/status_tool_mended_1_cracked_0"},
+      {"code": 5, "key": "fixture:item/status_tool_mended_1_cracked_1"},
+      {"code": 6, "key": "fixture:item/status_tool_mended_1_cracked_2"},
+      {"code": 7, "key": "fixture:item/status_tool_mended_2_cracked_0"},
+      {"code": 8, "key": "fixture:item/status_tool_mended_2_cracked_1"},
+      {"code": 9, "key": "fixture:item/status_tool_mended_2_cracked_2"},
+      {"code": 10, "key": "fixture:item/status_tool_mended_3_cracked_0"},
+      {"code": 11, "key": "fixture:item/status_tool_mended_3_cracked_1"},
+      {"code": 12, "key": "fixture:item/status_tool_mended_3_cracked_2"}
+    ]
+  },
+  "schema": 1
+}
