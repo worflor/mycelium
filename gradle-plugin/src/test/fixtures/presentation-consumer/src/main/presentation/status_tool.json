@@ -1,0 +1,14 @@
+{
+  "item": "fixture:status_tool",
+  "base": "fixture:item/status_tool_base",
+  "inputs": {
+    "broken": {"component": "fixture:tool_state", "field": "broken", "domain": "bool"},
+    "cracks": {"component": "fixture:tool_state", "field": "cracks", "domain": {"int": [0, 2]}},
+    "seams": {"component": "fixture:tool_state", "field": "seams", "domain": {"int": [0, 3]}}
+  },
+  "cases": [
+    {"when": {"broken": true}, "model": "fixture:item/status_tool_broken"},
+    {"when": {"seams": {"min": 1}}, "model": "fixture:item/status_tool_mended_{seams}_cracked_{cracks}"},
+    {"when": {"cracks": {"min": 1}}, "model": "fixture:item/status_tool_cracked_{cracks}"}
+  ]
+}

@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-10-12 - item.presentation@1: the Sigil, item presentation compiled from component state
+
+New contract `item.presentation@1` (`contracts/item-presentation`, `docs/decisions/0012-sigil-item-presentation.md`), written for Somnium,
+requiring `item.component@1`. An item's look is declared once as a program: inputs over component fields with finite domains
+(flag, present, int range, enum), ordered cases with conjunctive guards, model-reference templates and a base. The compiler partially evaluates
+it into selections, takes their legacy codes from the consumer's committed append-only lock, and emits the target era's artefact (an item
+definition selecting on the custom model data strings, or an item model with ascending overrides) beside the plan the runtime adapter
+evaluates, in canonical JSON. Laws S1 to S7 (totality, agreement, stable codes, override order, projection, determinism, bounded); S2 is checked by
+simulating each era's rules over the emitted bytes, for every tuple.
+
+- **Plugin.** `myceliumPresentation` compiles `src/main/presentation` for the target's realization into generated resources, wired before
+  `processResources`, and fails the build on any breach with the diagnostic and, for a missing selection, the lock lines to add;
+  `myceliumPresentationLock` appends them to the committed lock on request. `mycelium { presentation { } }` places the sources.
+- **Era data.** `eras/minecraft.json` gains a `presentation` table (item-definition from 1.21.4, model-overrides 1.14 to 1.21.3, none before),
+  its own table because the ranges cross the era rows; `myceliumRepository` proves every real version falls in exactly one range.
+- **Verification.** Six broken compilers join the matrix (`EnumerationOrderCodes`, `DescendingOverrides`, `OffByOneLegacy`,
+  `LeakyProjection`, `HashOrderEmitter`, `NoOpCompiler`), each caught for its label; 40 seeded random programs are held to S1, S2, S4 and S6.
+- Where the decision was silent it was decided and recorded in it: input defaults, out-of-domain stacks drawing the base, retired codes drawing
+  the base, a catalog file held to the registry, and the base model being another model than the item's own.
+
+Ran: `bash run-contracts.sh item-presentation` (clean, 6 rejections caught), `./gradlew -p gradle-plugin selfTest`, the
+`presentation-consumer` fixture (`check` on 1.21.4; the lock task and the build fail and recover as described), `./gradlew check`.
+
+
+## 2026-10-12 - Contracts compose by declared requirement
+
+A registry row may carry `requires`: exact ids of the contracts whose `model` packages its model may import
+(`docs/decisions/0014-contracts-compose-by-declared-requirement.md`, amending the rule of decision 0005 that a model mentions no
+other package). `ContractRegistry` refuses a requirement that does not exist, is retired, is the contract itself, or closes a
+cycle; `myceliumRepository` fails a model that reaches an undeclared package or a required one's fixtures or harness;
+`myceliumImport` imports a contract's requirements with it under the consumer's namespace (so the importing model refers to the
+consumer's private copy), `myceliumUsage` does not call a contract imported only as a requirement unused, `myceliumVerify` and
+both runner scripts compile a package with its requirements' models (`harness/tools/RequiredModels.java` reads the registry for
+the scripts), and the evidence manifest lists each contract's `requires`. `AGENTS.md` hard rule 3 and `CONTRACT-PACKAGE.md`
+rule 10 state the new rule. Additive: no existing row declares a requirement.
+
+Ran: `./gradlew -p gradle-plugin selfTest` (a requirement chain, an unknown, a retired, a self and a cyclic requirement are
+refused; an undeclared, a fixtures and a harness import fail the repository check; a declared one passes; importing a contract
+with a requirement yields both, namespaced, with no fixtures).
+
+
 ## 2026-10-12 - item.component@1: a lens with nothing left over retains nothing
 
 Reading a component whose definition has a `FieldAwareCodec` recorded its remainder even when it was empty, so a value read

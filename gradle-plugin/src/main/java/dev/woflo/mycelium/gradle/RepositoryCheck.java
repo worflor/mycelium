@@ -183,7 +183,7 @@ public final class RepositoryCheck {
 
     // --- models: pure, and their own ---------------------------------------------------------------------------
 
-    static final Pattern CONTRACT_REF = Pattern.compile("(?<![\\w.])mycelium\\.([a-z_][a-z0-9_]*)\\.v(\\d+)\\b");
+    static final Pattern CONTRACT_REF = Pattern.compile("(?<![\\w.])mycelium\\.([a-z_][a-z0-9_]*)\\.v(\\d+)\\b(?:\\.([a-z_][a-z0-9_]*))?");
 
     static void models(Path root, ContractRegistry registry, Report report) throws IOException {
         int files = 0;
@@ -191,6 +191,10 @@ public final class RepositoryCheck {
             Path model = root.resolve("contracts").resolve(e.path()).resolve("src").resolve(e.pkg().replace('.', '/')).resolve("model");
             if (!Files.isDirectory(model)) {
                 continue;
+            }
+            Set<String> allowed = new HashSet<>();
+            for (ContractRegistry.Entry r : registry.closure(e)) {
+                allowed.add(r.pkg());
             }
             for (Path p : Harness.javaFiles(List.of(model))) {
                 files++;
@@ -201,10 +205,19 @@ public final class RepositoryCheck {
                 Matcher m = CONTRACT_REF.matcher(code);
                 while (m.find()) {
                     String ref = "mycelium." + m.group(1) + ".v" + m.group(2);
-                    if (!ref.equals(e.pkg())) {
-                        report.find("model", rel(root, p) + " reaches " + ref + ": a model imports only its own contract"
-                                + " (a consumer imports the contracts it selects; a reference to another would not compile there)");
+                    if (ref.equals(e.pkg())) {
+                        continue;
                     }
+                    if (allowed.contains(ref)) {
+                        // a required contract is reached through its model package, and nothing else of it
+                        if (m.group(3) != null && !m.group(3).equals("model")) {
+                            report.find("model", rel(root, p) + " reaches " + ref + "." + m.group(3) + ": a model imports only the model"
+                                    + " package of a contract it requires, never its fixtures or harness");
+                        }
+                        continue;
+                    }
+                    report.find("model", rel(root, p) + " reaches " + ref + ": a model imports only its own contract and the models"
+                            + " of the contracts it requires (declare one in contracts/registry.json, docs/decisions/0014)");
                 }
             }
         }
@@ -363,9 +376,48 @@ public final class RepositoryCheck {
                 covered++;
             }
         }
+        presentation(eras, real, versions, report);
         report.result("eras", covered, all.size() + " eras cover " + covered + " real versions exactly once ("
                 + outside + " before Classic are not targets); " + loaders.loaders().size() + " loaders, "
                 + loaders.platformPackages().size() + " platform package roots");
+    }
+
+    /**
+     * The presentation table (docs/decisions/0012): each row has real bounds in order, and every real version falls in exactly
+     * one row, so the compiler holds no version of its own and a version can never be left without an answer.
+     */
+    private static void presentation(Eras eras, Set<String> real, List<String> versions, Report report) {
+        List<Eras.Presentation> rows = eras.presentation();
+        if (rows.isEmpty()) {
+            report.find("eras", "eras/minecraft.json has no \"presentation\" table: item.presentation has no realization for any version");
+            return;
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            Eras.Presentation p = rows.get(i);
+            for (String bound : List.of(p.from(), p.to())) {
+                if (!Eras.isLine(bound) && !real.contains(bound)) {
+                    report.find("eras", "presentation '" + p.realization() + "': bound '" + bound + "' is not a version the launcher names");
+                }
+            }
+            if (Eras.readable(Eras.lineStart(p.from())) && Eras.readable(Eras.lineStart(p.to())) && !Eras.atMost(Eras.lineStart(p.from()), p.to())) {
+                report.find("eras", "presentation '" + p.realization() + "' runs backwards: from " + p.from() + " to " + p.to());
+            }
+        }
+        for (String v : versions) {
+            if (!Eras.readable(v)) {
+                continue;
+            }
+            List<String> in = new ArrayList<>();
+            for (Eras.Presentation p : rows) {
+                if (p.covers(v)) {
+                    in.add(p.realization() + " " + p.from() + ".." + p.to());
+                }
+            }
+            if (in.size() != 1) {
+                report.find("eras", "Minecraft " + v + " falls in " + (in.isEmpty() ? "no presentation row" : "several presentation rows " + in)
+                        + ": every real version must fall in exactly one");
+            }
+        }
     }
 
     /**

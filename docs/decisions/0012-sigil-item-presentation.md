@@ -83,3 +83,40 @@ it holds no version numbers of its own.
 Music discs (a different mechanism, `item_model`, per disc); composition (`composite` models on the modern side, a generated
 model adapter on the legacy side) when a consumer needs layered presentation; dependency tracking so a renderer cache keys
 only on the fields a model reads.
+
+## Decided while building it
+
+The decision above stands. Where it was silent or wrong, this is what was decided and built (`contracts/item-presentation/SPEC.md` is
+normative for all of it).
+
+- **How it builds on Rosetta.** `item.component@1` and `item.presentation@1` are separate contracts, and 0005 forbade a model to
+  mention another's package. Decision 0014 added declared requirements: the registry row of `item.presentation@1` says
+  `requires: ["item.component@1"]`, and the model uses Rosetta's types directly. `CarrierView` reads a `CarrierSnapshot` through a
+  `ComponentRegistry` (an absent component reads as its registered default, a removed one as absent), and
+  `ComponentCatalog.disagreements(registry)` holds the catalog (below) to the registry's `ComponentDefinition`s: network visibility
+  (`networkSynced`), unit or record, field names (`RecordCodec.fieldNames`).
+- **A catalog file.** Law S5 needs to know which components are network-visible, and a Gradle build cannot load a consumer's registry.
+  The build therefore reads a `components.json` catalog beside the programs: per component `networkSynced`, `unit`, and each leaf field's kind
+  (`bool`, `int`, `string`). It is the consumer's to keep honest: a test of its own asserts `catalog.disagreements(registry)` is empty.
+  Every declared input is checked, read or not, and so are the component, the field path and the kind its domain needs.
+- **An input has a default**, used when its component or field is absent (the domain's first value unless the program states one), because
+  Rosetta elides defaults and a stack that carries nothing must still evaluate (S1).
+- **A stack outside the domains draws the base model** and says so (`Selection.inDomain` false). The plan's `select` is total.
+- **The lock** is one file for the project, per item, entries ascending by code, one per line; codes run 1 to 2^24 (a float counts whole numbers
+  exactly to there). It is required for every target, modern included, so a build for one era never allocates differently from another.
+  A selection the program stops producing keeps its entry forever; in the item model it keeps a row that draws the base, because under
+  "at least, and the last match wins" a stack still carrying that code would otherwise draw its lower neighbour (`S2:retired-code-draws-base`).
+- **The base is not the item's own model.** The legacy artefact is the item's own model file with `parent` set to the base and the overrides,
+  so a program naming `ns:item/<id>` as a model for item `ns:<id>` would make the model its own parent. That is a `MODEL_CLASH` refusal for
+  the legacy target; the base is another model (`ns:item/<id>_base`, say).
+- **A selection's key is its model reference**; tuples reaching `base` are not a selection (no key, no code, no case, no override).
+- **The era data is its own table.** The realization ranges (1.14 to 1.21.3, 1.21.4 on) cross the era rows, so `eras/minecraft.json` gets a
+  `presentation` table of ranges beside `eras`; `myceliumRepository` proves every real version falls in exactly one.
+- **The tasks.** `myceliumPresentation` runs before `processResources` and writes into `build/generated/resources/mycelium/presentation`,
+  which joins the main resources; `myceliumPresentationLock` edits the committed lock on request. Both run the contract's own model
+  (compiled from the checkout with its requirement) through `SigilTool`, which takes and returns text, so the build holds no rule of its
+  own. The plan resource is `META-INF/mycelium/presentation/<ns>/<id>.plan.json`.
+
+## Evidence
+
+Landed in `contracts/item-presentation`; the six fixtures of the matrix are all `CAUGHT` for their label and the reference is clean.

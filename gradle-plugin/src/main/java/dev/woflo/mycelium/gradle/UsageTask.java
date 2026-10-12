@@ -90,8 +90,12 @@ public abstract class UsageTask extends DefaultTask {
         }
         JsonArray results = new JsonArray();
         List<String> unused = new ArrayList<>();
-        for (String id : getContracts().get()) {
+        List<String> selected = getContracts().get();
+        for (String id : selected) {
             ContractRegistry.Entry entry = registry.require(id);
+            if (selected.stream().anyMatch(o -> registry.require(o).requires().contains(id))) {
+                continue; // required by another selected contract: imported for it, not for the artifact to use
+            }
             String needle = getNamespace().get() + "." + entry.relativePackage();
             int files = 0;
             for (String t : texts) {

@@ -38,6 +38,8 @@ public final class SelfTest {
         Path root = Path.of(args.length > 0 ? args[0] : "..").toAbsolutePath().normalize();
         eras(root);
         registry();
+        requirementsImport();
+        presentation(root);
         integrations();
         evidence();
         loaders(root);
@@ -1099,6 +1101,157 @@ public final class SelfTest {
         that(reg.resolve(List.of("x.a@2")).size() == 1, "registry:a build selecting the successor alone is fine");
         that(reg.require("x.a@1").runFile().equals("contracts/a/src/mycelium/a/v1/harness/Run.java"),
                 "registry:the harness main lives where every runner looks");
+
+        // requirements (docs/decisions/0014)
+        String rowC = "{\"id\":\"x.c@1\",\"path\":\"c\",\"package\":\"mycelium.c.v1\",\"status\":\"reference\",\"requires\":[\"x.b@1\"]}";
+        String rowB = "{\"id\":\"x.b@1\",\"path\":\"b\",\"package\":\"mycelium.b.v1\",\"status\":\"reference\",\"requires\":[\"x.a@1\"]}";
+        ContractRegistry chain = ContractRegistry.parse(registryText(ROW_A, rowB, rowC), "t");
+        that(chain.closure(chain.require("x.c@1")).stream().map(ContractRegistry.Entry::id).toList().equals(List.of("x.a@1", "x.b@1")),
+                "registry:a contract's requirements are its closure, requirements first");
+        that(chain.withRequirements(chain.resolve(List.of("x.c@1", "x.b@1"))).size() == 3,
+                "registry:a selection plus its requirements holds each contract once");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A, rowB.replace("x.a@1", "x.zzz@1")), "t"), "requires unknown contract"),
+                "registry:requiring a contract that does not exist is refused");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("\"reference\"", "\"retired\""), rowB), "t"), "which is retired"),
+                "registry:requiring a retired contract is refused");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("}", ",\"requires\":[\"x.c@1\"]}"), rowB, rowC), "t"), "cycle"),
+                "registry:a requirement cycle is refused, naming it");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("}", ",\"requires\":[\"x.a@1\"]}")), "t"), "requires itself"),
+                "registry:requiring itself is refused");
+        that(refuses(() -> ContractRegistry.parse(registryText(ROW_A.replace("}", ",\"requires\":\"x.b@1\"}")), "t"), "array of contract ids"),
+                "registry:requires is an array");
+        that(refuses(() -> chain.withRequirements(List.of(chain.require("x.c@1"), ContractRegistry.parse(registryText(ROW_A, ROW_B), "t").require("x.a@2"))),
+                "both would be imported"), "registry:a successor selected beside a contract that requires its predecessor is refused");
+    }
+
+    /** A consumer importing a contract with requirements gets both models, under its own namespace. */
+    static void requirementsImport() throws IOException {
+        Path root = Files.createTempDirectory("mycelium-requires");
+        try {
+            write(root.resolve("contracts/registry.json"), "{\"schema\":2,\"note\":\"n\",\"contracts\":["
+                    + "{\"id\":\"x.base@1\",\"path\":\"base\",\"package\":\"mycelium.base.v1\",\"status\":\"reference\"},"
+                    + "{\"id\":\"x.top@1\",\"path\":\"top\",\"package\":\"mycelium.top.v1\",\"status\":\"reference\",\"requires\":[\"x.base@1\"]}]}");
+            write(root.resolve("contracts/base/src/mycelium/base/v1/model/Base.java"),
+                    "package mycelium.base.v1.model; public final class Base {}");
+            write(root.resolve("contracts/base/src/mycelium/base/v1/fixtures/Broken.java"),
+                    "package mycelium.base.v1.fixtures; public final class Broken {}");
+            write(root.resolve("contracts/top/src/mycelium/top/v1/model/Top.java"),
+                    "package mycelium.top.v1.model; import mycelium.base.v1.model.Base; public final class Top { Base b; }");
+            Path out = root.resolve("out");
+            ContractRegistry registry = ContractRegistry.load(root.toFile());
+            List<ContractRegistry.Entry> imported = ImportContractsTask.importInto(root, registry, List.of("x.top@1"), "app.mycelium", out);
+            that(imported.stream().map(ContractRegistry.Entry::id).toList().equals(List.of("x.base@1", "x.top@1")),
+                    "requirements:importing a contract imports what it requires, requirements first");
+            Path top = out.resolve("app/mycelium/top/v1/model/Top.java");
+            that(Files.isRegularFile(out.resolve("app/mycelium/base/v1/model/Base.java")) && Files.isRegularFile(top),
+                    "requirements:both models land under the consumer's namespace");
+            that(Files.readString(top).contains("import app.mycelium.base.v1.model.Base;") && !Files.readString(top).contains("import mycelium."),
+                    "requirements:the importing model refers to the consumer's private copy of its requirement");
+            that(!Files.exists(out.resolve("app/mycelium/base/v1/fixtures")), "requirements:a requirement's fixtures are never imported");
+        } finally {
+            delete(root);
+        }
+    }
+
+    // --- item presentation (docs/decisions/0012) -----------------------------------------------------------------------
+
+    static void presentation(Path root) throws IOException {
+        Eras eras = Eras.load(root.toFile());
+        String[][] expect = {{"26.3", "item-definition"}, {"1.21.11", "item-definition"}, {"1.21.4", "item-definition"},
+                {"1.21.3", "model-overrides"}, {"1.20.1", "model-overrides"}, {"1.14", "model-overrides"},
+                {"1.13.2", "none"}, {"1.12.2", "none"}, {"b1.7.3", "none"}, {"c0.30_01c", "none"}};
+        for (String[] e : expect) {
+            that(e[1].equals(eras.presentationFor(e[0])), "presentation:" + e[0] + " is " + e[1]);
+        }
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"presentation\":[{\"from\":\"1.0\",\"to\":\"1.x\",\"realization\":\"magic\"}]}", "t"),
+                "is not one of"), "presentation:an unknown realization is refused, by name");
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"presentation\":[{\"from\":\"1.0\",\"realization\":\"none\"}]}", "t"),
+                "a presentation row is"), "presentation:a row without its range is refused");
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[]}", "t").presentationFor("1.21.4"), "no presentation row covers"),
+                "presentation:a table without rows answers no version");
+
+        Path base = copy(root);
+        Set<String> baseline = findings(base);
+        delete(base);
+        expect(root, "a gap in the presentation table", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1.14\", \"to\": \"1.21.3\"", "\"from\": \"1.15\", \"to\": \"1.21.3\""),
+                f -> f.contains("Minecraft 1.14 falls in no presentation row"), baseline);
+        expect(root, "an overlap in the presentation table", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"to\": \"1.13.2\", \"realization\": \"none\"", "\"to\": \"1.14\", \"realization\": \"none\""),
+                f -> f.contains("Minecraft 1.14 falls in several presentation rows"), baseline);
+        expect(root, "a presentation bound that names no real version", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1.21.4\", \"to\": \"26.x\"", "\"from\": \"1.21.44\", \"to\": \"26.x\""),
+                f -> f.contains("bound '1.21.44' is not a version the launcher names"), baseline);
+        expect(root, "an unknown realization", r -> replace(r.resolve("eras/minecraft.json"), "\"realization\": \"none\"", "\"realization\": \"nothing\""),
+                f -> f.contains("realization 'nothing' is not one of"), baseline);
+        expect(root, "a presentation row that runs backwards", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1.14\", \"to\": \"1.21.3\"", "\"from\": \"1.21.3\", \"to\": \"1.14\""),
+                f -> f.contains("runs backwards"), baseline);
+
+        // the tasks' core, on the fixture consumer's own sources
+        Path fixture = root.resolve("gradle-plugin/src/test/fixtures/presentation-consumer/src/main/presentation");
+        Path scratch = Files.createTempDirectory("mycelium-presentation");
+        try {
+            Path sources = scratch.resolve("src/main/presentation");
+            mkdirs(sources);
+            for (String name : List.of("components.json", "status_tool.json")) {
+                Files.copy(fixture.resolve(name), sources.resolve(name));
+            }
+            Path components = sources.resolve("components.json");
+            Path lock = sources.resolve("presentation.lock.json");
+            Path work = scratch.resolve("work");
+
+            Presentation.Outcome missing = Presentation.compile(root, work, "1.21.4", sources, components, lock);
+            that(!missing.ok() && missing.diagnostics().stream().anyMatch(d -> d.contains("LOCK_MISSING") && d.contains("\"code\": 1")),
+                    "presentation:a build against a lock that lacks selections fails, with the lines to add: " + missing.diagnostics());
+            that(!Files.exists(lock), "presentation:the build never writes the lock");
+            Presentation.Outcome completed = Presentation.complete(root, work, sources, components, lock);
+            that(completed.ok() && completed.added().size() == 12 && completed.lock() != null,
+                    "presentation:the lock task adds the 12 selections of the band: " + completed.diagnostics());
+            Files.writeString(lock, completed.lock(), StandardCharsets.UTF_8);
+            that(Presentation.complete(root, work, sources, components, lock).added().isEmpty(), "presentation:completing a complete lock adds nothing");
+
+            Presentation.Outcome modern = Presentation.compile(root, work, "1.21.4", sources, components, lock);
+            that(modern.ok() && "item-definition".equals(modern.realization()) && modern.files().containsKey("assets/fixture/items/status_tool.json")
+                            && modern.files().containsKey("META-INF/mycelium/presentation/fixture/status_tool.plan.json") && modern.files().size() == 2,
+                    "presentation:1.21.4 gets an item definition and the plan: " + modern.diagnostics() + modern.files().keySet());
+            Presentation.Outcome legacy = Presentation.compile(root, work, "1.20.1", sources, components, lock);
+            that(legacy.ok() && "model-overrides".equals(legacy.realization()) && legacy.files().containsKey("assets/fixture/models/item/status_tool.json"),
+                    "presentation:1.20.1 gets an item model with overrides: " + legacy.diagnostics());
+            that(modern.files().equals(Presentation.compile(root, work, "1.21.4", sources, components, lock).files()),
+                    "presentation:the same inputs give the same files");
+            Presentation.Outcome none = Presentation.compile(root, work, "1.12.2", sources, components, lock);
+            that(!none.ok() && none.diagnostics().stream().anyMatch(d -> d.contains("NO_REALIZATION") && d.contains("1.12.2")),
+                    "presentation:a version with no mechanism fails, naming it: " + none.diagnostics());
+
+            // the lock is only ever appended to
+            String before = Files.readString(lock, StandardCharsets.UTF_8);
+            Files.writeString(sources.resolve("status_tool.json"), Files.readString(sources.resolve("status_tool.json"), StandardCharsets.UTF_8)
+                    .replace("\"cases\": [", "\"cases\": [\n    {\"when\": {\"seams\": 3, \"cracks\": 2, \"broken\": false}, \"model\": \"fixture:item/aaa_prime\"},"),
+                    StandardCharsets.UTF_8);
+            Presentation.Outcome grown = Presentation.complete(root, work, sources, components, lock);
+            String oldEntries = before.substring(before.indexOf("\"fixture:status_tool\""), before.indexOf("\n    ]\n"));
+            that(grown.ok() && grown.added().size() == 1 && grown.lock().contains(oldEntries),
+                    "presentation:a new case appends one line and keeps every old one: " + grown.diagnostics() + grown.added());
+
+            // a program over a server-private component is refused, by the build and by the lock task
+            Files.writeString(sources.resolve("leak.json"), "{\"item\": \"fixture:leak\", \"base\": \"fixture:item/leak_base\", \"inputs\": {\"late\": "
+                    + "{\"component\": \"fixture:server_state\", \"field\": \"deadline\", \"domain\": {\"int\": [0, 9]}}}, \"cases\": "
+                    + "[{\"when\": {\"late\": {\"min\": 5}}, \"model\": \"fixture:item/leak_late\"}]}", StandardCharsets.UTF_8);
+            Files.writeString(lock, grown.lock(), StandardCharsets.UTF_8);
+            Presentation.Outcome leaked = Presentation.compile(root, work, "1.21.4", sources, components, lock);
+            that(!leaked.ok() && leaked.diagnostics().stream().anyMatch(d -> d.contains("SERVER_PRIVATE") && d.contains("fixture:server_state")),
+                    "presentation:an input over a server-private component fails the build: " + leaked.diagnostics());
+            Presentation.Outcome leakedLock = Presentation.complete(root, work, sources, components, lock);
+            that(!leakedLock.ok() && leakedLock.lock() == null, "presentation:the lock task changes nothing while a program is refused");
+            Files.delete(sources.resolve("leak.json"));
+
+            Files.delete(components);
+            that(!Presentation.compile(root, work, "1.21.4", sources, components, lock).ok(), "presentation:a missing catalog fails the build");
+        } finally {
+            delete(scratch);
+        }
+
     }
 
     // --- integrations ------------------------------------------------------------------------------------------------
@@ -1947,6 +2100,37 @@ public final class SelfTest {
         expect(root, "a model reaching another contract", r -> append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"),
                         "\nclass Reach { mycelium.flow.v1.model.Receipt r; }\n"),
                 f -> f.contains("reaches mycelium.flow.v1"), baseline);
+        Break declares = r -> replace(r.resolve("contracts/registry.json"), "\"id\": \"presentation.particle-cue@1\",",
+                "\"id\": \"presentation.particle-cue@1\",\n      \"requires\": [\"inventory.transfer@1\"],");
+        expect(root, "a model reaching a contract it declared a requirement on", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.flow.v1.model.Receipt r; }\n");
+                },
+                f -> f.contains("reaches mycelium.flow.v1"), baseline, false);
+        expect(root, "a model reaching a required contract's fixtures", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.flow.v1.fixtures.Anything r; }\n");
+                },
+                f -> f.contains("mycelium.flow.v1.fixtures") && f.contains("never its fixtures or harness"), baseline);
+        expect(root, "a model reaching a required contract's harness", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.flow.v1.harness.Run r; }\n");
+                },
+                f -> f.contains("mycelium.flow.v1.harness"), baseline);
+        expect(root, "a model reaching a contract that is required only by another", r -> {
+                    declares.apply(r);
+                    append(r.resolve("contracts/cue/src/mycelium/cue/v1/model/Tx.java"), "\nclass Reach { mycelium.world_copy.v1.model.X r; }\n");
+                },
+                f -> f.contains("reaches mycelium.world_copy.v1"), baseline);
+        expect(root, "requirements that form a cycle", r -> {
+                    declares.apply(r);
+                    replace(r.resolve("contracts/registry.json"), "\"id\": \"inventory.transfer@1\",",
+                            "\"id\": \"inventory.transfer@1\",\n      \"requires\": [\"presentation.particle-cue@1\"],");
+                },
+                f -> f.contains("requirements form a cycle"), baseline);
+        expect(root, "a requirement on a contract that does not exist", r -> replace(r.resolve("contracts/registry.json"),
+                        "\"id\": \"presentation.particle-cue@1\",", "\"id\": \"presentation.particle-cue@1\",\n      \"requires\": [\"nowhere.at.all@1\"],"),
+                f -> f.contains("requires unknown contract nowhere.at.all@1"), baseline);
         expect(root, "a plugin class the map does not name", r -> write(r.resolve("gradle-plugin/src/main/java/dev/woflo/mycelium/gradle/Unmapped.java"),
                         "package dev.woflo.mycelium.gradle; final class Unmapped {}"),
                 f -> f.contains("Unmapped.java"), baseline);

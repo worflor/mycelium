@@ -85,7 +85,7 @@ public abstract class VerifyContractsTask extends DefaultTask {
             Path classes = bundle.resolve("classes");
             Files.createDirectories(classes);
             List<String> args = new ArrayList<>(List.of("--release", String.valueOf(RELEASE), "-d", classes.toString()));
-            for (Path p : sources(root, pkgSrc)) {
+            for (Path p : sources(root, pkgSrc, registry.closure(entry))) {
                 args.add(p.toString());
             }
             Path compileLog = reportDir.resolve(entry.slug() + ".javac.log");
@@ -143,8 +143,17 @@ public abstract class VerifyContractsTask extends DefaultTask {
     }
 
     /** The shared harness (harness/sources.txt) and the package, each file once. */
-    private static List<Path> sources(Path root, Path pkgSrc) throws IOException {
+    private static List<Path> sources(Path root, Path pkgSrc, List<ContractRegistry.Entry> required) throws IOException {
         List<Path> out = new ArrayList<>(Harness.sources(root));
+        // the models this contract requires (docs/decisions/0014): their model packages only, never their fixtures or harness
+        for (ContractRegistry.Entry r : required) {
+            for (Path p : Harness.javaFiles(List.of(root.resolve("contracts").resolve(r.path()).resolve("src")
+                    .resolve(r.pkg().replace('.', '/')).resolve("model")))) {
+                if (!out.contains(p)) {
+                    out.add(p);
+                }
+            }
+        }
         for (Path p : Harness.javaFiles(List.of(pkgSrc))) {
             if (!out.contains(p)) {
                 out.add(p);

@@ -1,0 +1,19 @@
+{
+  "components": {
+    "fixture:tool_state": {
+      "fields": {
+        "broken": "bool",
+        "cracks": "int",
+        "seams": "int"
+      },
+      "networkSynced": true
+    },
+    "fixture:server_state": {
+      "fields": {
+        "deadline": "int"
+      },
+      "networkSynced": false
+    }
+  },
+  "schema": 1
+}
