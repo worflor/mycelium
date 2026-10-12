@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-12 - state.lifecycle@1: the Threshold
+
+Added `state.lifecycle@1` (`contracts/state-lifecycle`, decision 0013): state declares how it crosses. Slots (session or
+durable, scoped to a host kind) declare a policy for every transition (keep, drop, reset, migrate, and at a fork copy,
+regenerate or exclusive); hosts are named by id and incarnation, so a `HostRef` held by a delayed task resolves to nothing
+once the host has logged out, respawned or reloaded; a pure engine turns a transition into an ordered plan that applies
+inside a `Tx` with undo. Laws L1 to L8; a declaration check that names the slot and the transition of every problem.
+Written for Somnium, whose static session maps, player-keyed holds and closures over player objects it replaces.
+
+- **Verification:** reference clean; the matrix of nine broken implementations (`ForgetfulEngine`, `IdOnlyResolver`,
+  `CloningExclusive`, `MaterializingPeek`, `DefaultPolicy`, `HalfCrossing`, `ForgetfulStorage`, `RotatingEngine`,
+  `NoOpEngine`) all caught, each for its own law. L2, L3, L4 and L8 hold after every step of seeded random sequences.
+- **Registry:** rows may carry `requires` (exact ids), and a model may import the `model` package of a contract it requires and
+  nothing else of it; the repository check, `myceliumVerify` and both runner scripts honour it. This is the minimal form
+  needed here; the item-presentation work defines the full mechanism, and this commit is replaced by it at merge.
+- `persistence.player-state@1` is unchanged; its SPEC now says how `RESPAWN_SAFE` relates to the lifecycle policies.
+
+Ran: `bash run-contracts.sh state-lifecycle`, `./gradlew check`.
+
 ## 2026-10-12 - item.component@1: a lens with nothing left over retains nothing
 
 Reading a component whose definition has a `FieldAwareCodec` recorded its remainder even when it was empty, so a value read

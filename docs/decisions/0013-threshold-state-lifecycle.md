@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Date | 2026-10-12 |
-| Status | Proposed. First consumer: Somnium. |
+| Status | Accepted (reference model and rejection matrix: `contracts/state-lifecycle`; kept by `myceliumVerify`). First consumer: Somnium. |
 | Builds on | `item.component@1` (its codecs carry durable values), `persistence.player-state@1` (stays the storage port: the medium, not the policy) |
 
 ## Context
@@ -78,3 +78,43 @@ only fixed scenarios.
 
 ## Later
 
+
+## Decided in building
+
+The decision above stands. Where it was silent or ambiguous, the package decided, and `contracts/state-lifecycle/SPEC.md`
+is normative.
+
+- **Transitions have a shape** (`SAVES`, `STAYS`, `BEGINS`, `ENDS`, `SUCCEEDS`, `FORKS`), which is what makes "host-creating"
+  checkable and fixes what each policy means. The decision listed `clone` both as a transition that advances the
+  incarnation and as one that creates a second host; those are two crossings. A player's replacement on respawn (a loader's
+  "copy from the old player") is `SUCCEEDS`: same host, new incarnation, old one ends. `clone` is `FORKS`: a new host id,
+  both live. `EXCLUSIVE` therefore has a second host to move to, and a stale-incarnation cell is not "a second host".
+- **Which policy is admissible where** is one table (`Shape.admits`) and part of the declaration check: a session slot must
+  `DROP` at every end (L4 stated at declaration, so no engine override is silent), `KEEP` is the only policy at a save,
+  `COPY`, `REGENERATE` and `EXCLUSIVE` only at a fork. Extra rules the decision did not state: an exclusive slot declares
+  nothing that would create a value elsewhere (`RESET`, `REGENERATE`, `COPY`, `MIGRATE` at a fork), and a policy for a
+  transition outside the slot's scope is an error, not noise.
+- **`DROP` means gone everywhere** (live and stored); `KEEP` at an end releases the live copy and storage keeps the form.
+  Saving is its own transition: an end does not write. An adapter fires `mycelium:save` first.
+- **Access has a fourth operation, `write`**, beside `peek`, `read` and `materialize`, since setting a value is not creating
+  a default. Results are one sealed type (`Gone`, `Absent`, `Present`, `Held`) so a gone host is never read as an absent value.
+- **The `Tx` is the contract's own copy** of the transaction pattern, kept identical by `contracts/patterns.json`.
+- **The codec seam.** The decision has durable slots encoded with `item.component@1`'s codecs. A model never imports another
+  contract (decision 0005), so a durable slot's codec is this contract's `SlotCodec` (encode to an opaque immutable stored
+  form, decode, the codec's own equality). `ComponentSlotCodec` adapts a component codec and imports its model, which the
+  registry row declares with `requires` (the minimal form of the mechanism the item-presentation work defines at merge).
+  A decode failure aborts the crossing, leaving the stored form untouched.
+- **Law labels.** The declaration rules beyond totality sit under L1. Two fixtures were added to the seven so that every law
+  is proven: `ForgetfulStorage` (L6) and `RotatingEngine` (L7).
+- **The build-time compiler** is not a plugin task yet. `SlotRegistry.of` runs the same check when the mod's registry is
+  built, so a missing policy is an exception naming the slot and the transition at start-up and in the mod's own tests.
+  A Gradle task that runs it on a consumer's declarations waits for a consumer that needs it at build time.
+
+## Evidence
+
+- `bash run-contracts.sh state-lifecycle`: the reference clean, every entry of the matrix caught for its own label (the
+  seven fixtures above and the two added), the do-nothing engine among them. L2, L3, L4 and L8 are checked after every step of
+  seeded random sequences; L1, L5, L6 and L7 in fixed scenarios.
+- `./gradlew check`: the repository check (shape, model ownership, the copied transaction), purity, and the harness on every
+  Java an era runs on.
+- Not claimed: any behaviour in a real game. Somnium's gametests (the first proof above) are that evidence.
