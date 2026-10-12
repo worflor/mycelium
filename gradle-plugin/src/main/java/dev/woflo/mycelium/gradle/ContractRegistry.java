@@ -25,7 +25,7 @@ import java.util.Set;
  */
 public final class ContractRegistry {
     /** The fields a row may carry. Anything else is refused. */
-    static final Set<String> FIELDS = Set.of("id", "path", "package", "status", "supersedes", "provenance");
+    static final Set<String> FIELDS = Set.of("id", "path", "package", "status", "supersedes", "provenance", "requires");
     static final Set<String> TOP = Set.of("schema", "note", "contracts");
     static final int SCHEMA = 2;
 
@@ -35,8 +35,10 @@ public final class ContractRegistry {
      * @param status     what exists for it (the file's note defines each value); copied into the evidence manifest
      * @param supersedes the id this one replaces, or null; a build may import one of the two, never both
      * @param provenance who it was written for and where it came from: history, not checked
+     * @param requires   exact ids of contracts whose `model` this one's model may import (never their fixtures or harness)
      */
-    public record Entry(String id, String path, String pkg, String status, String supersedes, String provenance) {
+    public record Entry(String id, String path, String pkg, String status, String supersedes, String provenance,
+                        List<String> requires) {
         public String slug() {
             return path;
         }
@@ -103,7 +105,7 @@ public final class ContractRegistry {
                 }
             }
             Entry entry = new Entry(id, o.get("path").getAsString(), o.get("package").getAsString(),
-                    o.get("status").getAsString(), text(o, "supersedes"), text(o, "provenance"));
+                    o.get("status").getAsString(), text(o, "supersedes"), text(o, "provenance"), strings(o, "requires"));
             if (registry.byId.put(entry.id(), entry) != null) {
                 throw new IllegalStateException(where + ": contract " + id + " is listed twice");
             }
@@ -112,8 +114,21 @@ public final class ContractRegistry {
             if (e.supersedes() != null && !registry.byId.containsKey(e.supersedes())) {
                 throw new IllegalStateException(where + ": " + e.id() + " supersedes unknown contract " + e.supersedes());
             }
+            for (String r : e.requires()) {
+                if (r.equals(e.id()) || !registry.byId.containsKey(r)) {
+                    throw new IllegalStateException(where + ": " + e.id() + " requires " + r + ", which is not another contract in this registry");
+                }
+            }
         }
         return registry;
+    }
+
+    private static List<String> strings(JsonObject o, String key) {
+        List<String> out = new ArrayList<>();
+        if (o.has(key)) {
+            o.getAsJsonArray(key).forEach(e -> out.add(e.getAsString()));
+        }
+        return List.copyOf(out);
     }
 
     private static String text(JsonObject o, String key) {
@@ -126,6 +141,21 @@ public final class ContractRegistry {
             throw new IllegalStateException("unknown Mycelium contract '" + id + "'. Known: " + byId.keySet());
         }
         return entry;
+    }
+
+    /** The contracts whose models this one may import: its `requires`, and theirs, transitively (never itself). */
+    public List<Entry> requiresClosure(Entry entry) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        java.util.ArrayDeque<String> todo = new java.util.ArrayDeque<>(entry.requires());
+        while (!todo.isEmpty()) {
+            String id = todo.poll();
+            if (!id.equals(entry.id()) && seen.add(id)) {
+                todo.addAll(require(id).requires());
+            }
+        }
+        List<Entry> out = new ArrayList<>();
+        seen.forEach(id -> out.add(require(id)));
+        return out;
     }
 
     public List<Entry> all() {

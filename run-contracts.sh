@@ -12,6 +12,31 @@ else JAVAC=javac; JAVA=java; fi
 # The shared harness, as harness/sources.txt defines it (one definition for every runner).
 harness_files() { tr -d '\r' < harness/sources.txt | grep -v '^\s*#' | grep -v '^\s*$' | while read -r d; do find "$d" -name '*.java'; done; }
 
+# The model sources of the contracts a package requires (registry.json "requires", transitively): the only part of another
+# contract a model may import. Rows list one field per line, and "requires" is a one-line array.
+required_sources() {
+  local rows todo seen id row
+  rows=$(awk -F'"' '
+    /"id":/ { id = $4 }
+    /"path":/ { path = $4 }
+    /"package":/ { pkg = $4 }
+    /"requires":/ { n = split($0, a, "\""); reqs = ""; for (i = 4; i <= n; i += 2) reqs = reqs (reqs == "" ? "" : ",") a[i] }
+    /^ *},?$/ { if (id != "") print id "|" path "|" pkg "|" reqs; id = ""; reqs = "" }
+  ' contracts/registry.json | tr -d '\r')
+  todo=$(printf '%s\n' "$rows" | awk -F'|' -v p="contracts/$1" '"contracts/" $2 == p { gsub(/,/, "\n", $4); print $4 }')
+  seen=" "
+  while [ -n "$todo" ]; do
+    id=$(printf '%s\n' "$todo" | head -n1); todo=$(printf '%s\n' "$todo" | tail -n +2)
+    [ -z "$id" ] && continue
+    case "$seen" in *" $id "*) continue;; esac
+    seen="$seen$id "
+    row=$(printf '%s\n' "$rows" | awk -F'|' -v i="$id" '$1 == i { print }')
+    [ -z "$row" ] && continue
+    find "contracts/$(echo "$row" | cut -d'|' -f2)/src/$(echo "$row" | cut -d'|' -f3 | tr . /)/model" -name '*.java'
+    todo=$(printf '%s\n%s\n' "$todo" "$(echo "$row" | cut -d'|' -f4 | tr , '\n')")
+  done
+}
+
 slugs=("$@")
 if [ ${#slugs[@]} -eq 0 ]; then
   for d in contracts/*/; do [ -d "$d/src" ] && slugs+=("$(basename "$d")"); done
@@ -41,7 +66,7 @@ for slug in "${slugs[@]}"; do
   if [ "$count" -ne 1 ]; then echo "[$slug] expected exactly one harness/Run.java, found $count"; total=$((total+1)); continue; fi
   out="$pkg/out"
   rm -rf "$out"; mkdir -p "$out"
-  files=$( { harness_files; find "$pkg/src" -name '*.java'; } | sort -u)
+  files=$( { harness_files; find "$pkg/src" -name '*.java'; required_sources "$slug"; } | sort -u)
   if ! "$JAVAC" --release 17 -d "$out" $files; then
     echo "[$slug] COMPILE FAILED"; total=$((total+1)); continue
   fi

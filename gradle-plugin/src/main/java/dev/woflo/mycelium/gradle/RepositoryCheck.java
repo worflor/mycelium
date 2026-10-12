@@ -183,7 +183,7 @@ public final class RepositoryCheck {
 
     // --- models: pure, and their own ---------------------------------------------------------------------------
 
-    static final Pattern CONTRACT_REF = Pattern.compile("(?<![\\w.])mycelium\\.([a-z_][a-z0-9_]*)\\.v(\\d+)\\b");
+    static final Pattern CONTRACT_REF = Pattern.compile("(?<![\\w.])mycelium\\.([a-z_][a-z0-9_]*)\\.v(\\d+)\\b(?:\\.([a-z_]+))?");
 
     static void models(Path root, ContractRegistry registry, Report report) throws IOException {
         int files = 0;
@@ -201,9 +201,17 @@ public final class RepositoryCheck {
                 Matcher m = CONTRACT_REF.matcher(code);
                 while (m.find()) {
                     String ref = "mycelium." + m.group(1) + ".v" + m.group(2);
-                    if (!ref.equals(e.pkg())) {
+                    if (ref.equals(e.pkg())) {
+                        continue;
+                    }
+                    boolean required = registry.requiresClosure(e).stream().anyMatch(r -> r.pkg().equals(ref));
+                    if (!required) {
                         report.find("model", rel(root, p) + " reaches " + ref + ": a model imports only its own contract"
-                                + " (a consumer imports the contracts it selects; a reference to another would not compile there)");
+                                + " and the contracts it requires (a consumer imports the contracts it selects; a reference to"
+                                + " another would not compile there)");
+                    } else if (!"model".equals(m.group(3))) {
+                        report.find("model", rel(root, p) + " reaches " + ref + (m.group(3) == null ? "" : "." + m.group(3))
+                                + ": a required contract is imported through its model package only");
                     }
                 }
             }

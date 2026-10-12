@@ -47,7 +47,24 @@ foreach ($slug in $Slugs) {
     $out = Join-Path $pkg "out"
     if (Test-Path $out) { Remove-Item -Recurse -Force $out }
     New-Item -ItemType Directory -Force $out | Out-Null
-    $files = @(($harness + @(Get-ChildItem -Recurse -Filter *.java $src | ForEach-Object FullName)) | Sort-Object -Unique)
+    # the models of the contracts this one requires (registry.json "requires", transitively): nothing else of theirs
+    $rows = (Get-Content "contracts\registry.json" -Raw | ConvertFrom-Json).contracts
+    $mine = $rows | Where-Object { $_.path -eq $slug }
+    $todo = New-Object System.Collections.Queue
+    @($mine.requires) | Where-Object { $_ } | ForEach-Object { $todo.Enqueue($_) }
+    $seen = @{}
+    $required = @()
+    while ($todo.Count -gt 0) {
+        $id = $todo.Dequeue()
+        if ($seen.ContainsKey($id)) { continue }
+        $seen[$id] = $true
+        $row = $rows | Where-Object { $_.id -eq $id }
+        if (-not $row) { continue }
+        $model = Join-Path "contracts\$($row.path)\src" (Join-Path ($row.package -replace "\.", "\") "model")
+        $required += @(Get-ChildItem -Recurse -Filter *.java $model | ForEach-Object FullName)
+        @($row.requires) | Where-Object { $_ } | ForEach-Object { $todo.Enqueue($_) }
+    }
+    $files = @(($harness + $required + @(Get-ChildItem -Recurse -Filter *.java $src | ForEach-Object FullName)) | Sort-Object -Unique)
     & $javac --release 17 -d $out $files
     if ($LASTEXITCODE -ne 0) { Write-Host "[$slug] COMPILE FAILED"; $total += 1; continue }
     $rel = $runs[0].FullName.Substring((Resolve-Path $src).Path.Length + 1)
