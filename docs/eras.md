@@ -1,5 +1,9 @@
 # Eras: every Minecraft version
 
+Version knowledge in Mycelium is data. This page is its home: the era table the plugin reads, the pure layer's laws and
+the gates that prove them on every Java, and the map of what a platform port must change. How a jar is shipped from
+there is `docs/plugin.md`.
+
 A mod built on Mycelium has two layers, and they reach back in time differently.
 
 | Layer | What it is | How it reaches another version |
@@ -186,113 +190,9 @@ What a mod must change between versions. The same table drives the gates (`eras/
 Where a version is in parentheses the loader or platform exists from it (`since` in the era table); a plugin runs on every
 platform of the Bukkit family, whose API it is written against. The table is a summary: the walls are the rows in `eras/minecraft.json`.
 
-\* These shipped for Java 6, but they run on Java 8 today, as does every modern loader for them.
+\* These shipped for Java 6, but they run on Java 8, as does every modern loader for them.
 
-## Lessons from running whole suites
 
-Compiling for a version proves little. Running a mod's whole gametest suite there finds what compiling never does.
-These were learned porting a consumer across 26.x and 1.21.x on three loaders (`CHANGELOG.md` has the dates):
-- **A copy that is not a copy.** 1.21.1's `PalettedContainer.copy()` keeps the source's palette and resize handler
-  (`SingleValuePalette.copy()` returns itself). A write into the "copy" resizes the original, and the copy's own write
-  fails, or crashes the server tick later ("value N is not in the specified inclusive range"). 26.x's is a real copy.
-  Copy sections through one function that rebuilds them cell by cell where the platform's copy is shallow.
-- **Lambdas have different names in different dev jars.** A mixin that targets a lambda by name
-  (`lambda$create$1`) finds it where the runtime is Mojang-named (26.x; NeoForge 1.21.1), but not in Fabric 1.21.1's
-  dev jar, where lambdas keep intermediary names (`method_40377`). With `require = 0` the miss is silent. List both
-  names, and check with `javap -p`.
-  `Position` the first time 1.21.1 ran a trip. A validating model is worth more on the older target, where fewer people
-  look.
-- **A new loader is a new test order.** Tests that run many at a time on a packed grid share world state. A test of
-  shared state passed on two loaders by luck and failed on the third's order, every run. A test of shared state runs off
-  the grid.
-- **An event that says "loaded" can mean "seen".** Fabric's entity-load hook fires whenever an entity's tracking
-  starts, including while the level walks a chunk's entities as the chunk comes into view. Removing an entity there
-  breaks the walk and crashes the server. NeoForge and Forge ask before the entity is placed. Work that adds or removes
-  entities waits for the tick's end.
-
-The rule that follows: a rung is not ported until its whole suite runs there, not only its build.
-
-## Shipping downgraded jars (`myceliumPureShip`)
-
-A target whose era is older than the pure layer's release needs its jar to carry the downgraded, shaded bytecode,
-not the classes as compiled. `myceliumPureShip` does that: it depends on this target's own `myceliumEraJava<N>`
-(added automatically if a consumer's `eras(...)` does not already run it) and copies, out of that gate's own jar,
-exactly two kinds of class — the artifact's declared pure packages (`pure.sources`, plus every imported contract
-model, which join the pure layer) and anything JvmDowngrader shaded under the artifact's `shadePrefix` (its own
-backport support classes, which the downgraded bytecode calls directly). The shared Mycelium harness and the
-artifact's test suites are part of the same bundle and never ship (`fixtures/` and `harness/` never ship). Nothing
-is recompiled or re-downgraded for shipping: the bytes are exactly the ones the era gate already proved hold
-(stubs, linkage, behaviour), which is the only honest way to say "the era gate checked exactly these bytes"
-(`docs/decisions/0006-shipping-downgraded-jars.md`).
-
-A target whose era is at least the pure layer's release needs no downgrade: `myceliumPureShip` is a no-op and says
-so (`ship.json`'s `why`). Every `Jar` task adds the ship task's classes and, only when a downgrade actually
-happened, excludes the same packages from wherever `main` already compiled them (a consumer may add its pure
-sources to `main` directly, as `docs/decisions/0001-substrate.md` does for Somnium's kernels) — one path, never two, and never
-touched when there is nothing to ship.
-
-`myceliumPureShip` works on the standard `jar` task; a loader's remap or repackaging step (Loom's `remapJar`,
-ForgeGradle/jarJar) consumes that task's output exactly as it already does, and needs to know nothing about
-Mycelium.
-
-## Downgrading the jar's own classes (`myceliumDowngradeJar`)
-
-`myceliumPureShip` carries the pure layer to an old era from the era gate's own bytes. A port written in the same modern
-Java as the pure layer (records, `List.of`, pattern matching) has the same problem for the rest of the jar, and no
-gate bundle to take the bytes from. `myceliumDowngradeJar` takes the jar itself, the standard `jar` task's output by
-default, and the classpath it was compiled against, and runs JvmDowngrader over all of it: bytecode to the era's class
-version, the Java APIs it calls backported into classes shaded under the artifact's `shadePrefix`. Then it holds the
-result to the same two things as the gate: no call of the artifact's own may be one the downgrader had no backport
-for, and every `java.*` and `javax.*` class, method and field the result reaches must exist on a real JVM of the
-era's version (law P2, over the whole jar). A jar whose classes already run on the era is copied through and the
-report says so.
-
-The classes `myceliumPureShip` already put under the shade prefix are set aside while the rest is downgraded and put back
-where the shade did not write them again, so a backport is never in the jar twice. A nested or synthetic class the
-artifact compiled itself (`Outer$1`) makes way for the pure layer's shipped `Outer`, whose other compilation has no such
-class.
-
-Nothing in `check` or in any jar runs it. A consumer puts its output where the loader's tooling takes the jar (Loom's
-`remapJar` input, say), before any remapping, so the classpath the classes were compiled against is the one the
-downgrader reads. `build/mycelium/downgrade/report/downgrade.json` records what ran; the design-time claim stays
-what `DESIGN.md` §11 allows: the bytes were downgraded and their Java references resolve on the era's Java, not that the
-game runs them.
-
-### Private feature libraries
-
-`privateLibrary("library.api", "my.mod.privateapi")` gives a feature library an artifact-owned package identity.
-Its dependencies are declared in the `myceliumPrivateLibraries` configuration, which also supplies the compile
-classpath. `myceliumDowngradeJar` merges those jars, rewrites the artifact's callers and the libraries' bytecode,
-reflection class names and service descriptors, then downgrades that result. Every library class must belong to a
-declared package; overlapping translations and conflicting jar entries fail. Library license resources are retained
-under `META-INF/private-libraries/<jar>/`. The downgrade report records input SHA-256 hashes, output identity and
-relocated class counts; these are build facts, not game evidence.
-
-Java 8 artifacts omit multi-release variants that their JVM ignores. Newer artifacts retain and relocate them.
-Explicit artifact module descriptors are refused: merging a named dependency into a named consumer needs its own
-module graph change. No private-library declaration means no relocation or merge, and existing artifacts retain
-that behavior. A consumer's loader step must take the task's output even when its source Java needs no downgrade.
-
-## The portability surface (`myceliumSurface`)
-
-Per package of the artifact's own main sources (never the imported models, proven pure already), `myceliumSurface`
-counts references to a platform package (every root `eras/loaders.json` names, the game's own included), the same
-textual match `myceliumPurity` and `myceliumIsolation` already use. A package the consumer names in
-`mycelium { ports("...") }` is expected to touch the platform; every other package's references are the surface —
-the cost the next rung would have to eat, made visible before the port starts, with the aim of only ever shrinking
-it. `build/mycelium/surface/surface.json` holds the full report; `failOnGrowth` compares it against a checked-in
-baseline of the same shape, opt-in and off by default.
-
-It is a textual count (the same reference used three times on one line counts three), not a distinct-type or
-call-graph count, and it does not itself cross a wall: Stonecutter bridges neighbouring versions within a port, and
-a provider directory per era still crosses the walls this table describes.
-
-## Not yet built (in order)
-
-1. **Rungs**, one at a time, each when a consumer needs it:
-   - 1.20.1 (Fabric, Forge);
-   - 1.18.2;
-   - 1.16.5 (Java 8);
-   - 1.12.2 (Forge, Legacy Fabric; no data packs);
-   - 1.7.10;
-   - Beta 1.7.3.
+What porting to a version taught, case by case, is `docs/reference/porting-lessons.md`. The rule it supports: a rung is
+not ported until its whole suite runs there, not only its build. Rungs not yet ported are on the board
+(`docs/STATUS.md`).

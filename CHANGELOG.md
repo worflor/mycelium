@@ -58,6 +58,25 @@ Written for Somnium, whose static session maps, player-keyed holds and closures 
 - `persistence.player-state@1` is unchanged; its SPEC now says how `RESPAWN_SAFE` relates to the lifecycle policies.
 
 Ran: `bash run-contracts.sh state-lifecycle`, `./gradlew check`.
+## 2026-10-12 - Documents reshaped around Mycelium as a compiler you build with
+
+The living documents now say what decision 0015 decided. `README.md` opens with what Mycelium is (NAML: Not A Mod
+Loader) and the machine, not the contract list. `AGENTS.md` is an onboarding and routing page, with the build-with
+posture, a table of where each kind of knowledge lives, and an ask-first list cut to what is irreversible or reaches
+another consumer. `docs/admission.md` says what makes a good addition, not what to refuse; its filename is kept because
+the plugin's source comments and messages point at it.
+
+- **New homes:** `docs/architecture.md` (the technical model, principles, what checks what, taken from `AGENTS.md` and
+  `README.md`), `docs/plugin.md` (options, the full task table, the proof fixtures, and the jar sections moved out of
+  `docs/eras.md`), `docs/STATUS.md` (open work, proposals, warnings; replaces the "Not yet built" list and the open
+  questions), `contracts/README.md` (the contracts as worked examples with the divide each crossed),
+  `docs/reference/porting-lessons.md` (moved out of `docs/eras.md`).
+- **Settled contradictions:** "promote on evidence, until then it stays native" in `docs/admission.md` against decision
+  0015; "coordinate before changing a package another consumer depends on" and the long ask-first list in `AGENTS.md`;
+  the rule that a model never mentions another contract's package, now the declared-requirement form of decision 0014.
+- `DESIGN.md` is untouched and framed as the founding record; where a decision differs, the decision is current.
+
+Ran: `./gradlew check` (green).
 
 ## 2026-10-12 - item.component@1: a lens with nothing left over retains nothing
 
