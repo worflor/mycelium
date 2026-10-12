@@ -9,6 +9,10 @@ public final class Run {
     private Run() {
     }
 
+    private static mycelium.harness.Check records(RecordBinding binding) {
+        return new ItemComponentContractTests(ReferenceTranslator::create, binding).run();
+    }
+
     public static void main(String[] args) {
         int exit = ContractRun.run("item.component@1",
                 () -> new ItemComponentContractTests(ReferenceTranslator::create).run(),
@@ -30,7 +34,19 @@ public final class Run {
                                 "T5:corruption-rejected-safely"),
                         new ContractRun.Broken("UnsortedKeysTranslator",
                                 () -> new ItemComponentContractTests(UnsortedKeysTranslator::new).run(),
-                                "T6:deterministic-ordering")
+                                "T6:deterministic-ordering"),
+                        new ContractRun.Broken("RemainderDroppingRecords",
+                                () -> records(new RemainderDroppingRecords()),
+                                "T12:record-remainder"),
+                        new ContractRun.Broken("AbsentWritingRecords",
+                                () -> records(new AbsentWritingRecords()),
+                                "T12:record-optional-absent"),
+                        new ContractRun.Broken("ForgivingRecords",
+                                () -> records(new ForgivingRecords()),
+                                "T12:record-malformed-rejected"),
+                        new ContractRun.Broken("UnsortedRecords",
+                                () -> records(new UnsortedRecords()),
+                                "T12:record-sorted")
                 ));
         System.exit(exit);
     }

@@ -25,6 +25,7 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
   - Arrays: `TagByteArray`, `TagIntArray`, `TagLongArray`
   - Collections: `TagList`, `TagCompound`
 - `ComponentCodec<T>`: Pure serializer (`encode: T -> TagNode`, `decode: TagNode -> T throws CodecException`). Provides compositional value semantics: `freeze(T)`, `validate(T)`, `semanticEquals(T, T)`, `semanticHash(T)`.
+- `RecordCodec<T>`: Record combinator over `ComponentCodec`: named required fields (`RecordCodec.field`), optional fields (`RecordCodec.optional`, read as `Optional`), each with its own codec, built into a codec that is also a `FieldAwareCodec`. `definition(id, default)` binds both, so fields the codec does not know survive an edit.
 - `ComponentDefinition<T>(id, codec, defaultValue)`: Declares a typed component and deeply frozen default value.
 - `ComponentRegistry`: Catalog of registered component definitions with duplicate conflict rejection and explicit `replace()` semantics.
 - `CarrierSnapshot`: Immutable snapshot of an item's carrier state (typed components, negative patch removals, and preserved foreign/quarantined tags). Guarantees complete immutability via defensive views (`defensiveMapView`), deep array/collection cloning, and compositional deep equality.
@@ -54,6 +55,7 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
 | T9 | **Field-Aware Remainder Preservation:** Updating a known subfield in a compound retains all unconsumed future/foreign subfields across edit cycles. |
 | T10 | **Tri-State Native Reconciliation:** Legitimate native edits observed between emitted baseline $N_0$ and later native state $N_1$ are reconciled back into semantic edits: $\operatorname{restoreEdited}(S_0, N_0, N_1)$, preserving unrelated modern retained state. |
 | T11 | **Stacking Identity Invariant:** Two items stack if and only if their `IDENTITY` channel views are equal, guaranteeing that distinct retained modern states never merge. |
+| T12 | **Record Fidelity:** A `RecordCodec` round-trips its value; a missing optional field decodes as absent and an absent optional is never written; a missing required field or a field of the wrong shape is a `CodecException` (so T5 quarantines the component with its raw compound); fields, remainder included, are written in sorted key order (T6); fields the codec does not know are kept across decode, edit and encode (T9). |
 
 ## 4. Rejection Matrix
 
@@ -65,6 +67,10 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
 | `LossyUnknownTagTranslator` | Discards unrecognized tags under `"mycelium$c"` during round-trip | T4 (`T4:foreign-tag-preservation`) |
 | `CrashingParseTranslator` | Throws an unchecked `RuntimeException` on malformed nodes | T5 (`T5:corruption-rejected-safely`) |
 | `UnsortedKeysTranslator` | Serializes keys in reverse order instead of canonical sorted order | T6 (`T6:deterministic-ordering`) |
+| `RemainderDroppingRecords` | A record drops the fields it does not know when an edited value is written back | T12 (`T12:record-remainder`) |
+| `AbsentWritingRecords` | A record writes an absent optional field (as an empty compound) | T12 (`T12:record-optional-absent`) |
+| `ForgivingRecords` | A record with a malformed or missing field decodes as the default instead of throwing `CodecException` | T12 (`T12:record-malformed-rejected`) |
+| `UnsortedRecords` | A record writes its fields in reverse key order | T12 (`T12:record-sorted`) |
 
 `NoOpTranslator` never crashes, writes no corrupt data, and is trivially fast. It is in the matrix because doing nothing must fail T1.
 
@@ -83,6 +89,30 @@ Consumers vendor `item.component@1` under their private namespace via `myceliumI
 - The P2 adapter inspects `tag.getCompound("mycelium$c")` and delegates to `StandardRosettaTranslator.INSTANCE.fromLegacyNbt(tagNode, registry)`.
 - When mutating items, `StandardRosettaTranslator.INSTANCE.toLegacyNbt(snapshot, registry)` re-serializes components under `"mycelium$c"`, leaving vanilla root tags (`Damage`, `display`, `Enchantments`) untouched.
 - If all components match registered defaults, `"mycelium$c"` is completely removed from root NBT (zero tag overhead).
+
+### 5.3 A record component
+
+A small record is declared once: its fields, then the codec built from them. `definition` registers it with the lens,
+so a compound written by a newer version of the mod (an extra field) is not damaged by an older one.
+
+```java
+record Charm(String owner, int level, Optional<String> memory) {}
+
+Field<Charm, String> OWNER = RecordCodec.field("owner", ComponentCodec.STRING, Charm::owner);
+Field<Charm, Integer> LEVEL = RecordCodec.field("level", ComponentCodec.INT, Charm::level);
+Field<Charm, Optional<String>> MEMORY = RecordCodec.optional("memory", ComponentCodec.STRING, Charm::memory);
+
+RecordCodec<Charm> CODEC = RecordCodec.of(
+        r -> new Charm(r.get(OWNER), r.get(LEVEL), r.get(MEMORY)), OWNER, LEVEL, MEMORY);
+
+ComponentRegistry registry = ComponentRegistry.builder()
+        .register(CODEC.definition(ComponentId.of("mymod:charm"), new Charm("", 0, Optional.empty())))
+        .build();
+```
+
+`{"owner":"steve","level":3}` decodes with `memory` absent and encodes back without it. A maker that rejects its
+fields (a constructor that throws) is also a `CodecException`. The maker is called on decode and on `freeze`, and must
+build the same value from the same fields each time.
 
 ## 6. Running the harness
 

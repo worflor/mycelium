@@ -2,6 +2,7 @@ package mycelium.item_component.v1.harness;
 
 import mycelium.harness.Check;
 import mycelium.harness.Seeded;
+import mycelium.item_component.v1.fixtures.RecordBinding;
 import mycelium.item_component.v1.model.*;
 
 import java.util.*;
@@ -12,9 +13,15 @@ import java.util.function.Supplier;
  */
 public final class ItemComponentContractTests {
     private final Supplier<RosettaTranslator> translators;
+    private final RecordBinding records;
 
     public ItemComponentContractTests(Supplier<RosettaTranslator> translators) {
+        this(translators, RecordBinding.reference());
+    }
+
+    public ItemComponentContractTests(Supplier<RosettaTranslator> translators, RecordBinding records) {
         this.translators = translators;
+        this.records = records;
     }
 
     public Check run() {
@@ -39,6 +46,7 @@ public final class ItemComponentContractTests {
         t7RealWorldModVectors(c);
         t8AdversarialEdgeCases(c);
         t9IntegratedCompilerLifecycle(c);
+        t12RecordCombinator(c);
         return c;
     }
 
@@ -517,5 +525,131 @@ public final class ItemComponentContractTests {
         c.equal(s2.components(), restored.components(), "T1:round-trip-isomorphism");
         c.that(restored.isRemoved(deprecatedId), "T1:round-trip-isomorphism");
         c.that(restored.unmappedTags().containsKey("unknown:foreign_data"), "T4:foreign-tag-preservation");
+    }
+
+    /** A small record, as a mod would declare one: two required fields and an optional one. */
+    private record Charm(String owner, int level, Optional<String> memory) {
+    }
+
+    private static final RecordCodec.Field<Charm, String> CHARM_OWNER =
+            RecordCodec.field("owner", ComponentCodec.STRING, Charm::owner);
+    private static final RecordCodec.Field<Charm, Integer> CHARM_LEVEL =
+            RecordCodec.field("level", ComponentCodec.INT, Charm::level);
+    private static final RecordCodec.Field<Charm, Optional<String>> CHARM_MEMORY =
+            RecordCodec.optional("memory", ComponentCodec.STRING, Charm::memory);
+    private static final RecordCodec<Charm> CHARM = RecordCodec.of(
+            r -> new Charm(r.get(CHARM_OWNER), r.get(CHARM_LEVEL), r.get(CHARM_MEMORY)),
+            CHARM_OWNER, CHARM_LEVEL, CHARM_MEMORY);
+
+    private void t12RecordCombinator(Check c) {
+        RosettaTranslator translator = translators.get();
+        ComponentId id = ComponentId.of("test:charm");
+        Charm dflt = new Charm("", 0, Optional.empty());
+        ComponentDefinition<Charm> definition = records.bind(id, CHARM, dflt);
+        ComponentRegistry registry = ComponentRegistry.builder().register(definition).build();
+
+        Charm withMemory = new Charm("steve", 3, Optional.of("fire_resistance"));
+        Charm withoutMemory = new Charm("steve", 3, Optional.empty());
+
+        // Round trip, optional present and absent (T1 through the record)
+        for (Charm charm : Arrays.asList(withMemory, withoutMemory)) {
+            CarrierSnapshot s = CarrierSnapshot.empty().with(id, charm);
+            CarrierSnapshot back = translator.fromLegacyNbt(translator.toLegacyNbt(s, registry), registry);
+            c.equal(charm, back.get(id), "T12:record-round-trip");
+        }
+
+        // An absent optional is not written, a present one is
+        TagNode.TagCompound written = innerOf(translator.toLegacyNbt(CarrierSnapshot.empty().with(id, withoutMemory), registry), id);
+        c.that(written != null && !written.has("memory") && written.has("owner") && written.has("level"),
+                "T12:record-optional-absent");
+        TagNode.TagCompound writtenFull = innerOf(translator.toLegacyNbt(CarrierSnapshot.empty().with(id, withMemory), registry), id);
+        c.that(writtenFull != null && writtenFull.has("memory"), "T12:record-optional-absent");
+
+        // A compound with no optional field decodes as absent
+        TagNode.TagCompound noMemory = fenced(id, TagNode.TagCompound.empty()
+                .with("owner", TagNode.TagString.of("steve"))
+                .with("level", TagNode.TagInt.of(3)));
+        c.equal(withoutMemory, translator.fromLegacyNbt(noMemory, registry).get(id), "T12:record-optional-absent");
+
+        // Unknown fields survive decode, edit and encode; an optional emptied by the edit disappears (T9)
+        TagNode.TagCompound future = fenced(id, TagNode.TagCompound.empty()
+                .with("owner", TagNode.TagString.of("steve"))
+                .with("level", TagNode.TagInt.of(3))
+                .with("memory", TagNode.TagString.of("fire_resistance"))
+                .with("zz_future", TagNode.TagString.of("later"))
+                .with("aa_future", TagNode.TagInt.of(9)));
+        CarrierSnapshot loaded = translator.fromLegacyNbt(future, registry);
+        c.equal(withMemory, loaded.get(id), "T12:record-remainder");
+        CarrierSnapshot edited = loaded.with(id, new Charm("steve", 4, Optional.empty()));
+        TagNode.TagCompound after = innerOf(translator.toLegacyNbt(edited, registry), id);
+        c.that(after != null
+                        && after.getString("zz_future").orElse("").equals("later")
+                        && after.getInt("aa_future").orElse(0) == 9
+                        && after.getInt("level").orElse(0) == 4
+                        && !after.has("memory"),
+                "T12:record-remainder");
+
+        // Entries are written in sorted key order, remainder included (T6)
+        c.that(isSorted(after), "T12:record-sorted");
+        c.that(isSorted(innerOf(translator.toLegacyNbt(CarrierSnapshot.empty().with(id, withMemory), registry), id)),
+                "T12:record-sorted");
+
+        // A malformed or missing field is a CodecException, so the translator quarantines the component (T5)
+        TagNode.TagCompound badLevel = fenced(id, TagNode.TagCompound.empty()
+                .with("owner", TagNode.TagString.of("steve"))
+                .with("level", TagNode.TagString.of("three")));
+        TagNode.TagCompound missingOwner = fenced(id, TagNode.TagCompound.empty().with("level", TagNode.TagInt.of(3)));
+        TagNode.TagCompound badOptional = fenced(id, TagNode.TagCompound.empty()
+                .with("owner", TagNode.TagString.of("steve"))
+                .with("level", TagNode.TagInt.of(3))
+                .with("memory", TagNode.TagInt.of(7)));
+        for (TagNode.TagCompound bad : Arrays.asList(badLevel, missingOwner, badOptional)) {
+            CarrierSnapshot quarantined;
+            try {
+                quarantined = translator.fromLegacyNbt(bad, registry);
+            } catch (RuntimeException e) {
+                c.fail("T12:record-malformed-rejected");
+                continue;
+            }
+            c.that(!quarantined.has(id), "T12:record-malformed-rejected");
+            c.that(quarantined.unmappedTags().containsKey(id.toString()), "T12:record-malformed-rejected");
+            c.that(!quarantined.recoveryRecords().isEmpty(), "T12:record-malformed-rejected");
+            // and re-saving keeps the raw evidence
+            c.equal(innerOf(bad, id), innerOf(translator.toLegacyNbt(quarantined, registry), id),
+                    "T12:record-malformed-rejected");
+        }
+        boolean threw = false;
+        try {
+            definition.codec().decode(TagNode.TagString.of("not a compound"));
+        } catch (CodecException e) {
+            threw = true;
+        }
+        c.that(threw, "T12:record-malformed-rejected");
+
+        // Value semantics: a record equal to the default is elided (T2), and a frozen copy is the same value
+        c.that(translator.toLegacyNbt(CarrierSnapshot.empty().with(id, dflt), registry).isEmpty(), "T2:default-elision");
+        c.that(CHARM.semanticEquals(withMemory, CHARM.freeze(withMemory))
+                && CHARM.semanticHash(withMemory) == CHARM.semanticHash(CHARM.freeze(withMemory))
+                && !CHARM.semanticEquals(withMemory, withoutMemory), "T12:record-round-trip");
+    }
+
+    private static boolean isSorted(TagNode.TagCompound compound) {
+        if (compound == null) return false;
+        List<String> keys = new ArrayList<>(compound.entries().keySet());
+        List<String> sorted = new ArrayList<>(keys);
+        Collections.sort(sorted);
+        return sorted.equals(keys);
+    }
+
+    private static TagNode.TagCompound fenced(ComponentId id, TagNode.TagCompound value) {
+        return TagNode.TagCompound.empty().with(RosettaTranslator.FENCED_NAMESPACE,
+                TagNode.TagCompound.empty().with(id.toString(), value));
+    }
+
+    private static TagNode.TagCompound innerOf(TagNode.TagCompound nbt, ComponentId id) {
+        TagNode f = nbt.get(RosettaTranslator.FENCED_NAMESPACE);
+        if (!(f instanceof TagNode.TagCompound)) return null;
+        TagNode v = ((TagNode.TagCompound) f).get(id.toString());
+        return v instanceof TagNode.TagCompound ? (TagNode.TagCompound) v : null;
     }
 }
