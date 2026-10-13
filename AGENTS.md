@@ -105,7 +105,7 @@ the tasks do is `docs/plugin.md`.
   `Harness.java` (what every runner shares: the harness's sources, and the bundle an era gate runs),
   `UsageTask.java` (`myceliumUsage`).
 - **Bridges** (decision 0016). `Bridges.java` (reads `bridges/<slug>/bridge.json` strictly; selects a variant and its overlays
-  for a version, rewrites packages under the mod's namespace, lays the files out), `BridgesSpec.java`
+  for a version, rewrites packages under the mod's namespace, lays the files out), `BridgesSpec.java` (including what conformance data a jar ships)
   (`bridges { use skip override conformance }`), `ImportBridgesTask.java` (`myceliumBridgeImport`), `BridgeCheckTask.java`
   (`myceliumBridges`: an override implements the port (B1), a bridge has a realization on the target (B2)), `BridgeCheck.java`
   (this repository's check of every bridge: rows cover each version once, overlays lie inside their variant),

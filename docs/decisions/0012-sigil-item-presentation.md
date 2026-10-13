@@ -120,3 +120,16 @@ normative for all of it).
 ## Evidence
 
 Landed in `contracts/item-presentation`; the six fixtures of the matrix are all `CAUGHT` for their label and the reference is clean.
+
+## Somnium, adopted
+
+Moving Somnium's three items taught the contract four things, all additive within `@1`, all in `contracts/item-presentation/SPEC.md`.
+
+
+Not derivable from stored state, a look is still state: Somnium made the panel's raised hand a unit component (`example:raised`)
+and a display body's part a scalar one (`example:body`) rather than a selector argument threaded through Java.
+
+The runtime half is the `item-presentation` bridge (`bridges/item-presentation`: `item-definition` from 1.21.4, `model-overrides`
+before, with an overlay for 1.20.5 to 1.21.3 whose custom model data is a component). Its conformance cases run on real stacks and
+a display entity's raw item data. Conformance data stays out of the shipping jar by default; a mod keeps it with
+`bridges { shipConformanceResources() }` and drops the classes with `conformanceClassesOutOfJar()`.

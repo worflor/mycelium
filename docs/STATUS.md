@@ -11,6 +11,15 @@ counts are on `README.md`'s status line. History is `CHANGELOG.md`.
   built: `emulated-clock-takeover` (optional); `ClockConformance.sleeping` (a real sleeper) has no harness that makes the server
   count a mock player as sleeping. Not run in a game: 26.1, 26.2 and the pre-26.1 versions other than 1.21.1.
 
+- **The Sigil in Somnium: adopted** (`docs/decisions/0012-sigil-item-presentation.md`, "Somnium, adopted"). Not run in a game: 26.1, 26.2 and 1.14 to 1.21.3
+  other than 1.21.1 (linked, not played). The conformance classes still ship in a mod's jar unless it opts them out.
+
+- **First consumer use of the Threshold** (the Sigil's is above). The Threshold (`state.lifecycle@1`) is a contract;
+  Somnium adopts it next (its session state, scheduled work and relog handling). Its in-game evidence comes from that consumer's gametests.
+- **A build-time check of a mod's slot registry.** `state.lifecycle@1` checks a registry when the mod builds it at run
+  time (`SlotRegistry.of`); a Gradle task that runs the same check at build time is not written.
+- **The presentation fixture in the self-tests.** `gradle-plugin/src/test/fixtures/presentation-consumer` proves the task
+  wiring when built by hand; the plugin's self-test does not build it.
 
 ## Not built
 

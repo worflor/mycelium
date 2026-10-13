@@ -127,3 +127,8 @@ for versions the mod claims in `range { }`.
   file). `myceliumBridgeImport` lays them under `build/generated/resources/mycelium/conformance` beside the cases and the conformance
   source set takes that directory; a mod without cases gets none. `world-clock` is the first user (decision 0018); its overlays are by
   saved-data shape, rule name and tick rate manager.
+- Conformance data is test data: the jar a mod ships leaves out the files the import laid under `.../mycelium/conformance`
+  (they still reach the game-test run, which reads the compiled output directories). `bridges { shipConformanceResources() }` keeps
+  them; `conformanceClassesOutOfJar()` also leaves the conformance classes out, for a mod whose tests are not in the main source
+  set. `item-presentation` (decision 0012, "Somnium, adopted") is the second bridge with cases; Somnium's shipping jar no longer
+  holds the clock's datapack files.

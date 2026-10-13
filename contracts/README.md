@@ -14,7 +14,7 @@ governs a type over any sequence of calls (`contracts/chunk-hold`).
 | Contract | Directory | The divide | Written for |
 |---|---|---|---|
 | `item.component@1` | `contracts/item-component` | Item state as typed data components from 1.20.5 and as NBT before, one fenced grammar for both (Rosetta) | Cartomancy |
-| `item.presentation@1` | `contracts/item-presentation` | How an item looks from its state: a modern item definition from 1.21.4, a model with overrides before; one program compiled to both, with stable legacy codes (the Sigil). Requires `item.component@1` | Somnium |
+| `item.presentation@1` | `contracts/item-presentation` | How an item looks from its state: a modern item definition from 1.21.4, a model with overrides before; one program compiled to both, with stable legacy codes (the Sigil). Requires `item.component@1`. Bridge `item-presentation` | Somnium |
 | `state.lifecycle@1` | `contracts/state-lifecycle` | What state does at each crossing (save, login, death, respawn, clone, dimension change, unload, stop, and a mod's own), with hosts no stale work can reach (the Threshold). Requires `item.component@1` | Somnium |
 | `chunk.hold@1` | `contracts/chunk-hold` | Several holders keeping chunks loaded over an engine whose tickets are not counted per holder | Somnium |
 | `dimension.travel@2` | `contracts/dimension-travel-2` | A trip between levels and back that survives the process dying in between | Somnium |

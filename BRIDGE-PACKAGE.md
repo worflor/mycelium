@@ -35,7 +35,8 @@ bridges/<slug>/
    reload, a client's copy; a clock advancing with its rate against the game's own). They are plain Java: `cases(...)` returns
    named bodies over a `Level` (and, where a law needs the server to run, `timed(...)` returns a start, a number of ticks and an end);
    the mod registers them. A case that needs data in the game (a datapack clock) has it in `conformance-resources/`, which
-   `bridges { conformance() }` adds to the mod's resources beside the cases.
+   `bridges { conformance() }` adds to the mod's resources beside the cases. They are test data: the mod's jar leaves them out unless
+   it says `shipConformanceResources()`, and leaves the conformance classes out only if it says `conformanceClassesOutOfJar()`.
 6. **Bring the contract.** A contract's `contracts/registry.json` row lists its bridges. A mod that references a bridge
    gets its contract and the contract's requirements.
 

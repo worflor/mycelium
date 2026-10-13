@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-13 - item.presentation@1: the bridge, scalar components, display contexts; Somnium adopts it
+
+`bridges/item-presentation` is the native half of the Sigil: `ItemPresenter` (a `StackPresenter<ItemStack>`) selects from a stack's own
+components, writes the era's selector, and writes the raw item data a display entity is built from.
+
+- **Variants.** `item-definition` (1.21.4 on: the selector is the first custom model data string) and `model-overrides` (1.14 to 1.21.3: the
+  locked number, in the root tag before 1.20.5; an overlay for 1.20.5 to 1.21.3 where it is a component). Linkage green.
+- **Contract (additive).** Scalar components in the catalog (`"value"`); `contexts` on a program (law S8, the `InvertedContexts` fixture,
+  a rejection matrix of seven, all caught); `StackPresenter`; the catalog written beside the plans; a presence component counts as a unit.
+- **Conformance** (`PresenterConformance`): every selection round-trips onto a real stack, legacy codes are the lock's, the base clears the
+  selector, neighbours are kept, equal-state stacks stay equal, copy, save and sync, raw item data, an empty stack untouched.
+- **Plugin.** A mod's jar leaves the conformance data out (`shipConformanceResources()` keeps it) and, on request, the conformance
+  classes (`conformanceClassesOutOfJar()`); presentation sources honour `myceliumDefaults`. A `conformance-consumer` fixture proves the modes.
+- Consumer conformance exercises the generated presentation resources.
+
 ## 2026-10-13 - world.clock@1: the bridges (native-clock, emulated-clock) and their proof in Somnium
 
 `bridges/world-clock` (`docs/decisions/0018-world-clock.md`, "Bridges as built") is the native half of `world.clock@1`: its
