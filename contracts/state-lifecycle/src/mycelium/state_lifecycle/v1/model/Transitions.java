@@ -100,6 +100,22 @@ public final class Transitions {
         return out;
     }
 
+    /**
+     * The ids of the transitions of any of the given shapes that apply to hosts of {@code scope}, ordered: the group a slot of that scope
+     * declares one policy across. {@link #shaped(Shape...)} alone also names the transitions of other kinds of host (an unload is not a
+     * player's), and a slot that declares a policy for one is refused (law L1). Learned in the lifecycle bridge: a mod declares policies
+     * by shape, for its own scope, and this is that group.
+     */
+    public Set<TransitionId> shaped(HostKind scope, Shape... shapes) {
+        Set<TransitionId> out = new LinkedHashSet<>();
+        for (TransitionId id : shaped(shapes)) {
+            if (byId.get(id).admits(scope)) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+
     public static final class Builder {
         private final Map<TransitionId, Transition> byId = new TreeMap<>();
 

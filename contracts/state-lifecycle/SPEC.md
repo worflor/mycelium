@@ -15,6 +15,7 @@ It was found in Somnium, whose map of its session state showed all of those. The
 | Kind | Model contract (`../../CONTRACT-PACKAGE.md`): laws over any sequence of crossings, with a transaction for atomicity |
 | Requires | `item.component@1`, its model only: a durable slot's codec can be made from a component codec (`ComponentSlotCodec`) |
 | Storage | `persistence.player-state@1` stays the storage port: the medium and the schema chain. This contract is the policy |
+| Port and bridge | `LifecyclePort` (section 5), implemented on the real game by Mycelium's `lifecycle` bridge (`../../bridges/lifecycle`, `../../docs/decisions/0016-bridges.md`) |
 | Reference model | `src/` : pure Java 17, no Minecraft or loader imports |
 
 ## 1. The model
@@ -38,7 +39,10 @@ not declare into it. A `Transition` has a `Shape`, which fixes what a policy can
 | `FORKS` | a second host, with an identity of its own, is made from a first, which lives on | `mycelium:clone` (player, entity) |
 
 A loader's "copy from the old player" event on respawn is the `SUCCEEDS` crossing. A consumer declares its own transitions
-(`Transitions.builder().declare("example:drift", Shape.STAYS, HostKind.PLAYER)`), each with the host kinds it applies to.
+(`Transitions.builder().declare("example:drift", Shape.STAYS, HostKind.PLAYER)`), each with the host kinds it applies to. A slot
+declares its policies by shape for its own scope with `transitions.shaped(HostKind.PLAYER, Shape.ENDS, ...)`: the transitions of
+those shapes that apply to players (`shaped(Shape...)` alone also names an unload and a load, which are not a player's, and a policy
+for one is refused). This was found writing the lifecycle bridge's first slots, and is additive within `@1`.
 
 **Slots.** `Slot<T>` has an id, a scope (a host kind), a durability, a codec if durable, an initial value, a policy for
 each transition, and the slots whose effects must come first. Values are immutable. `SESSION` lives in memory for as long as
@@ -187,21 +191,21 @@ TransitionId drift = new TransitionId("mymod:drift");
 
 // A session map that must end at logout. It is dropped at every end and at a respawn, kept elsewhere.
 Slot<Map<String, String>> holds = Slot.<Map<String, String>>session("mymod:holds", HostKind.PLAYER, Map.of())
-        .on(transitions.shaped(Shape.SAVES, Shape.STAYS, Shape.BEGINS), Policy.keep())
-        .on(transitions.shaped(Shape.ENDS, Shape.SUCCEEDS, Shape.FORKS), Policy.drop())
+        .on(transitions.shaped(HostKind.PLAYER, Shape.SAVES, Shape.STAYS, Shape.BEGINS), Policy.keep())
+        .on(transitions.shaped(HostKind.PLAYER, Shape.ENDS, Shape.SUCCEEDS, Shape.FORKS), Policy.drop())
         .build();
 
 // A durable record: saved with the player, copied to a clone, carried through a respawn. Its codec comes from an
 // item.component@1 RecordCodec, so unknown fields survive.
 Slot<Charm> charm = Slot.durable("mymod:charm", HostKind.PLAYER, Charm.NONE, ComponentSlotCodec.of(Charm.CODEC))
-        .on(transitions.shaped(Shape.SAVES, Shape.STAYS, Shape.BEGINS, Shape.ENDS, Shape.SUCCEEDS), Policy.keep())
-        .on(transitions.shaped(Shape.FORKS), Policy.copy())
+        .on(transitions.shaped(HostKind.PLAYER, Shape.SAVES, Shape.STAYS, Shape.BEGINS, Shape.ENDS, Shape.SUCCEEDS), Policy.keep())
+        .on(transitions.shaped(HostKind.PLAYER, Shape.FORKS), Policy.copy())
         .build();
 
 // An exclusive token: on one player at a time. A clone takes it; it is never on both.
 Slot<String> key = Slot.durable("mymod:key", HostKind.PLAYER, "key", ComponentSlotCodec.of(ComponentCodec.STRING))
-        .on(transitions.shaped(Shape.SAVES, Shape.STAYS, Shape.BEGINS, Shape.ENDS, Shape.SUCCEEDS), Policy.keep())
-        .on(transitions.shaped(Shape.FORKS), Policy.exclusive())
+        .on(transitions.shaped(HostKind.PLAYER, Shape.SAVES, Shape.STAYS, Shape.BEGINS, Shape.ENDS, Shape.SUCCEEDS), Policy.keep())
+        .on(transitions.shaped(HostKind.PLAYER, Shape.FORKS), Policy.exclusive())
         .build();
 
 SlotRegistry registry = SlotRegistry.of(transitions, List.of(holds, charm, key)); // throws with every diagnostic, naming slot and transition
@@ -239,14 +243,69 @@ What an adapter must do:
 - Relate the traits of `persistence.player-state@1`: its `RESPAWN_SAFE` is a claim about a storage medium, and here a policy
   at `mycelium:respawn` is the statement the engine carries out.
 
-## 5. Running the harness
+## 5. The port, and the bridge that implements it
+
+Section 4 is what an adapter must do. Doing it is a fact about the game, not about the mod, so Mycelium ships it as a bridge
+(`bridges/lifecycle`, `docs/decisions/0016-bridges.md`) and this contract declares the port the bridge implements, additively
+within `@1`:
+
+```java
+LifecyclePort<ServerPlayer, MinecraftServer> lifecycle = PlayerLifecycle.of(registry);   // the bridge's class, imported under the mod's namespace
+LoaderEvents.install(lifecycle);                                                         // the loader's half, once, at start-up
+
+HostRef who = lifecycle.current(player).orElseThrow();
+lifecycle.write(HOLD, who, hold);                                       // a slot, in a transaction of its own
+schedule(20, () -> lifecycle.players().resolve(who).ifPresent(p -> p.sendSystemMessage(whisper)));
+lifecycle.fire(DRIFT, who);                                              // the mod's own transition
+```
+
+`LifecyclePort<P, S>` is small on purpose. It gives the mod the registry it passed in, a `HostStore` for **players** and one for
+the **server** (the contract's four accesses, unchanged), `current(player)` and `currentServer()`, the ids of both kinds of host, and
+`fire` / `cross` for the mod's own transitions. `write`, `materialize` and `update` are the store's operations in a transaction of
+their own. Everything about crossing the platform's own transitions is the bridge's: the mod never fires `login`, `respawn` or
+`server_stop`.
+
+**What the bridge turns into crossings.** A player: login (`mycelium:login`, a `Begin`), logout (`mycelium:save` then
+`mycelium:logout`, an `End`), the loader's "copy from the old player" on respawn (`mycelium:respawn`, a `Succeed`: the old object's
+incarnation ends and the new object's begins), death and dimension change (`mycelium:death`, `mycelium:dimension_change`, a `Stay`), and the
+world save (`mycelium:save`). The server: `mycelium:load` when it has started, `mycelium:save` with the world, and at stop
+`mycelium:save` then `mycelium:server_stop` for every live player and then the server. **Minecraft has no way to clone a player**
+(`mycelium:clone`, a `Fork`): a loader's "clone" event for a player is the respawn, and the bridge fires no `clone`. The transition stays
+declared so a mod with its own way to make a second player host can fire it with `cross`.
+
+**Where durable slots live.** In the world's saved data (`SavedData`, the overworld's data storage), not in the player's file: one
+tag per player host and slot, written by the game when it saves the world, read when the world loads. The medium is the same on every
+loader and version (what changes with the version is the saved-data API, which the bridge's overlays follow), and a player's data
+file is left to the game and to other mods. A durable slot's stored form must be an `item.component@1` `TagNode` (what
+`ComponentSlotCodec` makes); a codec of another stored form is refused when its first value is saved, naming the slot. The cost is
+that a durable value belongs to the world and not to the player file: copying a player's file into another world does not take it.
+
+**The cases the bridge's conformance game tests hold it to** (they apply to a mod's own override of the bridge, which implements the
+same port):
+
+| Case | Statement |
+|---|---|
+| **G1 login** | a player who joins has a current ref, which resolves to that very object; a session slot is absent, a durable slot has its stored value |
+| **G2 logout** | after the player leaves, the old ref resolves to nothing, `current` of the object is empty, no session slot of theirs holds a value, and a durable slot's stored form is kept; coming back is a later incarnation |
+| **G3 respawn** | the old object is no longer current and its ref resolves to nothing; the new object is current as the next incarnation of the same host; each slot has done its policy at `mycelium:respawn` (kept, dropped or reset) |
+| **G4 death and dimension change** | the ref is the same incarnation and every slot has done its policy at that transition |
+| **G5 durable** | a durable value survives logout and login, a save and a reload of the saved data, and a respawn that keeps it |
+| **G6 deferred work** | work holding a ref from before a logout, a relog or a respawn resolves to nothing, and a write through it answers `Gone`; it never reaches the new player object |
+| **G7 server stop** | stopping saves, then ends every live player and the server: no session slot holds a value afterwards and the durable ones are stored |
+| **G8 own transitions** | `fire` applies the policies of the mod's own transition to a live host, and refuses a stale ref |
+
+A transition the game cannot drive in a game test (a real network disconnect, a real death by damage) is driven in the case by the
+server path that the loader's event hangs on (`PlayerList.remove`, `PlayerList.respawn`), so the loader's own event fires: the bridge's
+loader half is exercised on each loader, and the case says where it had to call the bridge's hook instead.
+
+## 6. Running the harness
 
 From the Mycelium root: `bash run-contracts.sh state-lifecycle` (or `.\run-contracts.ps1 state-lifecycle`), or
 `./gradlew myceliumVerify -Pmycelium.contracts=state.lifecycle@1`.
 
 Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT` for its intended label; exit code 0.
 
-## 6. Explicit non-claims
+## 7. Explicit non-claims
 
 - No Minecraft or mod loader code was executed to produce this package. A passing harness proves the reference engine and
   the matrix; behaviour on a real game is the consumer's evidence, from its own gametests.
@@ -258,3 +317,5 @@ Expected result: reference implementation clean; every entry of the rejection ma
   (a fork followed by a remove, as two crossings) are not modelled. A loader that replaces an entity's object on a dimension
   change reports it as an unload and a load.
 - The Gradle plugin does not run the declaration check at build time; `SlotRegistry.of` runs it when the mod's registry is built.
+- `LifecyclePort` (section 5) is an interface, not a law of the pure model: the harness does not run G1 to G8. The bridge's conformance game tests
+  do, in a real game, on each target a mod builds, and a mod that has not run them has no claim about the loader's events.

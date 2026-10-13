@@ -95,10 +95,6 @@ final class TestSlots {
         if (policy == null) {
             return;
         }
-        for (TransitionId t : transitions.shaped(shape)) {
-            if (transitions.get(t).admits(scope)) {
-                b.on(t, policy);
-            }
-        }
+        b.on(transitions.shaped(scope, shape), policy);
     }
 }
