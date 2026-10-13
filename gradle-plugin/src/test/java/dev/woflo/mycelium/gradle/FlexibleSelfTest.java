@@ -389,6 +389,101 @@ final class FlexibleSelfTest {
         } finally {
             SelfTest.delete(copy);
         }
+        recording(root, registry);
+    }
+
+    /**
+     * What myceliumRecordProofs may record: only what this run's reports say held, never the registry's whole list. Each way a build
+     * is narrowed (-Pmycelium.contracts, -Pmycelium.suites, -x myceliumVerify, -x an era gate) records nothing.
+     */
+    static void recording(Path root, ContractRegistry registry) throws IOException {
+        java.util.function.Supplier<JsonObject> verify = () -> {
+            JsonObject o = new JsonObject();
+            com.google.gson.JsonArray rs = new com.google.gson.JsonArray();
+            try {
+                for (ContractRegistry.Entry e : registry.all()) {
+                    JsonObject r = new JsonObject();
+                    r.addProperty("id", e.id());
+                    r.addProperty("status", "pass");
+                    r.addProperty("fingerprint", Proofs.fingerprint(root, registry, e));
+                    rs.add(r);
+                }
+            } catch (IOException x) {
+                throw new IllegalStateException(x);
+            }
+            o.add("results", rs);
+            return o;
+        };
+        java.util.function.IntFunction<JsonObject> era = java -> {
+            JsonObject o = new JsonObject();
+            o.addProperty("java", java);
+            o.add("suites", new com.google.gson.JsonArray());
+            o.add("skipped", new com.google.gson.JsonArray());
+            com.google.gson.JsonArray rs = new com.google.gson.JsonArray();
+            for (ContractRegistry.Entry e : registry.all()) {
+                JsonObject b = new JsonObject();
+                b.addProperty("bundle", e.id());
+                b.addProperty("status", "pass");
+                b.add("suites", one());
+                b.addProperty("suitesTotal", 1);
+                rs.add(b);
+            }
+            o.add("results", rs);
+            return o;
+        };
+        java.util.function.Function<List<Integer>, java.util.Map<Integer, JsonObject>> eras = javas -> {
+            java.util.Map<Integer, JsonObject> m = new java.util.LinkedHashMap<>();
+            javas.forEach(j -> m.put(j, era.apply(j)));
+            return m;
+        };
+        List<Integer> javas = List.of(8, 17);
+        ProofRecordTask.Decision whole = ProofRecordTask.decide(root, registry, verify.get(), eras.apply(javas), javas);
+        that(whole.records() && whole.contracts().size() == registry.all().size(),
+                "proofs:a run whose every harness and era gate passed records every contract: " + whole.problems());
+
+        JsonObject narrowed = verify.get();
+        narrowed.getAsJsonArray("results").remove(0);
+        ProofRecordTask.Decision few = ProofRecordTask.decide(root, registry, narrowed, eras.apply(javas), javas);
+        that(!few.records() && few.problems().stream().anyMatch(p -> p.contains("-Pmycelium.contracts")),
+                "proofs:a run narrowed to some contracts records nothing (it would stamp the rest proven): " + few.problems());
+
+        that(!ProofRecordTask.decide(root, registry, null, eras.apply(javas), javas).records(),
+                "proofs:a run without myceliumVerify (-x) records nothing");
+
+        JsonObject failed = verify.get();
+        failed.getAsJsonArray("results").get(0).getAsJsonObject().addProperty("status", "fail");
+        that(!ProofRecordTask.decide(root, registry, failed, eras.apply(javas), javas).records(),
+                "proofs:a contract whose harness did not pass is not recorded");
+
+        JsonObject stale = verify.get();
+        stale.getAsJsonArray("results").get(0).getAsJsonObject().addProperty("fingerprint", "0".repeat(64));
+        that(!ProofRecordTask.decide(root, registry, stale, eras.apply(javas), javas).records(),
+                "proofs:a result for older sources than the ones on disk is not recorded");
+
+        java.util.Map<Integer, JsonObject> suites = eras.apply(javas);
+        suites.get(17).add("suites", one());
+        that(!ProofRecordTask.decide(root, registry, verify.get(), suites, javas).records(),
+                "proofs:an era gate narrowed by -Pmycelium.suites records nothing");
+
+        java.util.Map<Integer, JsonObject> missing = eras.apply(List.of(8));
+        that(!ProofRecordTask.decide(root, registry, verify.get(), missing, javas).records(),
+                "proofs:an era gate that did not run records nothing");
+
+        java.util.Map<Integer, JsonObject> failing = eras.apply(javas);
+        failing.get(8).getAsJsonArray("results").get(0).getAsJsonObject().addProperty("status", "fail");
+        that(!ProofRecordTask.decide(root, registry, verify.get(), failing, javas).records(),
+                "proofs:a contract an era gate did not pass is not recorded");
+
+        java.util.Map<Integer, JsonObject> partial = eras.apply(javas);
+        partial.get(8).getAsJsonArray("results").get(0).getAsJsonObject().addProperty("suitesTotal", 2);
+        that(!ProofRecordTask.decide(root, registry, verify.get(), partial, javas).records(),
+                "proofs:a bundle whose suites did not all run on an era is not recorded");
+    }
+
+    private static com.google.gson.JsonArray one() {
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        a.add("x");
+        return a;
     }
 
     // --- the plugin's wiring, on a throwaway project -------------------------------------------------------------------

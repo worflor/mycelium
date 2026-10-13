@@ -37,6 +37,10 @@ public final class MyceliumRepositoryPlugin implements Plugin<Project> {
             t.setDescription("Records contracts/proofs.json once every harness and every era gate has passed (a mod then need not re-run them).");
             t.getRoot().set(project.getLayout().getProjectDirectory());
             t.getEras().set(project.provider(ext::resolvedEras));
+            // it records what these reports say held, not what the registry lists: a narrowed or skipped gate records nothing
+            t.getVerifyResults().set(verify.flatMap(v -> v.getReportDir().file("results.json")));
+            t.getEraReports().from(project.provider(() -> ext.resolvedEras().stream()
+                    .map(java -> project.getLayout().getBuildDirectory().file("mycelium/eras/java" + java + "/era.json").get().getAsFile()).toList()));
             t.dependsOn(verify, "myceliumEras");
         });
         project.getTasks().register("myceliumRefreshVersions", RefreshVersionsTask.class, t -> {

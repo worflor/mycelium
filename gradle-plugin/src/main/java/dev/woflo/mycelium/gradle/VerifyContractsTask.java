@@ -132,6 +132,8 @@ public abstract class VerifyContractsTask extends DefaultTask {
             r.addProperty("id", entry.id());
             r.addProperty("main", entry.runMain());
             r.addProperty("compileExit", compileExit);
+            // the sources this result is about, so what records a proof can tell a result of these sources from an older one
+            r.addProperty("fingerprint", Proofs.fingerprint(root, registry, entry));
             if (compileExit != 0) {
                 r.addProperty("status", "compile-failed");
                 results.add(r);

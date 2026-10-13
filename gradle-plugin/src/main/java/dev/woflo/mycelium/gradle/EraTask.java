@@ -161,6 +161,7 @@ public abstract class EraTask extends DefaultTask {
                 }
             }
             r.add("suites", ran);
+            r.addProperty("suitesTotal", bundle.mains().size());
             r.addProperty("status", failures == 0 ? "pass" : "fail");
             getLogger().lifecycle("Mycelium: {} on Java {} ({}; {} outside references resolve; {} suite(s){})", bundle.name(), java,
                     r.get("bytecode").getAsString(), refs.size(), ran.size(), failures == 0 ? " pass" : ", " + failures + " FAILED");
@@ -171,6 +172,10 @@ public abstract class EraTask extends DefaultTask {
         report.addProperty("schema", 3);
         report.addProperty("java", java);
         report.addProperty("eraJava", eraJava);
+        // the filter this run was given (-Pmycelium.suites): a narrowed run proves less than the bundles hold, and says so
+        JsonArray filter = new JsonArray();
+        suites.forEach(filter::add);
+        report.add("suites", filter);
         report.addProperty("expected", expected);
         report.addProperty("checked", results.size());
         report.add("skipped", skipped);
