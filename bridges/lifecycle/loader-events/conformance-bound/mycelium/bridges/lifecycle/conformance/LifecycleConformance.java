@@ -157,11 +157,11 @@ public final class LifecycleConformance extends LifecycleCases {
             made.add(player);
             HostRef ref = lifecycle.current(player).orElseThrow(() -> new AssertionError("no ref after the join"));
             lifecycle.write(CHARM, ref, "in the file");
-            Path data = server.getWorldPath(LevelResource.ROOT).resolve("data");
+            Path world = server.getWorldPath(LevelResource.ROOT); // the overworld's data folder is the world's (1.21) or the dimension's (26)
             server.saveEverything(true, true, true);
             boolean written = false;
             for (int i = 0; i < 40 && !written; i++) {
-                written = fileNamed(data, DATA + ".dat");
+                written = fileNamed(world, DATA + ".dat");
                 if (!written) {
                     try {
                         Thread.sleep(50);
@@ -171,7 +171,7 @@ public final class LifecycleConformance extends LifecycleCases {
                     }
                 }
             }
-            expect("after the world saved, the game's data folder has " + DATA + ".dat (" + data + ")", written);
+            expect("after the world saved, the world folder holds " + DATA + ".dat (" + world + ")", written);
         } finally {
             made.stream().filter(Wire::online).forEach(Wire::leave);
             lifecycle.close();
@@ -182,7 +182,7 @@ public final class LifecycleConformance extends LifecycleCases {
         if (!Files.isDirectory(dir)) {
             return false;
         }
-        try (Stream<Path> walk = Files.walk(dir)) {
+        try (Stream<Path> walk = Files.walk(dir, 8)) {
             return walk.anyMatch(p -> p.getFileName().toString().equals(name));
         } catch (IOException e) {
             return false;
