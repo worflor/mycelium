@@ -22,6 +22,7 @@ governs a type over any sequence of calls (`contracts/chunk-hold`).
 | `inventory.transfer@1` | `contracts/flow` | Transactional item transfer where loaders' handlers differ; the model for operation contracts | Osmosis |
 | `world.copy@1` | `contracts/world-copy` | A bounded read of a block region, planned then written within a per-call budget | Somnium |
 | `rule.effects@1` | `contracts/rule-effects` | Applying and removing a rule's effects on a bounded set of entities, with stable ids and scope | Somnium |
+| `world.clock@1` | `contracts/world-clock` | Time as 26.1 models it, on every version: clocks with a rate, a pause and a fractional carry, timelines with periods and markers, edges between samples, the sleep skip; the game before 26.1 is the one clock at rate one. Pure half; the bridges are pending (decision 0018) | Cartomancy, Somnium |
 | `persistence.player-state@1` | `contracts/player-state` | Durable per-player state with an explicit schema and a walk-verified migration chain | Somnium |
 | `presentation.particle-cue@1` | `contracts/cue` | A particle or sound cue scheduled against a profile-resolved key, emitted at the outermost commit | Somnium |
 | `data.catalog@1` | `contracts/data-catalog` | A reloadable, validated set of named data entries: what a datapack folder becomes | Somnium |

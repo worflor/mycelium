@@ -26,8 +26,6 @@ or required method changed). `contracts/item-component/SPEC.md` has the model, l
   `DroppingMigrationCarrier`, `OverreachingMigrationCarrier`), each caught for its label; the matrix is now 23. README count 161 to 174.
 
 Ran: `bash run-contracts.sh item-component` (reference clean, 23 of 23 caught), `./gradlew check`.
-
-
 ## 2026-10-12 - item.presentation@1: the Sigil, item presentation compiled from component state
 
 New contract `item.presentation@1` (`contracts/item-presentation`, `docs/decisions/0012-sigil-item-presentation.md`), written for Somnium,

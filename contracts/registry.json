@@ -39,6 +39,13 @@
       "provenance": "written for Somnium"
     },
     {
+      "id": "world.clock@1",
+      "path": "world-clock",
+      "package": "mycelium.world_clock.v1",
+      "status": "reference",
+      "provenance": "written for Cartomancy"
+    },
+    {
       "id": "persistence.player-state@1",
       "path": "player-state",
       "package": "mycelium.player_state.v1",
