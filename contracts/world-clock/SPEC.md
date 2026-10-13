@@ -172,13 +172,14 @@ once against the real 26.3 classes loaded from the game jar (a throwaway differe
 gates): 7,376,997 `ServerClockInstance.tick` steps, 900,000 `ClientClockManager.tick` steps (with deltas of one tick and
 of up to forty) and 20,000 `ClockTimeMarker` cases (`occursAt`, `resolveTimeToMoveTo`, `getRepetitionCount`, with and
 without a period) agreed with the model bit for bit. The bridges' own conformance gametests, on 26.3 and on 1.21.1, are
-what turns this into a claim about the game, and are not built yet.
+what turns this into a claim about the game: `bridges/world-clock` is built, linked on every pinned version, and its cases pass
+on 26.3 (native) and 1.21.1 (emulated) in Somnium (decision 0018, "Evidence").
 
 ## Not covered
 
-- The bridges: the native one, the emulated one, and the offered takeover that bends vanilla's sky, moon, mobs and beds
-  to a clock that is not the overworld default on versions before 26.1. On those versions a mod's own clocks are real to
-  every mod that reads them, and vanilla keeps following `dayTime`.
+- The takeover, the offered variant that bends vanilla's sky, moon, mobs and beds to a clock that is not the overworld default
+  on versions before 26.1, is not built (decision 0018). On those versions a mod's own clocks are real to every mod that reads
+  them, and vanilla keeps following `dayTime`. The native and emulated bridges are built (`bridges/world-clock`).
 - Environment-attribute tracks (26.x's keyframed sky colours, light, villager schedule, mob burning). The model has
   periods and markers, not tracks. `villager_schedule` and `early_game` are not declared.
 - Player-facing commands, their parsing and permissions: `ClockCommand` is the operation, not the syntax.

@@ -123,3 +123,7 @@ for versions the mod claims in `range { }`.
 - Linkage results: custom-data base 1.20.5 to 1.21.4 (1.21.2 has no data); custom-data with the 1.21.5 overlay on 1.21.5 to 26.3
   (no data for 1.21.6, 1.21.7, 1.21.9); root-tag 1.15 to 1.20.4 on the eight pinned versions; root-tag with the 1.14 overlay on
   1.14.4. Mojang names start at 1.14.4, so 1.14 to 1.14.3 are reported, not failed.
+- A variant may carry `conformance-resources/` (files its cases need in the game's resources: on 26.1 and later a clock is a datapack
+  file). `myceliumBridgeImport` lays them under `build/generated/resources/mycelium/conformance` beside the cases and the conformance
+  source set takes that directory; a mod without cases gets none. `world-clock` is the first user (decision 0018); its overlays are by
+  saved-data shape, rule name and tick rate manager.

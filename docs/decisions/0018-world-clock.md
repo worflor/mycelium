@@ -47,14 +47,15 @@ counts (C3), a model whose sleep skip lands one tick early (C4), extrapolation t
 ### Bridges (decision 0016)
 
 - `native-clock` (from 26.1): the port maps onto `ServerClockManager`, `Timeline` and the time packet. A mod's clocks and
-  timelines can be generated as datapack JSON (`world_clock/`, `timeline/`) from its declaration.
+  timelines can be generated as datapack JSON (`world_clock/`, `timeline/`) from its declaration. (Built; 26.1 and 26.2 need an
+  overlay, below.)
 - `emulated-clock` (before 26.1): the overworld clock is vanilla `dayTime` (rate one; paused is `doDaylightCycle` off); a
   mod's own clocks live in one saved data on the overworld, advance on the server tick, and sync with a small payload on
   join and change. Timelines, markers and periods are evaluated by the pure model. No mixin is needed for clocks a mod adds.
 - `emulated-clock-takeover` (offered, never default, before 26.1): mixins that let vanilla follow a non-default overworld
   clock (rate, pause, a wake marker other than the next 24000): the sleep skip in `ServerLevel.tick`, `Level.getDayTime`
   and `LevelTimeAccess.dayTime` for sky, moon and mobs, the client's day-time path. Each mixin target is named in the bridge
-  and linkage-checked on its versions; a mod takes it only if it wants vanilla bent.
+  and linkage-checked on its versions; a mod takes it only if it wants vanilla bent. (Not built: see "Not built", below.)
 
 ### Honest limits
 
@@ -73,3 +74,80 @@ entry, laws C1 to C6 with seeded property tests (`bash run-contracts.sh world-cl
 real 26.3 classes from the game jar (7,376,997 server tick steps, 900,000 client tick steps, 20,000 marker cases) and agreed
 bit for bit; that run is not repeatable from this repository and is design-time evidence, not game evidence.
 
+
+## Bridges as built (2026-10-13)
+
+`bridges/world-clock` (`bridge.json`, realization table `world.clock` in `eras/minecraft.json`; `BRIDGE-PACKAGE.md`):
+
+| Range | Variant | Overlays (replace same-named files of the variant) |
+|---|---|---|
+| 26.1 to 26.x | `native-clock` | `26.1` (26.1 to 26.2): `Game` |
+| 1.14 to 1.21.11 | `emulated-clock` | `1.14` (1.14 to 1.15.2), `1.16` (1.16 to 1.16.5), `1.17` (1.17 to 1.20.1), `1.20.2`, `1.20.3` (1.20.3 to 1.20.4), `1.21.5` (1.21.5 to 1.21.10), `1.21.11`: `Game` and `ClockStore` |
+| c0.0.11a to 1.13.2 | none | the bridge is written in Mojang's names, which exist from 1.14.4 |
+
+Both variants have one class that implements the port, `WorldClocks`, with the same surface, so a mod's code is the same on every
+version: `WorldClocks.of(server, world[, transport])`, the port (`world`, `gameTime`, `state`, `apply`, `tick`, `sleep`, `sync`),
+`onServerTick()`, `onPlayerJoin(player)`, `problems()`, and `WorldClocks.Client` (`read(level, clock)`, `overworld(level)`, `receive(bytes)`,
+`reset()`). Each variant isolates what changes with the version in `Game` (and, emulated, `ClockStore`): the other files are one
+source on every version of the variant. What a mod supplies:
+
+- **26.1 and later: nothing.** The game advances its clocks (once per server tick, while the `advance_time` rule holds and the tick rate
+  manager runs normally), syncs them to clients on change and on join, and sleeps by them; `onServerTick`, `onPlayerJoin` and `Client.receive`
+  do nothing. A mod's own clocks and timelines are datapack files, which `ClockDatapack.files(world, namespace)` writes from the declaration
+  and `problems()` holds the game's data to. The game loads clocks when the world loads: a `/reload` does not add one.
+- **Before 26.1: two calls and, for a clock it reads on a client, a transport.** `onServerTick()` every server tick and `onPlayerJoin(player)` when
+  a player joins (the loaders name those events differently and the game has no manager to do it), and a `Transport` (`toAll`, `toPlayer`:
+  how this loader sends a custom payload) with `Client.receive(bytes)` on the client thread. The bridge writes and reads the bytes
+  (`ClockWire`, plain `java.io`, the same on every version and loader); the mod only delivers them. A mod that adds no clock of its own, or reads
+  none on a client, passes `Transport.NONE` and the bridge sends nothing and saves nothing.
+
+How the pre-26.1 port is built, and what it refuses: the overworld clock **is** vanilla's `dayTime` (a read is `getDayTime`, a set or an add is
+`setDayTime`, paused is the daylight rule off, so `Pause` and `Resume` set the rule); a rate for it other than one is an
+`UnsupportedOperationException`, not a pretence, since the game would not follow. Every other clock a mod declares (`minecraft:the_end` included,
+which the old game never had) is one line of text in one saved data on the overworld (`mycelium_world_clocks`), kept to the bit (the floats as
+hexadecimal), saved only when a clock changed, and a clock the save has and the declaration lacks is kept. The tick hook advances those clocks by the
+model unless the rule is off or the tick rate manager is frozen or stepping (1.20.3 on), and tells clients when the rule changes what they
+extrapolate. `problems()` names what a declaration asks that this variant cannot give (a default clock for the overworld other than the
+overworld's, a wake marker other than tick 0 of a 24000-tick day: the takeover's).
+
+### What reading the game corrected or added
+
+- 26.1 and 26.2 (read from the 26.1, 26.1.1, 26.1.2 and 26.2 server jars) are not 26.3's manager. `ServerClockManager.moveToTimeMarker` returns a
+  `boolean` (moved or not: "no such marker" and "already there" are not told apart); a clock's state is public only as the packed copy
+  `packState()`; there is no `getInstance`/`ClockInstance`, and a client's `ClockManager` answers `getTotalTicks` and nothing else (no fraction, no
+  rate). The overlay reads state from `packState`, sync from `createFullSyncPacket`, and tells the three outcomes of a move from the markers the
+  game's timelines register. (The 26.1 primer's `skipToTimeMarker` is not in any of these jars.) 26.3 gives each clock an instance
+  (`totalTicks`, `partialTick`, `rate`, `isPaused`) and the move three outcomes.
+- 26.x runs `ServerClockManager.tick` once per server tick only while the tick rate manager runs normally, and the manager reads the *global*
+  rule `advance_time` itself. So the native port's `tick(advanceTime)` takes the rule as an assertion (it must be what the rule is) rather than a
+  switch it could throw.
+- Every registered timeline's markers are registered on its clock at server start, whether or not a dimension type lists the timeline: a mod's
+  timeline needs no dimension to be real.
+- `ClockTimeMarkers.createKey(String)` names only `minecraft:` markers; a mod's marker key is `ResourceKey.create(ClockTimeMarkers.ROOT_ID, id)`.
+- The rule is `advance_time` from **1.21.11** (`GameRules.ADVANCE_TIME`, read from a level), with the old one `dayTime` still the whole clock; up to 1.21.10 it
+  is `doDaylightCycle` (`RULE_DAYLIGHT`).
+- Saved data has five shapes before 26.1: a name in the constructor and `load(CompoundTag)` (1.14 to 1.16), a loader function (1.17 to 1.20.1), a
+  `Factory` with `save(CompoundTag)` (1.20.2 to 1.20.4), a `Factory` with a registry provider (1.20.5 to 1.21.4), a `SavedDataType` with a codec
+  (1.21.5 on); the tick rate manager arrives in 1.20.3; 1.14 and 1.15 find the overworld through the dimension type.
+
+### Honest limits
+
+- The pre-26.1 overworld clock has rate one: `SetRate` on it is refused. A client of the emulated bridge cannot read the overworld's rate or its
+  fraction (the old game sends `dayTime` once a second and the client counts), only a mod's own clocks, which it is told.
+- 26.1 and 26.2 give a client only the clock's total ticks; its fraction and rate are the server's to hold.
+- `Client.read` on 26.x for a clock that is not yet synced is empty, not zero.
+- The old game lets `/time add` take `dayTime` below zero; the model's clock stops at zero, so a negative reading is read as zero.
+- A mod that ships the bridge's conformance cases in its `main` source set also ships the conformance clock (`mycelium_conformance:calendar`, a
+  datapack clock and timeline) on 26.1 and later; a `gametest` source set carries it out of the jar.
+
+### Evidence (2026-10-13)
+
+
+### Not built
+
+`emulated-clock-takeover` (before 26.1, optional, offered and never default) is declared above and **not built**. It needs three things
+that were not here: machinery for a variant a contract row does not bring (0016's "offer, never police" has no `offered` marking yet in
+`bridge.json`), mixin targets that the linkage gate can see (Mixin annotations are not stubbed; a target written as a string is
+invisible to it), and a proof in a real game harness for the hooks it would add. The design stands: the 1.21.1 sleep skip is
+`ServerLevel.tick`'s `setDayTime(l - l % 24000L)`, which a `@ModifyArg` could move to the next occurrence of the declared wake marker. Somnium
+does not take it (the shared dawn is a design rule), so nothing waits on it.

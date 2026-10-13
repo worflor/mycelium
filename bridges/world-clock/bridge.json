@@ -6,10 +6,7 @@
   "implementation": "WorldClocks",
   "package": "mycelium.bridges.world_clock",
   "divide": "world.clock",
-  "writtenIn": [
-    "mojang",
-    "unobfuscated"
-  ],
+  "writtenIn": ["mojang", "unobfuscated"],
   "what": "Minecraft's time as a world.clock@1 ClockPort: the game's own world clocks, timelines and time packet from 26.1 (native-clock); before it, the overworld clock is vanilla's dayTime and a mod's own clocks live in saved data on the overworld, advanced on the server tick and synced by a payload the mod delivers (emulated-clock). Everything arithmetic is the pure model's.",
   "variants": {
     "native-clock": {
@@ -24,6 +21,18 @@
     },
     "emulated-clock": {
       "overlays": [
+        {
+          "name": "1.14",
+          "from": "1.14",
+          "to": "1.15.2",
+          "why": "saved data is made with its name and filled by load(CompoundTag); the overworld is found through the dimension type (server.getLevel(DimensionType.OVERWORLD)); there is no tick rate manager"
+        },
+        {
+          "name": "1.16",
+          "from": "1.16",
+          "to": "1.16.5",
+          "why": "saved data is made with its name and filled by load(CompoundTag); there is no tick rate manager"
+        },
         {
           "name": "1.17",
           "from": "1.17",

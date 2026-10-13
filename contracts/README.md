@@ -22,7 +22,7 @@ governs a type over any sequence of calls (`contracts/chunk-hold`).
 | `inventory.transfer@1` | `contracts/flow` | Transactional item transfer where loaders' handlers differ; the model for operation contracts | Osmosis |
 | `world.copy@1` | `contracts/world-copy` | A bounded read of a block region, planned then written within a per-call budget | Somnium |
 | `rule.effects@1` | `contracts/rule-effects` | Applying and removing a rule's effects on a bounded set of entities, with stable ids and scope | Somnium |
-| `world.clock@1` | `contracts/world-clock` | Time as 26.1 models it, on every version: clocks with a rate, a pause and a fractional carry, timelines with periods and markers, edges between samples, the sleep skip; the game before 26.1 is the one clock at rate one. Pure half; the bridges are pending (decision 0018) | Cartomancy, Somnium |
+| `world.clock@1` | `contracts/world-clock` | Time as 26.1 models it, on every version: clocks with a rate, a pause and a fractional carry, timelines with periods and markers, edges between samples, the sleep skip; the game before 26.1 is the one clock at rate one. Bridge `world-clock` (decision 0018) | Cartomancy, Somnium |
 | `persistence.player-state@1` | `contracts/player-state` | Durable per-player state with an explicit schema and a walk-verified migration chain | Somnium |
 | `presentation.particle-cue@1` | `contracts/cue` | A particle or sound cue scheduled against a profile-resolved key, emitted at the outermost commit | Somnium |
 | `data.catalog@1` | `contracts/data-catalog` | A reloadable, validated set of named data entries: what a datapack folder becomes | Somnium |
@@ -40,3 +40,8 @@ Proposals not yet packages are decision records: the Sigil (item presentation co
 A contract whose divide is Minecraft itself has a native half, a bridge (`BRIDGE-PACKAGE.md`). `item-component` has
 `item-carrier`: its `StackCarrier` port is how a stack keeps the fenced root, implemented as `custom-data` (1.20.5 and later)
 and `root-tag` (1.14 to 1.20.4) and proven on real stacks by conformance cases.
+
+`world-clock`: its `ClockPort` is how a mod reads and moves time. `native-clock` (26.1 and later) maps it onto the game's own world
+clocks, timelines and time packet, and writes a mod's clocks and timelines as datapack JSON; `emulated-clock` (1.17 to 1.21.11)
+makes the overworld clock vanilla's `dayTime` and keeps a mod's own clocks in saved data, advanced from the mod's server-tick hook and
+synced by a payload the mod delivers. Conformance cases hold the pure model to the running game on both.

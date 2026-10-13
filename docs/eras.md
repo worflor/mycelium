@@ -61,7 +61,7 @@ every `since`, `outerJava` and name step names a loader the era lists, beginning
 
 Beside `eras`, `eras/minecraft.json` holds `realizations`: one table per divide the era boundaries do not decide alone, each a list of
 ranges (`from`, `to`, bounds as an era's are) and the realization a version draws its answer from. `item.presentation` is read by the
-compiler; `item.carrier` (`custom-data`, `root-tag` or `none`) is read by the `item-carrier` bridge; a bridge names its own divide
+compiler; `item.carrier` (`custom-data`, `root-tag` or `none`) is read by the `item-carrier` bridge, `world.clock` (`native-clock`, `emulated-clock` or `none`) by the `world-clock` bridge; a bridge names its own divide
 in its `bridge.json`. The old top-level `presentation` key is refused. Every table is held to the same rules. The `item.presentation` table: ranges of versions (`from`, `to`, bounds as an era's are) and the
 mechanism a version draws an item's state with, `item-definition` (an item definition selecting a model on the custom model data
 strings), `model-overrides` (one item model with `overrides` on the custom model data float) or `none`. It is its own table because the

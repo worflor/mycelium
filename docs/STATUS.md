@@ -6,6 +6,11 @@ counts are on `README.md`'s status line. History is `CHANGELOG.md`.
 
 ## In flight
 
+- **`world.clock@1` bridge: what is not yet run or built.** `native-clock` and `emulated-clock` are built (`bridges/world-clock`) and
+  linked on every version with name data; conformance has run in Somnium on 26.3 and 1.21.1 only (decision 0018, "Evidence"). Not
+  built: `emulated-clock-takeover` (optional); `ClockConformance.sleeping` (a real sleeper) has no harness that makes the server
+  count a mock player as sleeping. Not run in a game: 26.1, 26.2 and the pre-26.1 versions other than 1.21.1.
+
 
 ## Not built
 

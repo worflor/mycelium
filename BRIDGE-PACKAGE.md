@@ -12,9 +12,11 @@ bridges/<slug>/
 ├── <variant>/
 │   ├── src/<package path>/     the variant's source (the bridge's package, dots as slashes)
 │   ├── conformance/<...>/      this variant's rig for the conformance cases (how to build, copy, save a stack here)
+│   ├── conformance-resources/  data files the cases need in the mod's resources (a clock is a datapack file on 26.1 and later)
 │   └── overlays/<name>/        files that replace or add same-named files, for a range inside the variant
 │       ├── src/
-│       └── conformance/
+│       ├── conformance/
+│       └── conformance-resources/
 └── conformance/<...>/          the cases, written against the port: plain Java a mod registers as game tests
 ```
 
@@ -30,7 +32,10 @@ bridges/<slug>/
    every version they cover. A version without name data is reported, not failed.
 4. **Implement the port.** The implementation class implements the contract's port; the contract's laws are held to it.
 5. **Conformance on the real game.** The cases prove the laws the pure harness cannot (the stack laws, a copy, a save and
-   reload, a client's copy). They are plain Java: `cases(...)` returns named bodies over a `Level`; the mod registers them.
+   reload, a client's copy; a clock advancing with its rate against the game's own). They are plain Java: `cases(...)` returns
+   named bodies over a `Level` (and, where a law needs the server to run, `timed(...)` returns a start, a number of ticks and an end);
+   the mod registers them. A case that needs data in the game (a datapack clock) has it in `conformance-resources/`, which
+   `bridges { conformance() }` adds to the mod's resources beside the cases.
 6. **Bring the contract.** A contract's `contracts/registry.json` row lists its bridges. A mod that references a bridge
    gets its contract and the contract's requirements.
 

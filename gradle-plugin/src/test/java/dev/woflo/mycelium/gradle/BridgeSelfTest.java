@@ -67,6 +67,24 @@ final class BridgeSelfTest {
             Bridges.Selection s = Bridges.select(b, eras, e[0]);
             that(s.describe().equals(e[1]), "bridges:Minecraft " + e[0] + " draws " + e[1] + ", not " + s.describe());
         }
+        // world-clock: the native variant from 26.1 (with its overlay for 26.1 and 26.2), the emulated one from 1.14 (with an overlay wherever
+        // the saved data, the rule or the tick rate manager changes shape), none before the game's names
+        Bridges.Bridge clock = Bridges.require(root, "world-clock");
+        String[][] clockExpect = {
+                {"26.3", "native-clock"}, {"26.2", "native-clock + 26.1"}, {"26.1", "native-clock + 26.1"}, {"1.21.11", "emulated-clock + 1.21.11"},
+                {"1.21.10", "emulated-clock + 1.21.5"}, {"1.21.5", "emulated-clock + 1.21.5"}, {"1.21.4", "emulated-clock"}, {"1.21.1", "emulated-clock"},
+                {"1.20.5", "emulated-clock"}, {"1.20.4", "emulated-clock + 1.20.3"}, {"1.20.3", "emulated-clock + 1.20.3"}, {"1.20.2", "emulated-clock + 1.20.2"},
+                {"1.20.1", "emulated-clock + 1.17"}, {"1.17", "emulated-clock + 1.17"}, {"1.16.5", "emulated-clock + 1.16"}, {"1.16", "emulated-clock + 1.16"},
+                {"1.15.2", "emulated-clock + 1.14"}, {"1.14", "emulated-clock + 1.14"}, {"1.13.2", "none"}, {"b1.7.3", "none"}};
+        for (String[] e : clockExpect) {
+            Bridges.Selection s = Bridges.select(clock, eras, e[0]);
+            that(s.describe().equals(e[1]), "bridges:world-clock on Minecraft " + e[0] + " draws " + e[1] + ", not " + s.describe());
+        }
+        Map<String, Path> data = Bridges.conformanceResourceFiles(Bridges.select(clock, eras, "26.3"));
+        that(data.keySet().equals(java.util.Set.of("data/mycelium_conformance/world_clock/calendar.json", "data/mycelium_conformance/timeline/calendar.json"))
+                        && Bridges.conformanceResourceFiles(Bridges.select(clock, eras, "1.21.1")).isEmpty()
+                        && Bridges.conformanceResourceFiles(Bridges.select(clock, eras, "1.13.2")).isEmpty(),
+                "bridges:a variant's conformance data (a datapack clock on 26.1 and later) is its own, and a version without it has none: " + data.keySet());
         Bridges.Selection none = Bridges.select(b, eras, "1.13.2");
         that(!none.maps() && none.why().contains("Mojang") && Bridges.sourceFiles(none).isEmpty() && Bridges.conformanceFiles(none).isEmpty(),
                 "bridges:a version the game cannot do it on maps nowhere and says why: " + none.why());
@@ -105,6 +123,16 @@ final class BridgeSelfTest {
             that(Files.isRegularFile(conformance.resolve("com/example/mod/mycelium/bridges/item_carrier/conformance/ItemCarrierConformance.java"))
                             && Files.readString(conformance.resolve("com/example/mod/mycelium/bridges/item_carrier/conformance/Wire.java")).contains("value()"),
                     "bridges:the conformance cases are laid out apart, with the overlay's rig");
+            Path clocks = out.resolve("clocks");
+            List<String> clockWritten = Bridges.materialize(Bridges.select(Bridges.require(root, "world-clock"), eras, "26.3"), "com.example.mod.mycelium",
+                    clocks.resolve("src"), clocks.resolve("conformance"), clocks.resolve("resources"));
+            that(Files.isRegularFile(clocks.resolve("resources/data/mycelium_conformance/world_clock/calendar.json"))
+                            && Files.isRegularFile(clocks.resolve("resources/data/mycelium_conformance/timeline/calendar.json"))
+                            && clockWritten.contains("conformance resource: data/mycelium_conformance/timeline/calendar.json")
+                            && Files.readString(clocks.resolve("resources/data/mycelium_conformance/timeline/calendar.json")).contains("\"period_ticks\": 7000"),
+                    "bridges:conformance data is laid out as it is, beside the cases, only when the cases are asked for: " + clockWritten);
+            Bridges.materialize(Bridges.select(Bridges.require(root, "world-clock"), eras, "26.3"), "x.y", clocks.resolve("bare/src"), null, clocks.resolve("bare/resources"));
+            that(!Files.exists(clocks.resolve("bare/resources")), "bridges:no conformance, no conformance data");
             Path older = out.resolve("older");
             Bridges.materialize(Bridges.select(carrier(root), eras, "1.20.1"), "com.example.mod.mycelium", older.resolve("src"), null);
             String root1201 = Files.readString(older.resolve("src/com/example/mod/mycelium/bridges/item_carrier/ItemCarrier.java"));
@@ -487,7 +515,10 @@ final class BridgeSelfTest {
                 f -> f.contains("[bridges]") && f.contains("unknown field 'liveConsumers'"), baseline);
         SelfTest.expect(root, "a bridge written in names nobody has data for", r -> SelfTest.replace(r.resolve(carrierJson), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"mojang\", \"srg2\"]"),
                 f -> f.contains("[bridges]") && f.contains("'srg2'"), baseline);
-        SelfTest.expect(root, "name data no loader and no bridge reads", r -> SelfTest.replace(r.resolve(carrierJson), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"unobfuscated\"]"),
+        SelfTest.expect(root, "name data no loader and no bridge reads", r -> {
+            SelfTest.replace(r.resolve(carrierJson), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"unobfuscated\"]");
+            SelfTest.replace(r.resolve("bridges/world-clock/bridge.json"), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"unobfuscated\"]");
+        },
                 f -> f.contains("[names]") && f.contains("mojang 1.14.4 is data no loader's runtime is named mojang on") && f.contains("no bridge is written in mojang"), baseline);
         SelfTest.expect(root, "a directory under bridges/ that is not a bridge", r -> SelfTest.mkdirs(r.resolve("bridges/not-a-bridge")),
                 f -> f.contains("[bridges]") && f.contains("has no bridge.json"), baseline);

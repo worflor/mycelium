@@ -169,8 +169,10 @@ source for its target.
   the class implements the port (B1). `skip("slug")` leaves a bridge out. Overrides are always possible; the evidence records
   them.
 - **Conformance.** `bridges { conformance() }` also imports the bridge's conformance cases, plain Java the mod registers as
-  game tests (`ItemCarrierConformance.cases(...)` for `item-carrier`). They run on the target's real game objects, which is what
-  the laws about stacks, packets and saves need.
+  game tests (`ItemCarrierConformance.cases(...)` for `item-carrier`, `ClockConformance.cases()` and `.timed(...)` for `world-clock`).
+  They run on the target's real game objects, which is what the laws about stacks, packets, saves and clocks need. A variant's
+  `conformance-resources/` (a clock is a datapack file on 26.1 and later, so its cases need one) goes to `build/generated/resources/mycelium/conformance`,
+  added to the same source set's resources.
 - **Evidence.** The manifest's `bridges` section records the variant and overlays chosen for the target, or the override.
 
 ## Declaring once (`myceliumDefaults`)

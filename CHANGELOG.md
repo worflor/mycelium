@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-10-13 - world.clock@1: the bridges (native-clock, emulated-clock) and their proof in Somnium
+
+`bridges/world-clock` (`docs/decisions/0018-world-clock.md`, "Bridges as built") is the native half of `world.clock@1`: its
+`ClockPort` on the real game, a variant per realization of the new `world.clock` table in `eras/minecraft.json`.
+
+- **`native-clock`, 26.1 on** (`WorldClocks`): `ServerClockManager` for state and commands, the game's own markers for moves and
+  sleep, its time packet for sync, `Timeline` for periods. An overlay for 26.1 and 26.2, whose manager exposes a clock only as a
+  packed copy, reports a move as a flag and gives a client the total ticks alone. `ClockDatapack` writes a mod's clocks and timelines
+  as the datapack files the game reads; `problems()` reports where the game's data and the declaration disagree.
+- **`emulated-clock`, 1.14 to 1.21.11** (`WorldClocks`, `Transport`, `ClockWire`): the overworld clock is vanilla's `dayTime` (paused
+  is the daylight rule off; a rate other than one is refused, not pretended); a mod's own clocks are one string in saved data on the
+  overworld, advanced from `onServerTick()` (honouring the rule and the tick rate manager where there is one), synced by bytes
+  the mod delivers through a `Transport` it supplies. Overlays for the saved-data shape (five of them), the tick rate manager (1.20.3),
+  the overworld lookup (1.14, 1.15) and the rule (1.21.11, `advance_time`).
+- **Conformance** (`ClockConformance`: `cases()`, `timed(...)`, `sleeping(...)`): the pure model held to the running game over rates,
+  pause and the rule, set and add, marker moves, a clock with its own period and its edges, the overworld the port and the game
+  both read, the sleep skip, sync (the game's packet, a client following it, the real client where present), and save and reload.
+- **Plugin.** A variant's `conformance-resources/` (a clock is a datapack file on 26.1 and later) is imported with its cases into the
+  mod's resources (`myceliumBridgeImport`, `docs/plugin.md`).
+- **Proof.** Linkage on every covered version with name data; conformance on 26.3 (native) and 1.21.1 (emulated) in Somnium, which now
+  reads time and the dawn through the bridge. Not built: the optional `emulated-clock-takeover`. Not proven in a game: a real sleeper
+  (`ClockConformance.sleeping`), 26.1 and 26.2, and pre-26.1 versions other than 1.21.1.
+
 ## 2026-10-12 - item.component@1: Rosetta learns from its first consumer (additive)
 
 What Somnium's adapter had to build around the translator is now in the contract, additively within `@1` (no law, label

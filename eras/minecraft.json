@@ -287,8 +287,8 @@
   ],
   "world.clock": [
     {"from": "26.1", "to": "26.x", "realization": "native-clock", "what": "the game has world clocks: ServerClockManager holds each clock's state, timelines (data) lay periods and markers over a clock, and the game syncs clocks to clients itself"},
-    {"from": "1.17", "to": "1.21.11", "realization": "emulated-clock", "what": "the game has one clock, dayTime: the overworld clock is that, and a mod's own clocks are held in saved data, advanced on the server tick and synced by the mod's payload"},
-    {"from": "c0.0.11a", "to": "1.16.5", "realization": "none", "what": "not written yet: the variant is in Mojang's names (from 1.14.4), and 1.14 to 1.16 keep saved data under another shape (a name in the constructor, load(CompoundTag)) and 1.14 and 1.15 find the overworld through the dimension type; an overlay would cover them"}
+    {"from": "1.14", "to": "1.21.11", "realization": "emulated-clock", "what": "the game has one clock, dayTime: the overworld clock is that, and a mod's own clocks are held in saved data, advanced on the server tick and synced by the mod's payload"},
+    {"from": "c0.0.11a", "to": "1.13.2", "realization": "none", "what": "the bridge is written in Mojang's names, which the game's own mappings give from 1.14.4 (a variant in the older names could cover these)"}
   ]
  },
  "packFormat": [

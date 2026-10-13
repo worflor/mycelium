@@ -170,7 +170,8 @@ final class Wire {
                     throw new AssertionError("world-clock conformance: the game's client did not answer: " + e);
                 }
             };
-        } catch (ReflectiveOperationException | LinkageError absent) {
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException absent) {
+            // a dedicated server has no client classes: the class is missing, or the loader refuses it for the environment
             return null;
         }
     }
