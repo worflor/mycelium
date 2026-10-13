@@ -34,3 +34,9 @@ governs a type over any sequence of calls (`contracts/chunk-hold`).
 Proposals not yet packages are decision records: the Sigil (item presentation compiled from component state,
 `docs/decisions/0012-sigil-item-presentation.md`) and the Threshold (state declares how it crosses,
 `docs/decisions/0013-threshold-state-lifecycle.md`). The board is `docs/STATUS.md`.
+
+## Bridges
+
+A contract whose divide is Minecraft itself has a native half, a bridge (`BRIDGE-PACKAGE.md`). `item-component` has
+`item-carrier`: its `StackCarrier` port is how a stack keeps the fenced root, implemented as `custom-data` (1.20.5 and later)
+and `root-tag` (1.14 to 1.20.4) and proven on real stacks by conformance cases.

@@ -16,6 +16,7 @@ whether a mod has put the part to work.
 | `RosettaTranslator` / `StandardRosettaTranslator` (fenced read and write: T1 to T6, T9, T12) | **Proven by a consumer.** Somnium reads and writes every stack through it, on every version and loader it builds. |
 | Quarantine and recovery records (T5) | **Proven by a consumer.** Somnium relies on an unreadable entry reading as absent and surviving later writes. |
 | Presence components, `FencedCarrier`, `WriteOutcome`, `ComponentRead`, `LegacyKeyMigration` (T13 to T20) | **Designed from Somnium's adapter, not yet used by a consumer.** Written to replace what its `Carrier` had to build around the translator (hand-written marks, a separate single-component decode, a legacy-key reader and stripper). Their first real use is the evidence they still need. |
+| `StackCarrier` (S1 to S6, section 5.7) and its bridge `item-carrier` | **Designed from Somnium's adapter; first used by Somnium (2026-10).** The port a platform stack satisfies; Mycelium's bridge implements it for `ItemStack` on every version it covers (decision 0016), and its conformance game tests are what keep S1 to S6. |
 | `TranslationPlan`, `ItemPrototype` (T7), `ChannelPolicy` (T11), `NativeProjectionRecipe` (T10), `LogicalNbtBridge` | **Design only.** Checked by the harness and its adversarial probes; no consumer has used them yet (Somnium keeps `minecraft:custom_data` as its only carrier and uses the bridge only for list encoding). Treat their shapes as provisional until one does. |
 
 ## 1. Problem & Architecture
@@ -212,6 +213,30 @@ does not decode is kept under the fence as `"!legacy:<key>"` with a recovery rec
 (T19). The fenced state wins over an old key, so a stack that already moved on is not pulled back (T18). When the last world
 that has the old keys is gone, delete the table: nothing else changes.
 
+### 5.7 The stack port, and the bridge that implements it
+
+`FencedCarrier` works on a root compound. Something has to take the root out of a stack and put it back, and convert the platform's tag to a `TagNode`: on 1.20.5 and later the `minecraft:custom_data` component, before it the stack's root tag, with a tag API that shifts inside each. That is a fact about the game, not about the mod, so Mycelium ships it as a bridge (`bridges/item-carrier`, `docs/decisions/0016-bridges.md`) and this contract declares the port it implements:
+
+```java
+StackCarrier<ItemStack> items = ItemCarrier.of(registry, MIGRATION);     // the bridge's class, imported under the mod's namespace
+items.set(stack, RIG, 4);
+Optional<Integer> rig = items.get(stack, RIG);
+boolean glowing = items.has(stack, GLOWING);
+```
+
+`StackCarrier<S>` repeats `FencedCarrier`'s operations on a stack. A stack has laws a root compound cannot state, because they are about what the game does with the result. They are kept by the bridge's conformance game tests, which run in the real game on every target the mod builds (and apply to a mod's own override of the bridge):
+
+| Law | Statement |
+|---|---|
+| **S1 round trip** | what `set` puts on a stack, `read` gives back, for a value, a record, a mark and a value with no default |
+| **S2 plain** | a stack with nothing left to carry holds no tag or component of its own: it equals a plain stack and stacks with it (a null tag and an empty tag do not stack before 1.20.5, so clearing leaves null) |
+| **S3 other keys kept** | keys of the stack's root that are not the fence's (another mod's) survive every write, and a stack whose only other keys remain is not made plain |
+| **S4 refuse, not lose** | a write that meets unreadable data returns `Refused` and leaves the stack exactly as it was; `KEEP` applies it and the data survives |
+| **S5 the stack travels** | a copy, a save and reload through the game's own stack codec, and the stack as a client receives it from the network, read the same state and are the same stack |
+| **S6 empty and unchanged** | an empty stack carries nothing and a write to it changes nothing; a write that changes nothing (`changed` false) leaves the stack as it was |
+
+A mod that does not want the bridge writes its own class against the same interface (`bridges { override("item-carrier", "com.example.MyCarrier") }`), or skips the port and writes native code; the laws are the same.
+
 ## 6. Running the harness
 
 From the Mycelium root: `bash run-contracts.sh item-component` (or `.\run-contracts.ps1 item-component`), or `./gradlew myceliumVerify -Pmycelium.contracts=item.component@1`.
@@ -223,4 +248,5 @@ Expected result: reference implementation clean; every entry of the rejection ma
 - No Minecraft or mod loader code was executed to produce this package.
 - Native byte-level SNBT parsing and Mojang `DataComponentMap` binding belong to P2 platform adapters and consumer in-game gametest lanes.
 - The carrier laws (T13 to T20) have not yet been exercised by a consumer's adapter; the translator, records and fenced read/write have (section 0).
-- Additions of this kind (presence definitions, `FencedCarrier`, `LegacyKeyMigration`) are additive within `@1`: no existing law, label or required method changed. `@2` is reserved for a change of meaning.
+- S1 to S6 are laws of the platform's stack, not of the pure model: the harness does not run them. The bridge's conformance game tests do, in a real game, and a bridge or an override has them only where a mod has run those tests.
+- Additions of this kind (presence definitions, `FencedCarrier`, `LegacyKeyMigration`, `StackCarrier`) are additive within `@1`: no existing law, label or required method changed. `@2` is reserved for a change of meaning.

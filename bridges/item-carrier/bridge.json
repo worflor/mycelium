@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "item.carrier",
+  "contract": "item.component@1",
+  "port": "StackCarrier",
+  "implementation": "ItemCarrier",
+  "package": "mycelium.bridges.item_carrier",
+  "divide": "item.carrier",
+  "writtenIn": ["mojang", "unobfuscated"],
+  "what": "Minecraft's ItemStack as an item.component@1 StackCarrier: the stack's root compound in and out (minecraft:custom_data on 1.20.5 and later, the root tag before), and Mojang's tags to and from TagNode. Everything else is the pure FencedCarrier's.",
+  "variants": {
+    "custom-data": {
+      "overlays": [
+        {"name": "1.21.5", "from": "1.21.5", "to": "26.x", "why": "CompoundTag and its tags moved to Optional getters, longValue/doubleValue/value() and keySet()"}
+      ]
+    },
+    "root-tag": {
+      "overlays": [
+        {"name": "1.14", "from": "1.14", "to": "1.14.4", "why": "the tag classes had no valueOf yet: a tag is made with its constructor"}
+      ]
+    }
+  }
+}
