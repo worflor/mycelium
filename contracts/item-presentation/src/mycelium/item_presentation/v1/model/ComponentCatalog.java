@@ -116,7 +116,7 @@ public final class ComponentCatalog {
                 out.add(new Diagnostic(c.networkSynced() ? Diagnostic.Kind.SERVER_PRIVATE : Diagnostic.Kind.CATALOG, at,
                         "the catalog says networkSynced=" + c.networkSynced() + " and the definition says " + definition.networkSynced()));
             }
-            boolean unit = definition.defaultValue() instanceof Unit;
+            boolean unit = definition.isPresence() || definition.defaultValue() instanceof Unit;
             if (unit != c.unit()) {
                 out.add(new Diagnostic(Diagnostic.Kind.CATALOG, at, "the catalog says unit=" + c.unit() + " and the definition's default "
                         + (unit ? "is" : "is not") + " the unit value"));

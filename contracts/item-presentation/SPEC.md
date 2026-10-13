@@ -19,19 +19,21 @@ evaluates the same program at run time, so the artefacts, the stack's selector a
 
 | Type | Meaning |
 |---|---|
-| `Program` | `(item, base, inputs, cases)`: one item's presentation. Inputs are held sorted by name; the first case whose guard holds wins; no match draws `base` |
-| `Input` | A named reading of one component field with a finite `Domain` and a default (the domain's first value unless stated): used when the component or field is absent |
+| `Program` | `(item, base, inputs, cases, contexts)`: one item's presentation. Inputs are held sorted by name; the first case whose guard holds wins; no match draws `base`; `contexts` are optional display context rules |
+| `Input` | A named reading of one component field (or, for a scalar component, of the component itself) with a finite `Domain` and a default (the domain's first value unless stated): used when the component or field is absent |
 | `Domain` | `Flag` (a bool field), `Present` (a unit component is on the stack), `IntRange(min, max)` (bounds within 2^31), `Choice` (listed texts of `[a-z0-9_]`) |
 | `Case`, `Condition` | An ordered guard to a model. A guard is a conjunction of per-input `Equals`, `AnyOf` or `Within` (a range, either bound open). The model is a reference or a template: `example:item/band_mended_{seams}_cracked_{cracks}` |
 | `Template` | The `{input}` placeholders of a model reference, and their expansion (a flag as `true`/`false`, a number in decimal digits, an enum text as is) |
 | `Evaluator` | The pure evaluation: `evaluate(program, tuple)` is the model a tuple draws; `read(program, view)` reads a stack; `tuples`/`product` enumerate and size the domains. The oracle every artefact is held to |
 | `ComponentView` | What a stack's components look like: `has(component)`, `field(component, path)`. `CarrierView` implements it over an `item.component@1` `CarrierSnapshot` and `ComponentRegistry` |
-| `ComponentCatalog` | The components a program may read: network-visible or not, unit or record, each field's kind. A file the build reads; `disagreements(registry)` holds it to the registry's `ComponentDefinition`s |
+| `ComponentCatalog` | The components a program may read: network-visible or not, unit, record (each field's kind) or scalar (one kind: a string, a number or a flag on its own, as Rosetta's `withoutDefault` makes one). A file the build reads; `disagreements(registry)` holds it to the registry's `ComponentDefinition`s |
+| `Context` | A display context rule: for one model the program draws, the model to draw instead in the listed item display contexts (`only`) or in every context but them (`except`). At most one rule per model. The item definition draws it; the item model with overrides has no contexts and ignores it (law S8) |
 | `Lock` | The consumer's committed codes: per item, each selection (its model reference) to a legacy code, append-only |
 | `Realization`, `Target` | `item-definition`, `model-overrides` or `none`, as `eras/minecraft.json` gives a version; `Target` carries the version only to name it in a refusal |
 | `SigilCompiler`, `ReferenceSigil` | `compile(program, lock, catalog, target)` to a `Compilation`: `Compiled(plan, artefacts)` or `Rejected(diagnostics)`. `maxTuples()` is its cap |
 | `Plan`, `ReferencePlan` | What an adapter evaluates at run time: `select(view)` (total) and `selectorOf(selection)`; `toTree` is the plan resource, `ReferencePlan.parse` reads it back |
 | `Selection`, `Selector` | The model a stack draws (`model`, `key`, `code`, `inDomain`; the base has neither key nor code), and what the adapter writes onto the stack: `None`, `Key(string)` or `Code(number)` |
+| `StackPresenter` | The port, for a platform's stack type: `select(snapshot)`, `select(stack)`, `apply(stack, selection)`, `read(stack)` and `present(stack)`. The bridge `item-presentation` implements it for `ItemStack` (section 5) |
 | `Diagnostic` | A refusal a tool can switch on: a `Kind`, where, words, and for `LOCK_MISSING` the exact lines to add |
 | `Json`, `Layout`, `SigilTool` | The canonical JSON reader and writer; where artefacts go; the whole compile over text, which the Gradle tasks call |
 
@@ -43,18 +45,36 @@ nothing), evaluates the cases for each, and collapses tuples that reach one mode
 
 
 A guard value is a bare value (equals), an array (in) or `{"min": n, "max": n}` (range). A `present` input has no
-`field`. `default` is optional on an input.
+`field`, and neither has an input over a scalar component (the catalog says `"value": "string"` for it: the component is
+the value). `default` is optional on an input.
+
+**Display contexts.** An item definition can ask how an item is shown (the hand, the gui, the ground, an item display
+entity) and an item model with overrides cannot, so a program may say where the definition draws another model than the one a
+state selected:
+
+```json
+"contexts": [
+  {"only": ["firstperson_righthand", "firstperson_lefthand"], "model": "example:item/sky_panel_knot", "draw": "example:item/sky_panel_knot_first"},
+  {"except": ["gui"], "model": "example:item/sky_panel_base", "draw": "example:item/sky_panel_lit"}
+]
+```
+
+`model` is a model the program draws (a selection's key, or the base); there is at most one rule per model. The legacy
+artefact has no contexts and draws `model`: a rule is how the item definition differs there, never what a state means.
 
 ### The artefacts
 
 - `item-definition`: `assets/<ns>/items/<id>.json`, a `minecraft:select` on `minecraft:custom_model_data` at string index 0,
   one case per selection in key order (`when` is the key), the base as `fallback`. With no selection it is the plain base model.
+  A model with a display context rule is a `minecraft:select` on `minecraft:display_context` instead of a plain `minecraft:model`:
+  `only` lists the contexts that draw `draw` (fallback `model`), `except` the contexts that draw `model` (fallback `draw`).
 - `model-overrides`: `assets/<ns>/models/item/<id>.json`, the base as `parent` and an `overrides` list, one row per code
   in the lock (ascending), `predicate.custom_model_data` the code. A code the lock holds that no case produces any more keeps its
   row and draws the base, so a stack still carrying it is not drawn as its neighbour. The file is the item's own model, so a
   program may not draw `ns:item/<id>` itself (`MODEL_CLASH`): the base is another model.
-- the plan, `META-INF/mycelium/presentation/<ns>/<id>.plan.json` in both eras: the program's read inputs and cases and the
-  selections with their codes.
+- the plan, `META-INF/mycelium/presentation/<ns>/<id>.plan.json` in both eras: the program's read inputs, cases and contexts and
+  the selections with their codes; and the catalog, `META-INF/mycelium/presentation/components.json`, which a runtime adapter
+  reads its stacks through (`ItemPresenter.load`).
 
 The stack's selector is the key (written as custom model data string 0) in the first era and the code (the custom model data number)
 in the second; the base model writes nothing.
@@ -70,6 +90,7 @@ in the second; the base model writes nothing.
 | S5 Projection | Every declared input reads a network-visible component of the catalog, with the field and kind it says; anything else is refused at compile time. The catalog is held to the registry's definitions | `S5:server-private-rejected`, `S5:unknown-component-rejected`, `S5:type-mismatch-rejected`, `S5:catalog-agrees-with-registry` |
 | S6 Determinism | The same program and lock produce byte-identical artefacts: keys sorted, fixed formatting, line feeds, printable ASCII only, whatever the platform, locale or the order the program lists its inputs and guards in; cases in key order | `S6:repeat-identical`, `S6:canonical-json`, `S6:ascii-and-line-feeds`, `S6:declaration-order-independent`, `S6:locale-independent`, `S6:cases-in-key-order` |
 | S7 Bounded | A product of the read inputs' domain sizes above the cap (4096 tuples unless a compiler states another) is refused with a `TOO_LARGE` diagnostic **before** enumeration: the product saturates instead of overflowing, so a four-quintillion-tuple program is refused as fast as a large one | `S7:product-over-cap-rejected-before-enumeration`, `S7:product-at-cap-accepted` |
+| S8 Contexts | The item definition draws a display context rule's model in the contexts it names (`only`) or in all others (`except`), and the selected model otherwise, for every display context; the item model with overrides ignores the rules; a rule for a model the program never draws, two rules for one model and a misspelt context are refused; the rules survive the plan resource and their order changes nothing | `S8:definition-draws-context-rules`, `S8:legacy-ignores-contexts`, `S8:rules-mean-only-and-except`, `S8:plan-keeps-rules`, `S8:rule-for-undrawn-model-rejected`, `S8:one-rule-per-model`, `S8:unknown-context-rejected` |
 
 Beside the laws, the harness holds well-formedness (`P1:*`, a program that is malformed, unsound or checked by no one is refused, by kind;
 `P1:compiler-rechecks-program`), the lock's file rules (`L1:*`), the targets (`R1:no-realization-rejected`: a version with no mechanism
@@ -85,6 +106,7 @@ random shape and hold each to S1, S2, S4 and S6.
 | `OffByOneLegacy` | tells the adapter to write code + 1 onto the stack | S2 (`S2:legacy-draws-evaluated-model`) |
 | `LeakyProjection` | accepts an input over a server-private component | S5 (`S5:server-private-rejected`) |
 | `HashOrderEmitter` | writes JSON keys in hash order | S6 (`S6:canonical-json`) |
+| `InvertedContexts` | reads `only` as `except` and the other way round, so the panel is flat in the hand and lit in the inventory | S8 (`S8:definition-draws-context-rules`) |
 | `NoOpCompiler` | draws the base model for every state | S1 (`S1:totality-agrees-with-evaluator`), and S2 |
 
 `NoOpCompiler` emits well-formed artefacts and a plan that never errs; it is in the matrix because a compiler that ignores the program
@@ -94,7 +116,8 @@ must fail.
 
 **Writing a program.** Keep programs in the consumer's presentation directory (by default src/main/presentation of the project): one JSON
 file per item, a `components.json` catalog and a committed `presentation.lock.json`. The catalog states, for every component a program
-reads, `networkSynced` (true or false), `unit` for a unit component, and `fields` (a dotted path to `bool`, `int` or `string`). Keep it honest
+reads, `networkSynced` (true or false), and `unit` for a unit component, `fields` (a dotted path to `bool`, `int` or `string`) for a record or
+`value` (`bool`, `int` or `string`) for a scalar one. Keep it honest
 with a test of your own that builds the registry the game uses and asserts `catalog.disagreements(registry)` is empty.
 
 **Building.** In the consumer's build script:
@@ -125,6 +148,12 @@ switch (plan.selectorOf(s)) {
     case Selector.None n -> /* no custom model data */;
 }
 ```
+
+For Minecraft that adapter is the bridge `bridges/item-presentation` (`BRIDGE-PACKAGE.md`): `ItemPresenter.load(loader, "ns:item", registry, carrier)`
+reads the plan and the catalog the build generated, `present(stack)` selects from the stack's own components and writes the era's selector
+(the key as the first custom model data string from 1.21.4 on a record that keeps another mod's numbers, flags and colours; the locked number
+before it, in the root tag before 1.20.5 and in the component after), and `writeRaw(item, snapshot)` writes it into the raw item data a display
+entity is built from. The model-overrides variant checks that the plan was compiled for the era it draws by.
 
 **Example, a band.** The program above has seams 0 to 3, cracks 0 to 2 and broken. It spans 24 tuples and collapses to 12 selections and the
 base. Adding a case that draws a new model appends one line to the lock and renumbers nothing. Removing a case leaves its lock lines, and the code
