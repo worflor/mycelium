@@ -26,7 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Conformance for {@link LifecyclePort} on a real game (the cases G1 to G8 of {@code state.lifecycle@1}, SPEC section 5): the cases a
+ * Conformance for {@link LifecyclePort} on a real game (the cases G1 to G9 of {@code state.lifecycle@1}, SPEC section 5): the cases a
  * mod imports into its game tests. They hold the Threshold's laws to what the running game and the loader do, by driving the game's own
  * server paths with mock players (a player is placed with {@code PlayerList.placeNewPlayer}, removed with {@code PlayerList.remove},
  * replaced with {@code PlayerList.respawn}, killed with {@code die}, taken to another dimension with the portal's own teleport), so that
@@ -69,6 +69,17 @@ public class LifecycleCases {
     public static final Slot<String> DROPPED_AT_DEATH = session("dropped_at_death", "", Policy.keep(), Policy.drop(), Policy.keep());
     /** A session count the cases' own transition raises by one. */
     public static final Slot<Integer> DRIFTED = session("drifted", 0, Policy.keep(), Policy.keep(), Policy.migrate(n -> n + 1));
+    /** Every value the game's crossings have let go of, in order: what {@link #LAMP} releases when its value ceases. */
+    public static final List<String> RELEASED = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** A session value that owns something (its release is logged in {@link #RELEASED}); a respawn drops it, a death and a drift keep it. */
+    public static final Slot<String> LAMP = Slot.<String>session(NAMESPACE + ":lamp", HostKind.PLAYER, "")
+            .on(TRANSITIONS.shaped(HostKind.PLAYER, Shape.SAVES, Shape.BEGINS), Policy.keep())
+            .on(TRANSITIONS.shaped(HostKind.PLAYER, Shape.ENDS, Shape.FORKS), Policy.drop())
+            .on(TransitionId.DIMENSION_CHANGE, Policy.keep())
+            .on(TransitionId.RESPAWN, Policy.drop())
+            .on(TransitionId.DEATH, Policy.keep())
+            .on(DRIFT, Policy.keep())
+            .onRelease(RELEASED::add).build();
     /** A durable value kept at every crossing. */
     public static final Slot<String> CHARM = durable("charm", Policy.keep());
     /** A durable value a death drops, live and stored. */
@@ -105,7 +116,7 @@ public class LifecycleCases {
     /** The registry the cases run under: the slots above, checked by the contract's own declaration check. */
     public static SlotRegistry registry() {
         return SlotRegistry.of(TRANSITIONS, List.of(KEPT, DROPPED_AT_RESPAWN, RESET_AT_RESPAWN, DROPPED_AT_DEATH, DRIFTED, CHARM, FRAGILE,
-                SERVER_NOTE, SERVER_STAMP));
+                SERVER_NOTE, SERVER_STAMP, LAMP));
     }
 
     /** One case: what it is called and what it checks. */
@@ -159,6 +170,7 @@ public class LifecycleCases {
         cases.add(new Case("g6_deferred_work_never_reaches_the_new_player", level -> with(subject, level, LifecycleCases::deferred)));
         cases.add(new Case("g7_server_stop_ends_everything", level -> with(subject, level, LifecycleCases::serverStop)));
         cases.add(new Case("g8_own_transitions", level -> with(subject, level, LifecycleCases::ownTransitions)));
+        cases.add(new Case("g9_a_value_that_ceases_is_released_once", level -> with(subject, level, LifecycleCases::release)));
         return cases;
     }
 
@@ -324,6 +336,30 @@ public class LifecycleCases {
                 && c.port.players().stored(ref.host(), FRAGILE.id()).isEmpty());
         expect("the rest are kept", "kept".equals(c.port.players().peek(KEPT, ref).valueOrNull())
                 && "charm".equals(c.port.players().peek(CHARM, ref).valueOrNull()));
+    }
+
+    /**
+     * G9: what a value owns in the world is let go by the crossing that ends the value, once; a value that stays (a death, a dimension
+     * change) is not released, and one a respawn drops, a logout and the server's stop end are.
+     */
+    private static void release(Ctx c) {
+        RELEASED.clear();
+        ServerPlayer player = c.join("g9a");
+        HostRef ref = c.port.current(player).orElseThrow(() -> new AssertionError("no ref after the join"));
+        c.port.write(LAMP, ref, "first");
+        Wire.die(player);
+        expect("a death keeps the value and releases nothing: " + RELEASED, RELEASED.isEmpty() && "first".equals(c.port.players().peek(LAMP, ref).valueOrNull()));
+        ServerPlayer again = c.respawn(player);
+        expect("a respawn that drops the value releases it, once: " + RELEASED, List.of("first").equals(RELEASED));
+        HostRef next = c.port.current(again).orElseThrow(() -> new AssertionError("no ref after the respawn"));
+        c.port.write(LAMP, next, "second");
+        c.leave(again);
+        expect("a logout releases the value that was there, once: " + RELEASED, List.of("first", "second").equals(RELEASED));
+        ServerPlayer last = c.join("g9b");
+        HostRef lastRef = c.port.current(last).orElseThrow(() -> new AssertionError("no ref after the join"));
+        c.port.write(LAMP, lastRef, "third");
+        c.open.stop();
+        expect("the server's stop releases what every live player held: " + RELEASED, List.of("first", "second", "third").equals(RELEASED));
     }
 
     /** G5: a durable value survives a logout and a login, a save and a reload of the saved data, and a respawn that keeps it. */

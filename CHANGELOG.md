@@ -21,7 +21,7 @@ into the contract's crossings (decision 0013, "The bridge"; decision 0016, "Load
   a half for each loader on each version mapped, no file in two overlays one build draws); `myceliumBridgeLinkage` links everything every loader draws and
   counts each loader's files as not linked, since the loaders' classes are not in the names data. Self-tests: selection, import, the repository breaks and
   the linkage report.
-- **Conformance** (`LifecycleConformance`): G1 to G8 against the port, driven through the game's own server paths with mock players so the loader's events
+- **Conformance** (`LifecycleConformance`): G1 to G9 against the port, driven through the game's own server paths with mock players so the loader's events
   fire for real, and the bridge's own cases (a bad stored form, a form of an undeclared slot, installing twice, the game writing its saved data).
 
 ## 2026-10-13 - item.presentation@1: the bridge, scalar components, display contexts; Somnium adopts it
