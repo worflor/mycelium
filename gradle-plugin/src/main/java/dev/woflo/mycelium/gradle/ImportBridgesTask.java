@@ -64,6 +64,11 @@ public abstract class ImportBridgesTask extends DefaultTask {
     @Optional
     public abstract Property<String> getMinecraft();
 
+    /** The loader the build is for ({@code mycelium { loader = ... }}), which a bridge written per loader draws its half by. */
+    @Input
+    @Optional
+    public abstract Property<String> getLoader();
+
     @Input
     public abstract ListProperty<String> getSkip();
 
@@ -92,7 +97,7 @@ public abstract class ImportBridgesTask extends DefaultTask {
         Path out = clean(getOutputDir().get().getAsFile().toPath());
         Path conformance = clean(getConformanceDir().get().getAsFile().toPath());
         Path resources = clean(getConformanceResourcesDir().get().getAsFile().toPath());
-        JsonObject report = importInto(root, getBridges().get(), getNamespace().get(), getMinecraft().getOrNull(),
+        JsonObject report = importInto(root, getBridges().get(), getNamespace().get(), getMinecraft().getOrNull(), getLoader().getOrNull(),
                 getSkip().get(), getOverrides().get(), getConformance().get(), out, conformance, resources, getLogger()::lifecycle);
         Path file = getReportFile().get().getAsFile().toPath();
         Files.createDirectories(file.getParent());
@@ -112,6 +117,20 @@ public abstract class ImportBridgesTask extends DefaultTask {
     static JsonObject importInto(Path root, List<String> bridges, String namespace, String minecraft, List<String> skip,
                                  Map<String, String> overrides, boolean conformance, Path out, Path conformanceOut, Path resourcesOut,
                                  java.util.function.BiConsumer<String, Object[]> log) throws IOException {
+        return importInto(root, bridges, namespace, minecraft, null, skip, overrides, conformance, out, conformanceOut, resourcesOut, log);
+    }
+
+    /**
+     * @param loader the loader the build is for, or null: a bridge written per loader draws its half by it (decision 0016, "Loader halves"),
+     *               and draws nothing, with the reason, on a build that names none
+     */
+    static JsonObject importInto(Path root, List<String> bridges, String namespace, String minecraft, String loader, List<String> skip,
+                                 Map<String, String> overrides, boolean conformance, Path out, Path conformanceOut, Path resourcesOut,
+                                 java.util.function.BiConsumer<String, Object[]> log) throws IOException {
+        if (loader != null && !Loaders.load(root.toFile()).loaders().containsKey(loader)) {
+            throw new GradleException("Mycelium bridges: mycelium { loader = \"" + loader + "\" } names no loader in eras/loaders.json ("
+                    + new java.util.TreeSet<>(Loaders.load(root.toFile()).loaders().keySet()) + ")");
+        }
         List<String> known = Bridges.load(root).stream().map(Bridges.Bridge::slug).toList();
         for (String slug : skip) {
             if (!known.contains(slug)) {
@@ -135,6 +154,9 @@ public abstract class ImportBridgesTask extends DefaultTask {
         report.addProperty("schema", 1);
         if (minecraft != null) {
             report.addProperty("minecraft", minecraft);
+        }
+        if (loader != null) {
+            report.addProperty("loader", loader);
         }
         JsonArray array = new JsonArray();
         Eras eras = minecraft != null && !wanted.isEmpty() ? Eras.load(root.toFile()) : null;
@@ -160,7 +182,7 @@ public abstract class ImportBridgesTask extends DefaultTask {
                 why = "the era table (eras/minecraft.json, \"realizations\") has no " + bridge.divide() + " row covering Minecraft " + minecraft;
             } else {
                 try {
-                    selection = Bridges.select(bridge, eras, minecraft);
+                    selection = Bridges.select(bridge, eras, minecraft, loader);
                 } catch (IllegalStateException e) {
                     throw new GradleException(e.getMessage(), e);
                 }
@@ -201,6 +223,9 @@ public abstract class ImportBridgesTask extends DefaultTask {
             List<String> written = Bridges.materialize(selection, namespace, out, conformance ? conformanceOut : null, resourcesOut);
             one.addProperty("status", "variant");
             one.addProperty("variant", selection.variant().name());
+            if (loader != null && !bridge.loaders().isEmpty()) {
+                one.addProperty("loader", loader);
+            }
             JsonArray overlays = new JsonArray();
             selection.overlays().forEach(o -> overlays.add(o.name()));
             one.add("overlays", overlays);
@@ -209,7 +234,7 @@ public abstract class ImportBridgesTask extends DefaultTask {
             written.forEach(files::add);
             one.add("files", files);
             array.add(one);
-            log.accept("Mycelium: bridge {}: {} on Minecraft {} ({} files{})", new Object[] {slug, selection.describe(), minecraft,
+            log.accept("Mycelium: bridge {}: {} on Minecraft {}" + (loader != null && !bridge.loaders().isEmpty() ? " for " + loader : "") + " ({} files{})", new Object[] {slug, selection.describe(), minecraft,
                     written.size(), conformance ? ", with conformance" : ""});
         }
         for (String slug : skip) {

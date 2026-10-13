@@ -8,13 +8,14 @@ imports its source privately under the mod's namespace, as it does a contract's 
 
 ```
 bridges/<slug>/
-├── bridge.json                 id, contract, port, implementation, package, divide, writtenIn, variants and their overlays
+├── bridge.json                 id, contract, port, implementation, package, divide, writtenIn, loaders (if per loader), variants and their overlays
 ├── <variant>/
 │   ├── src/<package path>/     the variant's source (the bridge's package, dots as slashes)
 │   ├── conformance/<...>/      this variant's rig of the real game (how to build, copy, save a stack here); names no class of the bridge's own package
 │   ├── conformance-bound/<...>/ what needs the bridge's own source (a subclass of the cases that builds the bridge); an override does not import it
 │   ├── conformance-resources/  data files the cases need in the mod's resources (a clock is a datapack file on 26.1 and later)
-│   └── overlays/<name>/        files that replace or add same-named files, for a range inside the variant
+│   └── overlays/<name>/        files that replace or add same-named files, for a range inside the variant (and, if it lists
+│                               "loaders", only on a build for those loaders: the files written against a loader's API)
 │       ├── src/
 │       ├── conformance/
 │       ├── conformance-bound/
@@ -28,8 +29,8 @@ bridges/<slug>/
    `eras/minecraft.json`. Each variant is a realization named in that table; `none` rows say a version has no native half.
    The repository check proves rows cover every real version exactly once.
 2. **A variant is a realization; an overlay is an API shift inside one.** An overlay has a name and a range
-   (`from`, `to`), lies inside its variant's range, and may not overlap another overlay. Its files replace or add files of
-   the variant by path.
+   (`from`, `to`), lies inside its variant's range, and may not overlap another overlay in a file (rule 7: two overlays one build draws
+   hold different files). Its files replace or add files of the variant by path.
 3. **Mojang names.** Variants are written in the namespaces `writtenIn` lists. Each variant, with the overlays covering a group of
    versions, is compiled against the newest version of the group that has name data, and its references are checked on every other
    version with data. A version without name data is reported, not linked, and `myceliumBridgeLinkage` says so in numbers ("linked N of M
@@ -46,6 +47,17 @@ bridges/<slug>/
    it says `shipConformanceResources()`, and leaves the conformance classes out only if it says `conformanceClassesOutOfJar()`.
 6. **Bring the contract.** A contract's `contracts/registry.json` row lists its bridges. A mod that references a bridge
    gets its contract and the contract's requirements.
+7. **Loader halves.** Most of what a bridge touches is the game, which is named the same on every loader. Where the divide is
+   the loader's own (its events, its registration), `bridge.json` lists the `loaders` its native half is written for
+   (keys of `eras/loaders.json`, of the `mod` family) and the half of each loader is an overlay that lists `"loaders"`. A build
+   says which loader it is for (`mycelium { loader = "fabric" }`), and draws the overlays that cover its version and its loader.
+   An overlay for a loader **adds files and replaces none**: what every loader draws is the variant's and the version overlays',
+   and the loader's overlay holds only the classes written against that loader (by convention one class, `LoaderEvents`, that
+   calls the neutral code). Two overlays one build can draw (they share a version and a loader; one for no loader shares every
+   loader) hold different files. A loader-aware bridge has a half for each of its loaders on every version it maps. A build that
+   names no loader, or one the bridge has no half for, draws nothing from it, and says why (B2). The loaders' classes are not
+   in the game's names data, so linkage compiles and links everything every loader draws, and reports the loaders' files as not
+   linked (it counts them); the mod's own build compiles a loader's half against that loader.
 
 ## Write a bridge
 
@@ -72,6 +84,7 @@ bridges/<slug>/
 | Rule | Kept by |
 |---|---|
 | 1, 2, 4 | `myceliumRepository` (`BridgeCheck`): rows, overlay ranges, port and implementation named |
-| 3 | `myceliumBridgeLinkage`: each variant, with each overlay, compiled and linked against every version with name data |
+| 3 | `myceliumBridgeLinkage`: each variant, with each overlay, compiled and linked against every version with name data (a loader's half is counted, not linked) |
+| 7 | `myceliumRepository` (`BridgeCheck`): loaders are mod loaders of the table, each has an overlay on every version mapped, a loader's overlay replaces nothing, overlays one build draws share no file; the mod's build compiles the half |
 | 4 (an override) | `myceliumBridges` (B1) |
 | 5 | the mod's game tests, on every target it builds; Mycelium proves the cases and the rig compile against the game, and that the rig names no bridge class |

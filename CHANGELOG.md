@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-10-13 - state.lifecycle@1: the lifecycle bridge, and bridges that split by loader
+
+`bridges/lifecycle` is the native half of the Threshold: `PlayerLifecycle`, a `LifecyclePort` that turns Fabric's, NeoForge's and Forge's events
+into the contract's crossings (decision 0013, "The bridge"; decision 0016, "Loader halves").
+
+- **The port** (additive in `@1`, SPEC section 5): `LifecyclePort<P, S>` gives a mod its registry, a `HostStore` for players and one for the server,
+  `current(player)` (a `HostRef` while that object is the host's current one), `fire` and `cross` for its own transitions, and `write`, `materialize`
+  and `update` in a transaction of their own. `Transitions.shaped(HostKind, Shape...)`: the transitions of those shapes that apply to a scope. The first
+  slots written against the SPEC's example found that `shaped(Shape...)` also names an unload, which a player slot may not declare a policy for; the
+  example now uses the scoped form.
+- **The crossings.** Login (begins), logout (save, then ends), the loader's copy to a respawned player (succeeds), death and dimension change (stay), the
+  world save, the server's start (`load`) and stop (every player saves and ends, then the server). Minecraft has no way to clone a player; no `clone` is fired.
+  A crossing that fails is logged and changes nothing (L8); a durable form that does not decode is set apart (quarantined) and the player joins without it.
+- **Durable slots** are the overworld's saved data, one tag per host and slot (the same on every loader); a durable form is an `item.component@1` `TagNode`.
+- **Variants.** `loader-events` on 1.21 to 1.21.1 (saved-data `Factory`) and 26.3 on (`SavedDataType` with a codec, an overlay). The versions between are
+  `none` rows: their loader events were not read.
+- **Loader halves (plugin, additive).** `mycelium { loader = ... }`; `bridge.json` `loaders`, and overlays with `loaders`: a loader's overlay adds files and
+  replaces none. Selection by loader, B2 when the build names none, import and evidence record it. `myceliumRepository` holds the rules (mod loaders,
+  a half for each loader on each version mapped, no file in two overlays one build draws); `myceliumBridgeLinkage` links everything every loader draws and
+  counts each loader's files as not linked, since the loaders' classes are not in the names data. Self-tests: selection, import, the repository breaks and
+  the linkage report.
+- **Conformance** (`LifecycleConformance`): G1 to G8 against the port, driven through the game's own server paths with mock players so the loader's events
+  fire for real, and the bridge's own cases (a bad stored form, a form of an undeclared slot, installing twice, the game writing its saved data).
+
 ## 2026-10-13 - item.presentation@1: the bridge, scalar components, display contexts; Somnium adopts it
 
 `bridges/item-presentation` is the native half of the Sigil: `ItemPresenter` (a `StackPresenter<ItemStack>`) selects from a stack's own

@@ -40,9 +40,9 @@ public final class Bridges {
 
     /** The fields a {@code bridge.json} may carry; anything else is refused. */
     static final Set<String> FIELDS = Set.of("schema", "id", "contract", "port", "implementation", "package", "divide",
-            "writtenIn", "what", "variants");
+            "writtenIn", "loaders", "what", "variants");
     static final Set<String> VARIANT_FIELDS = Set.of("overlays");
-    static final Set<String> OVERLAY_FIELDS = Set.of("name", "from", "to", "why");
+    static final Set<String> OVERLAY_FIELDS = Set.of("name", "from", "to", "loaders", "why");
     static final int SCHEMA = 1;
 
     private static final Pattern SLUG = Pattern.compile("[a-z][a-z0-9]*(-[a-z0-9]+)*");
@@ -51,10 +51,30 @@ public final class Bridges {
     private static final Pattern JAVA_NAME = Pattern.compile("[A-Z][A-Za-z0-9]*");
     private static final Pattern REFERENCE = Pattern.compile("\\bmycelium\\.(bridges\\.[a-z][a-z0-9_]*|[a-z][a-z0-9_]*\\.v\\d+)\\b");
 
-    /** A range of versions inside a variant's whose files replace the variant's. */
-    public record Overlay(String name, String from, String to, String why) {
+    /**
+     * A range of versions inside a variant's whose files replace the variant's, and, when {@code loaders} is not empty, only on a build
+     * for one of those loaders (decision 0016, "Loader halves"). A loader's overlay holds the files written against that loader's API;
+     * it adds files and replaces none, so everything else a variant says is what every loader draws.
+     */
+    public record Overlay(String name, String from, String to, List<String> loaders, String why) {
         public boolean covers(String minecraft) {
             return Eras.atLeast(minecraft, from) && Eras.atMost(minecraft, to);
+        }
+
+        /** Whether the overlay is written against one loader's API (it is drawn only by a build for that loader). */
+        public boolean scoped() {
+            return !loaders.isEmpty();
+        }
+
+        /** Whether a build for this loader draws the overlay (an unscoped overlay is drawn by every loader, and by a build that names none). */
+        public boolean drawnBy(String loader) {
+            return loaders.isEmpty() || (loader != null && loaders.contains(loader));
+        }
+
+        /** Whether two overlays can be drawn by one build: they share a version, and a loader (an unscoped overlay shares every loader). */
+        public boolean meets(Overlay other, List<String> versions) {
+            boolean shareLoader = loaders.isEmpty() || other.loaders.isEmpty() || loaders.stream().anyMatch(other.loaders::contains);
+            return shareLoader && versions.stream().anyMatch(x -> Eras.readable(x) && covers(x) && other.covers(x));
         }
     }
 
@@ -72,9 +92,11 @@ public final class Bridges {
      * @param pkg            the package of the bridge's source ({@code mycelium.bridges.<slug_>}), rewritten under the mod's namespace
      * @param divide         the name of its realization table in {@code eras/minecraft.json}
      * @param writtenIn      the namespaces of {@code eras/names.json} whose names the variants are written in
+     * @param loaders        the loaders (of {@code eras/loaders.json}) the bridge's native half is written for; empty when it is loader-blind.
+     *                       A loader-aware bridge draws nothing on a build that names no loader, or one it has no half for
      */
     public record Bridge(String slug, String id, String contract, String port, String implementation, String pkg, String divide,
-                         List<String> writtenIn, String what, Map<String, Variant> variants, Path dir) {
+                         List<String> writtenIn, List<String> loaders, String what, Map<String, Variant> variants, Path dir) {
         /** {@code mycelium.bridges.item_carrier} as {@code bridges.item_carrier}: the part a mod's namespace goes before. */
         public String relativePackage() {
             return pkg.substring("mycelium.".length());
@@ -159,6 +181,19 @@ public final class Bridges {
         for (JsonElement e : o.getAsJsonArray("writtenIn")) {
             writtenIn.add(e.getAsString());
         }
+        List<String> loaders = new ArrayList<>();
+        if (o.has("loaders")) {
+            if (!o.get("loaders").isJsonArray() || o.getAsJsonArray("loaders").isEmpty()) {
+                throw new IllegalStateException(where + ": 'loaders' lists the loaders (eras/loaders.json) the native half is written for; leave it out for a loader-blind bridge");
+            }
+            for (JsonElement e : o.getAsJsonArray("loaders")) {
+                String loader = e.getAsString();
+                if (!WORD.matcher(loader).matches() || loaders.contains(loader)) {
+                    throw new IllegalStateException(where + ": loader '" + loader + "' is not a loader name, or is listed twice");
+                }
+                loaders.add(loader);
+            }
+        }
         if (!o.get("variants").isJsonObject() || o.getAsJsonObject("variants").isEmpty()) {
             throw new IllegalStateException(where + ": 'variants' is an object of at least one variant");
         }
@@ -192,14 +227,29 @@ public final class Bridges {
                     if (!name.matches("[A-Za-z0-9][A-Za-z0-9._-]*")) {
                         throw new IllegalStateException(where + ": the overlay name '" + name + "' is not a directory name");
                     }
-                    overlays.add(new Overlay(name, r.get("from").getAsString(), r.get("to").getAsString(),
+                    List<String> scope = new ArrayList<>();
+                    if (r.has("loaders")) {
+                        if (!r.get("loaders").isJsonArray() || r.getAsJsonArray("loaders").isEmpty()) {
+                            throw new IllegalStateException(where + ": the overlay " + name + " of " + v.getKey() + " has 'loaders' that is not a list of at least one loader;"
+                                    + " leave it out for an overlay every loader draws");
+                        }
+                        for (JsonElement e2 : r.getAsJsonArray("loaders")) {
+                            String loader = e2.getAsString();
+                            if (!loaders.contains(loader) || scope.contains(loader)) {
+                                throw new IllegalStateException(where + ": the overlay " + name + " of " + v.getKey() + " names loader '" + loader
+                                        + "', which the bridge's own \"loaders\" " + loaders + " does not list (or names it twice)");
+                            }
+                            scope.add(loader);
+                        }
+                    }
+                    overlays.add(new Overlay(name, r.get("from").getAsString(), r.get("to").getAsString(), List.copyOf(scope),
                             r.has("why") ? r.get("why").getAsString() : ""));
                 }
             }
             variants.put(v.getKey(), new Variant(v.getKey(), List.copyOf(overlays)));
         }
         return new Bridge(slug, text(o, "id", where), text(o, "contract", where), port, implementation, pkg, text(o, "divide", where),
-                List.copyOf(writtenIn), o.has("what") ? o.get("what").getAsString() : "", Map.copyOf(variants), dir);
+                List.copyOf(writtenIn), List.copyOf(loaders), o.has("what") ? o.get("what").getAsString() : "", Map.copyOf(variants), dir);
     }
 
     private static String text(JsonObject o, String key, String where) {
@@ -212,11 +262,14 @@ public final class Bridges {
     // ---------------------------------------------------------------------------------------------------- selecting
 
     /**
-     * What a Minecraft version draws from a bridge: the variant its realization row names and the overlays that cover the
-     * version, or {@code none} (the game cannot do it there, and {@code why} says so). The plugin holds no version number:
-     * the row is in {@code eras/minecraft.json}.
+     * What a Minecraft version, on a loader, draws from a bridge: the variant its realization row names and the overlays that
+     * cover the version (and, for a loader's overlay, the loader), or {@code none} (the game cannot do it there, or the bridge's native
+     * half is not written for that loader, and {@code why} says so). The plugin holds no version number and no loader: the row is in
+     * {@code eras/minecraft.json}, the loaders a bridge is written for are in its {@code bridge.json}.
+     *
+     * @param loader the loader the build is for, or {@code null} when it names none (a loader-blind bridge draws the same either way)
      */
-    public record Selection(Bridge bridge, String minecraft, String realization, Variant variant, List<Overlay> overlays, String why) {
+    public record Selection(Bridge bridge, String minecraft, String loader, String realization, Variant variant, List<Overlay> overlays, String why) {
         /** Whether the bridge maps on this version. */
         public boolean maps() {
             return variant != null;
@@ -232,26 +285,59 @@ public final class Bridges {
     }
 
     public static Selection select(Bridge bridge, Eras eras, String minecraft) {
+        return select(bridge, eras, minecraft, null);
+    }
+
+    public static Selection select(Bridge bridge, Eras eras, String minecraft, String loader) {
         Eras.Realization row = eras.realization(bridge.divide(), minecraft);
         if (row == null) {
             throw new IllegalStateException("Mycelium: no " + bridge.divide() + " row covers Minecraft '" + minecraft
                     + "' (eras/minecraft.json, \"realizations\"), so bridge " + bridge.slug() + " cannot say what it is there");
         }
         if (row.realization().equals("none")) {
-            return new Selection(bridge, minecraft, "none", null, List.of(), row.what());
+            return new Selection(bridge, minecraft, loader, "none", null, List.of(), row.what());
         }
         Variant variant = bridge.variants().get(row.realization());
         if (variant == null) {
             throw new IllegalStateException("Mycelium: the " + bridge.divide() + " table gives Minecraft " + minecraft + " the realization '"
                     + row.realization() + "', which bridge " + bridge.slug() + " has no variant for (it has " + bridge.variants().keySet() + ")");
         }
+        if (!bridge.loaders().isEmpty() && (loader == null || !bridge.loaders().contains(loader))) {
+            return new Selection(bridge, minecraft, loader, "none", null, List.of(), loader == null
+                    ? "bridge " + bridge.slug() + "'s native half is written per loader (" + String.join(", ", bridge.loaders())
+                            + ") and this build names none (mycelium { loader = ... })"
+                    : "bridge " + bridge.slug() + "'s native half is written for " + String.join(", ", bridge.loaders()) + ", not " + loader);
+        }
         List<Overlay> overlays = new ArrayList<>();
         for (Overlay o : variant.overlays()) {
-            if (o.covers(minecraft)) {
+            if (o.covers(minecraft) && o.drawnBy(loader)) {
                 overlays.add(o);
             }
         }
-        return new Selection(bridge, minecraft, row.realization(), variant, List.copyOf(overlays), row.what());
+        return new Selection(bridge, minecraft, loader, row.realization(), variant, List.copyOf(overlays), row.what());
+    }
+
+    /**
+     * The loader-blind part of what a version draws: the variant and the overlays every loader draws, none of the overlays written against a
+     * loader's API. This is what Mycelium can compile against the game alone; the loaders' halves are not in the game's names
+     * (see {@link #loaderFiles}).
+     */
+    public static Selection selectNeutral(Bridge bridge, Eras eras, String minecraft) {
+        Eras.Realization row = eras.realization(bridge.divide(), minecraft);
+        if (row == null || row.realization().equals("none")) {
+            return select(bridge, eras, minecraft, null);
+        }
+        Variant variant = bridge.variants().get(row.realization());
+        if (variant == null) {
+            return select(bridge, eras, minecraft, null);
+        }
+        List<Overlay> overlays = new ArrayList<>();
+        for (Overlay o : variant.overlays()) {
+            if (o.covers(minecraft) && !o.scoped()) {
+                overlays.add(o);
+            }
+        }
+        return new Selection(bridge, minecraft, null, row.realization(), variant, List.copyOf(overlays), row.what());
     }
 
     // ---------------------------------------------------------------------------------------------------- the files
@@ -301,6 +387,33 @@ public final class Bridges {
         out.putAll(allFiles(variant.resolve("conformance-resources")));
         for (Overlay o : s.overlays()) {
             out.putAll(allFiles(variant.resolve("overlays").resolve(o.name()).resolve("conformance-resources")));
+        }
+        return out;
+    }
+
+    /**
+     * The files the variant's loader-scoped overlays add, per loader (their source, their conformance rig and cases), for a version:
+     * written against a loader's API, so a report can count them as not linked. Empty for a bridge with no loaders.
+     */
+    public static Map<String, Map<String, Path>> loaderFiles(Bridge bridge, Eras eras, String minecraft) throws IOException {
+        Map<String, Map<String, Path>> out = new java.util.LinkedHashMap<>();
+        Eras.Realization row = eras.realization(bridge.divide(), minecraft);
+        if (row == null || row.realization().equals("none") || bridge.variants().get(row.realization()) == null) {
+            return out;
+        }
+        Variant variant = bridge.variants().get(row.realization());
+        for (String loader : bridge.loaders()) {
+            Map<String, Path> files = new TreeMap<>();
+            for (Overlay o : variant.overlays()) {
+                if (o.scoped() && o.covers(minecraft) && o.drawnBy(loader)) {
+                    for (String part : List.of("src", "conformance", "conformance-bound")) {
+                        files.putAll(javaFiles(bridge.variantDir(variant.name()).resolve("overlays").resolve(o.name()).resolve(part)));
+                    }
+                }
+            }
+            if (!files.isEmpty()) {
+                out.put(loader, files);
+            }
         }
         return out;
     }

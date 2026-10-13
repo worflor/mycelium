@@ -27,6 +27,17 @@ final class BridgeCheck {
 
     private static final Pattern PACKAGE = Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;");
 
+    /** An overlay's files by part and path ({@code src/mycelium/...}), the way two overlays' files are compared. */
+    private static Set<String> overlayFiles(Path overlayDir) throws IOException {
+        Set<String> out = new TreeSet<>();
+        for (String part : List.of("src", "conformance", "conformance-bound")) {
+            for (String f : Bridges.javaFiles(overlayDir.resolve(part)).keySet()) {
+                out.add(part + "/" + f);
+            }
+        }
+        return out;
+    }
+
     static void run(Path root, ContractRegistry registry, RepositoryCheck.Report report) throws IOException {
         List<Bridges.Bridge> bridges = new ArrayList<>();
         Path dir = root.resolve("bridges");
@@ -50,7 +61,9 @@ final class BridgeCheck {
         Eras eras;
         NameData names;
         List<String> versions;
+        Loaders loaderTable;
         try {
+            loaderTable = Loaders.load(root.toFile());
             eras = Eras.load(root.toFile());
             names = NameData.load(root.resolve("eras/names.json").toFile());
             versions = Versions.load(root.toFile());
@@ -89,6 +102,16 @@ final class BridgeCheck {
                     report.find("bridges", where + " is written in the names of '" + namespace + "', which eras/names.json has no data for");
                 }
             }
+            // the loaders the native half is written for are loaders of the table, of a family that reaches into the game
+            for (String loader : b.loaders()) {
+                Loaders.Loader known = loaderTable.loaders().get(loader);
+                if (known == null) {
+                    report.find("bridges", where + " is written for loader '" + loader + "', which eras/loaders.json does not list");
+                } else if (!known.family().equals("mod")) {
+                    report.find("bridges", where + " is written for loader '" + loader + "', which is a " + known.family() + ", not a mod loader:"
+                            + " a bridge's loader half is what turns a mod loader's events into the contract's");
+                }
+            }
             // the realization table: every row names a variant (or none), every variant is drawn somewhere
             List<Eras.Realization> table = eras.realizations(b.divide());
             if (table.isEmpty()) {
@@ -108,6 +131,25 @@ final class BridgeCheck {
             for (String variant : b.variants().keySet()) {
                 if (!drawn.contains(variant) && !table.isEmpty()) {
                     report.find("bridges", where + ": variant " + variant + " is drawn by no row of the " + b.divide() + " table: it is dead source");
+                }
+            }
+            // a bridge written per loader has a half for each of its loaders on every version it maps
+            if (!b.loaders().isEmpty()) {
+                for (String version : versions) {
+                    Eras.Realization row = Eras.readable(version) ? eras.realization(b.divide(), version) : null;
+                    if (row == null || row.realization().equals("none") || b.variants().get(row.realization()) == null) {
+                        continue;
+                    }
+                    for (String loader : b.loaders()) {
+                        boolean has = b.variants().get(row.realization()).overlays().stream()
+                                .anyMatch(o -> o.scoped() && o.covers(version) && o.drawnBy(loader));
+                        if (!has) {
+                            report.find("bridges", where + " is written for " + loader + " but no overlay written for it covers Minecraft " + version
+                                    + ", which the " + b.divide() + " table maps to variant " + row.realization()
+                                    + ": a build for " + loader + " there would draw no loader half");
+                            break;
+                        }
+                    }
                 }
             }
             // the layout, variant by variant
@@ -171,8 +213,38 @@ final class BridgeCheck {
                         report.find("bridges", at + " covers no real version");
                     }
                     for (Bridges.Overlay other : v.overlays()) {
-                        if (other != o && other.name().compareTo(o.name()) > 0 && versions.stream().anyMatch(x -> Eras.readable(x) && o.covers(x) && other.covers(x))) {
-                            report.find("bridges", at + " and overlay " + other.name() + " cover the same version: each version draws one overlay's files");
+                        if (other != o && other.name().compareTo(o.name()) > 0 && o.meets(other, versions)) {
+                            // two overlays one build draws may both be there only if they hold different files: the version's change and a
+                            // loader's half compose, and a file named twice would be replaced by whichever came last
+                            Set<String> mine = overlayFiles(odir);
+                            Set<String> theirs = overlayFiles(vdir.resolve("overlays").resolve(other.name()));
+                            mine.retainAll(theirs);
+                            if (!mine.isEmpty()) {
+                                report.find("bridges", at + " and overlay " + other.name() + " are drawn by one build (a shared version"
+                                        + (o.scoped() && other.scoped() ? " and loader" : "") + ") and both hold " + mine.iterator().next()
+                                        + (mine.size() > 1 ? " (and " + (mine.size() - 1) + " more)" : "") + ": each file comes from one overlay");
+                            }
+                        }
+                    }
+                    if (o.scoped()) {
+                        // a loader's half adds files; replacing one the variant or a version overlay holds would make the linkage of everything else
+                        // a check of source the mod does not draw
+                        Set<String> own = overlayFiles(odir);
+                        Set<String> neutral = new TreeSet<>();
+                        for (String part : List.of("src", "conformance", "conformance-bound")) {
+                            for (String f : Bridges.javaFiles(vdir.resolve(part)).keySet()) {
+                                neutral.add(part + "/" + f);
+                            }
+                        }
+                        for (Bridges.Overlay other : v.overlays()) {
+                            if (!other.scoped()) {
+                                neutral.addAll(overlayFiles(vdir.resolve("overlays").resolve(other.name())));
+                            }
+                        }
+                        own.retainAll(neutral);
+                        if (!own.isEmpty()) {
+                            report.find("bridges", at + " is written for " + o.loaders() + " and replaces " + own.iterator().next()
+                                    + ", a file every loader draws: a loader's overlay adds files and replaces none");
                         }
                     }
                 }

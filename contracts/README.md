@@ -15,7 +15,7 @@ governs a type over any sequence of calls (`contracts/chunk-hold`).
 |---|---|---|---|
 | `item.component@1` | `contracts/item-component` | Item state as typed data components from 1.20.5 and as NBT before, one fenced grammar for both (Rosetta) | Cartomancy |
 | `item.presentation@1` | `contracts/item-presentation` | How an item looks from its state: a modern item definition from 1.21.4, a model with overrides before; one program compiled to both, with stable legacy codes (the Sigil). Requires `item.component@1`. Bridge `item-presentation` | Somnium |
-| `state.lifecycle@1` | `contracts/state-lifecycle` | What state does at each crossing (save, login, death, respawn, clone, dimension change, unload, stop, and a mod's own), with hosts no stale work can reach (the Threshold). Requires `item.component@1` | Somnium |
+| `state.lifecycle@1` | `contracts/state-lifecycle` | What state does at each crossing (save, login, death, respawn, clone, dimension change, unload, stop, and a mod's own), with hosts no stale work can reach (the Threshold). Requires `item.component@1`. Bridge `lifecycle` | Somnium |
 | `chunk.hold@1` | `contracts/chunk-hold` | Several holders keeping chunks loaded over an engine whose tickets are not counted per holder | Somnium |
 | `dimension.travel@2` | `contracts/dimension-travel-2` | A trip between levels and back that survives the process dying in between | Somnium |
 | `dimension.travel@1` | `contracts/dimension-travel` | Moving a player between levels, confirming arrival before reporting success (superseded by `@2`) | Somnium |
@@ -45,3 +45,8 @@ and `root-tag` (1.14 to 1.20.4) and proven on real stacks by conformance cases.
 clocks, timelines and time packet, and writes a mod's clocks and timelines as datapack JSON; `emulated-clock` (1.17 to 1.21.11)
 makes the overworld clock vanilla's `dayTime` and keeps a mod's own clocks in saved data, advanced from the mod's server-tick hook and
 synced by a payload the mod delivers. Conformance cases hold the pure model to the running game on both.
+
+`state-lifecycle`: its `LifecyclePort` is how a mod holds its state across a login, a logout, a respawn, a death, a dimension change, a save and
+the server's stop. `lifecycle` (`loader-events`, 1.21 to 1.21.1 and 26.3 on) turns Fabric's, NeoForge's and Forge's events into the contract's
+crossings (each loader's listeners are an overlay written for it), keeps a `HostStore` for players and one for the server, and keeps durable slots
+in the overworld's saved data. Its conformance cases drive the game's own server paths with mock players, so the loader's events fire for real.

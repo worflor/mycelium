@@ -61,6 +61,7 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 ### Optional blocks
 
 - `checks { }`: the level of each check and per-site allowances (below).
+- `loader`: the loader this project builds for (`loader = "fabric"`, a key of `eras/loaders.json`). Only a bridge whose native half is written per loader reads it; set it once in `myceliumDefaults` or in each loader's project.
 - `packMeta { }`, `overlays { }`, `mixinJava`, `minecraftRange(loader)`: what the era table generates for the target (below).
 - `pure { }`: the mod's pure layer, proven on every era and shipped downgraded where an era needs it (`docs/eras.md`).
 - `integration(...)`: an optional integration kept isolated (`docs/integrations.md`).
@@ -165,12 +166,13 @@ source for its target.
   which also brings the bridge's contract. The realization table (`eras/minecraft.json`, one table per divide) says which
   variant covers the target version; the variant's overlays for that version replace or add same-named files. A `none` row,
   or no row, means the bridge is not imported and B2 says so.
+- **Loader.** A bridge written per loader (`bridge.json` lists its `loaders`) draws, beside the variant and the overlays of the version, the overlays written for the build's `mycelium { loader = ... }`: the classes against that loader's API, added to the neutral code and replacing none of it (`BRIDGE-PACKAGE.md` rule 7, decision 0016, "Loader halves"). A build that names no loader, or one the bridge has no half for, imports nothing of it and B2 says why. A bridge written for no loader is the same on every loader's build.
 - **Override.** `bridges { override("item-carrier", "com.me.MyCarrier") }` imports no source for that bridge and checks only that
   the class implements the port (B1). With `conformance()` it still gets the bridge's cases and the game's rig (the cases are written
   against the port), never the bridge's source. A bridge's classes live in the package `<namespace>.bridges.item_carrier` (slug with `_`). `skip("slug")` leaves a bridge out (a slug that names no bridge is refused, like `use`). Overrides are always possible; the evidence records
   them.
 - **Conformance.** `bridges { conformance() }` also imports the bridge's conformance cases, plain Java the mod registers as
-  game tests (`ItemCarrierConformance.cases(...)` for `item-carrier`, `ClockConformance.cases()` and `.timed(...)` for `world-clock`, `PresenterConformance.cases(...)` for `item-presentation`).
+  game tests (`ItemCarrierConformance.cases(...)` for `item-carrier`, `ClockConformance.cases()` and `.timed(...)` for `world-clock`, `PresenterConformance.cases(...)` for `item-presentation`, `LifecycleConformance.cases()` for `lifecycle`).
   They run on the target's real game objects, which is what the laws about stacks, packets, saves and clocks need. A variant's
   `conformance-resources/` (a clock is a datapack file on 26.1 and later, so its cases need one) goes to `build/generated/resources/mycelium/conformance`,
   added to the same source set's resources. The jar a mod ships leaves those data files out (`shipConformanceResources()` keeps

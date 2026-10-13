@@ -36,8 +36,10 @@ final class BridgeSelfTest {
 
     static void run(Path root) throws Exception {
         selection(root);
+        loaders(root);
         layout(root);
         importTask(root);
+        loaderImport(root);
         overrideCheck();
         Path tmp = Files.createTempDirectory("mycelium-bridges-");
         try {
@@ -129,6 +131,117 @@ final class BridgeSelfTest {
         that(Bridges.conformanceFiles(Bridges.select(b, eras, "1.21.11")).containsKey("mycelium/bridges/item_carrier/conformance/ItemCarrierConformance.java")
                         && Bridges.conformanceFiles(Bridges.select(b, eras, "1.21.11")).get("mycelium/bridges/item_carrier/conformance/Wire.java").toString().replace('\\', '/').contains("overlays/1.21.5/conformance"),
                 "bridges:the conformance cases are the bridge's, and what they need of a variant is the variant's (or its overlay's)");
+    }
+
+    // --- a loader's half: the overlays written against one loader's API (decision 0016, "Loader halves") ------------------------------
+
+    static void loaders(Path root) throws IOException {
+        Eras eras = Eras.load(root.toFile());
+        Bridges.Bridge life = Bridges.require(root, "lifecycle");
+        that(life.loaders().equals(List.of("fabric", "neoforge", "forge")), "bridges:loaders: the lifecycle bridge says which loaders its native half is written for: " + life.loaders());
+        that(Bridges.require(root, "item-carrier").loaders().isEmpty() && Bridges.require(root, "world-clock").loaders().isEmpty(),
+                "bridges:loaders: a bridge that says nothing about loaders is loader-blind");
+        String[][] expect = {
+                {"1.21.1", "fabric", "loader-events + fabric-1.21"}, {"1.21", "neoforge", "loader-events + neoforge-1.21"},
+                {"1.21.1", "forge", "loader-events + forge-1.21"}, {"26.3", "fabric", "loader-events + saved-data-type + fabric-26"},
+                {"26.3", "neoforge", "loader-events + saved-data-type + neoforge-26"}, {"26.3", "forge", "loader-events + saved-data-type + forge-26"},
+                {"1.21.4", "fabric", "none"}, {"1.20.1", "neoforge", "none"}, {"26.2", "forge", "none"}};
+        for (String[] e : expect) {
+            Bridges.Selection s = Bridges.select(life, eras, e[0], e[1]);
+            that(s.describe().equals(e[2]), "bridges:loaders: Minecraft " + e[0] + " on " + e[1] + " draws " + e[2] + ", not " + s.describe());
+        }
+        Bridges.Selection blind = Bridges.select(life, eras, "1.21.1");
+        that(!blind.maps() && blind.why().contains("names none") && blind.why().contains("fabric, neoforge, forge"),
+                "bridges:loaders: a build that names no loader draws nothing from a bridge written per loader, and says why: " + blind.why());
+        Bridges.Selection quilt = Bridges.select(life, eras, "1.21.1", "quilt");
+        that(!quilt.maps() && quilt.why().contains("not quilt"), "bridges:loaders: a loader the bridge has no half for draws nothing, and says why: " + quilt.why());
+        Bridges.Bridge carrier = Bridges.require(root, "item-carrier");
+        that(Bridges.select(carrier, eras, "1.21.1", "fabric").describe().equals(Bridges.select(carrier, eras, "1.21.1").describe())
+                        && Bridges.select(carrier, eras, "1.21.1", null).maps(),
+                "bridges:loaders: a loader-blind bridge draws the same whatever loader the build is for, or none");
+
+        Map<String, Path> fabric = Bridges.sourceFiles(Bridges.select(life, eras, "1.21.1", "fabric"));
+        Map<String, Path> neo = Bridges.sourceFiles(Bridges.select(life, eras, "26.3", "neoforge"));
+        String fabricEvents = Files.readString(fabric.get("mycelium/bridges/lifecycle/LoaderEvents.java"));
+        String neoEvents = Files.readString(neo.get("mycelium/bridges/lifecycle/LoaderEvents.java"));
+        that(fabricEvents.contains("net.fabricmc") && !fabricEvents.contains("net.neoforged") && neoEvents.contains("net.neoforged") && !neoEvents.contains("net.fabricmc"),
+                "bridges:loaders: a build for a loader gets that loader's half, and no other's");
+        that(neo.get("mycelium/bridges/lifecycle/Game.java").toString().replace('\\', '/').contains("overlays/saved-data-type")
+                        && fabric.get("mycelium/bridges/lifecycle/Game.java").toString().replace('\\', '/').contains("loader-events/src"),
+                "bridges:loaders: a version's overlay and a loader's compose: the loader's file is added, the version's replaces the variant's");
+        Bridges.Selection neutral = Bridges.selectNeutral(life, eras, "26.3");
+        that(neutral.overlays().size() == 1 && neutral.overlays().get(0).name().equals("saved-data-type") && neutral.loader() == null
+                        && !Bridges.sourceFiles(neutral).containsKey("mycelium/bridges/lifecycle/LoaderEvents.java"),
+                "bridges:loaders: what Mycelium can compile against the game alone leaves out every loader's half: " + neutral.describe());
+        Map<String, Map<String, Path>> halves = Bridges.loaderFiles(life, eras, "1.21.1");
+        that(halves.keySet().equals(java.util.Set.of("fabric", "neoforge", "forge")) && halves.get("forge").containsKey("mycelium/bridges/lifecycle/LoaderEvents.java")
+                        && Bridges.loaderFiles(life, eras, "1.21.4").isEmpty() && Bridges.loaderFiles(carrier, eras, "1.21.1").isEmpty(),
+                "bridges:loaders: the files written against each loader's API are listed per loader, and only where the bridge maps: " + halves.keySet());
+        // two overlays can be drawn by one build only if they share a version and a loader; an unscoped overlay shares every loader
+        List<String> versions = Versions.load(root.toFile());
+        Bridges.Variant variant = life.variants().get("loader-events");
+        Bridges.Overlay fab = variant.overlays().stream().filter(o -> o.name().equals("fabric-26")).findFirst().orElseThrow();
+        Bridges.Overlay neoOverlay = variant.overlays().stream().filter(o -> o.name().equals("neoforge-26")).findFirst().orElseThrow();
+        Bridges.Overlay both = variant.overlays().stream().filter(o -> o.name().equals("saved-data-type")).findFirst().orElseThrow();
+        that(!fab.meets(neoOverlay, versions) && fab.meets(both, versions) && both.meets(neoOverlay, versions),
+                "bridges:loaders: overlays of different loaders never meet, and an overlay every loader draws meets each loader's");
+        // the plain mistakes in a bridge.json are refused by name
+        String json = Files.readString(root.resolve("bridges/lifecycle/bridge.json")).replace("\r\n", "\n");
+        that(SelfTest.refuses(() -> Bridges.parse(json.replace("\"loaders\": [\"fabric\"]", "\"loaders\": [\"quilt\"]"), "lifecycle", root.resolve("bridges/lifecycle"), "t"),
+                        "names loader 'quilt', which the bridge's own"), "bridges:loaders: an overlay for a loader the bridge does not list is refused, by name");
+        that(SelfTest.refuses(() -> Bridges.parse(json.replace("\"loaders\": [\"fabric\", \"neoforge\", \"forge\"],", "\"loaders\": [],"), "lifecycle",
+                        root.resolve("bridges/lifecycle"), "t"), "'loaders' lists the loaders"), "bridges:loaders: an empty list of loaders is refused (leave it out for a loader-blind bridge)");
+        that(SelfTest.refuses(() -> Bridges.parse(json.replace("\"loaders\": [\"fabric\", \"neoforge\", \"forge\"],", "\"loaders\": [\"fabric\", \"fabric\"],"), "lifecycle",
+                        root.resolve("bridges/lifecycle"), "t"), "listed twice"), "bridges:loaders: a loader named twice is refused");
+    }
+
+    /** The import for a build that names a loader: the half of that loader, or nothing with the reason. */
+    static void loaderImport(Path root) throws IOException {
+        Path out = Files.createTempDirectory("mycelium-bridge-loader-");
+        try {
+            List<String> life = List.of("lifecycle");
+            SelfTest.delete(out);
+            JsonObject fabric = ImportBridgesTask.importInto(root, life, "com.example.mod.mycelium", "1.21.1", "fabric", List.of(), Map.of(), true,
+                    out.resolve("src"), out.resolve("conformance"), out.resolve("resources"), (m, a) -> { });
+            JsonObject one = bridge(fabric, "lifecycle");
+            that(fabric.get("loader").getAsString().equals("fabric") && one.get("status").getAsString().equals("variant") && one.get("loader").getAsString().equals("fabric")
+                            && Files.readString(out.resolve("src/com/example/mod/mycelium/bridges/lifecycle/LoaderEvents.java")).contains("net.fabricmc")
+                            && !Files.exists(out.resolve("src/com/example/mod/mycelium/bridges/lifecycle/LifecycleCases.java"))
+                            && Files.isRegularFile(out.resolve("conformance/com/example/mod/mycelium/bridges/lifecycle/conformance/LifecycleCases.java"))
+                            && Files.isRegularFile(out.resolve("conformance/com/example/mod/mycelium/bridges/lifecycle/conformance/LifecycleConformance.java")),
+                    "bridges:loaders: a build for fabric imports the bridge with fabric's half, and its conformance cases: " + one);
+            that(Files.readString(out.resolve("src/com/example/mod/mycelium/bridges/lifecycle/PlayerLifecycle.java")).contains("import com.example.mod.mycelium.state_lifecycle.v1.model.LifecyclePort;"),
+                    "bridges:loaders: the contract's port is the mod's own copy, as every model is");
+            SelfTest.delete(out);
+            JsonObject forge = ImportBridgesTask.importInto(root, life, "com.example.mod.mycelium", "26.3", "forge", List.of(), Map.of(), false,
+                    out.resolve("src"), out.resolve("conformance"), out.resolve("resources"), (m, a) -> { });
+            that(bridge(forge, "lifecycle").getAsJsonArray("overlays").toString().equals("[\"saved-data-type\",\"forge-26\"]")
+                            && Files.readString(out.resolve("src/com/example/mod/mycelium/bridges/lifecycle/LoaderEvents.java")).contains("net.minecraftforge.eventbus.api.listener.Priority"),
+                    "bridges:loaders: 26.3 on forge draws the saved-data overlay and forge's own: " + bridge(forge, "lifecycle"));
+            SelfTest.delete(out);
+            JsonObject unset = ImportBridgesTask.importInto(root, life, "com.example.mod.mycelium", "1.21.1", null, List.of(), Map.of(), false,
+                    out.resolve("src"), out.resolve("conformance"), out.resolve("resources"), (m, a) -> { });
+            that(bridge(unset, "lifecycle").get("status").getAsString().equals("none") && bridge(unset, "lifecycle").get("why").getAsString().contains("names none")
+                            && !Files.exists(out.resolve("src/com")) && !unset.has("loader"),
+                    "bridges:loaders: a build that names no loader imports nothing of a bridge written per loader, and the record says why (B2): " + unset);
+            SelfTest.delete(out);
+            JsonObject quilt = ImportBridgesTask.importInto(root, life, "com.example.mod.mycelium", "1.21.1", "quilt", List.of(), Map.of(), false,
+                    out.resolve("src"), out.resolve("conformance"), out.resolve("resources"), (m, a) -> { });
+            that(bridge(quilt, "lifecycle").get("status").getAsString().equals("none") && bridge(quilt, "lifecycle").get("why").getAsString().contains("not quilt"),
+                    "bridges:loaders: a loader the bridge has no half for imports nothing, and the record says so: " + quilt);
+            that(refusesGradle(() -> ImportBridgesTask.importInto(root, life, "x.y", "1.21.1", "magic", List.of(), Map.of(), false,
+                            out.resolve("s"), out.resolve("c"), out.resolve("r"), (m, a) -> { }), "names no loader in eras/loaders.json"),
+                    "bridges:loaders: a loader the table does not know is refused, by name");
+            // a loader-blind bridge in the same build is unaffected
+            SelfTest.delete(out);
+            JsonObject both = ImportBridgesTask.importInto(root, List.of("item-carrier", "lifecycle"), "com.example.mod.mycelium", "1.21.1", "neoforge", List.of(), Map.of(), false,
+                    out.resolve("src"), out.resolve("conformance"), out.resolve("resources"), (m, a) -> { });
+            that(bridge(both, "item-carrier").get("status").getAsString().equals("variant") && !bridge(both, "item-carrier").has("loader")
+                            && bridge(both, "lifecycle").get("status").getAsString().equals("variant"),
+                    "bridges:loaders: a bridge written for no loader is imported the same on any loader's build: " + both);
+        } finally {
+            SelfTest.delete(out);
+        }
     }
 
     // --- laid out under a mod's namespace ------------------------------------------------------------------------------------
@@ -662,7 +775,26 @@ final class BridgeSelfTest {
                     SelfTest.replace(r.resolve(carrierJson), "\"overlays\": [\n        {\"name\": \"1.14\"", "\"overlays\": [\n        {\"name\": \"1.14b\", \"from\": \"1.14.2\", \"to\": \"1.14.4\"},\n        {\"name\": \"1.14\"");
                     SelfTest.copyTree(r.resolve("bridges/item-carrier/root-tag/overlays/1.14"), r.resolve("bridges/item-carrier/root-tag/overlays/1.14b"));
                 },
-                f -> f.contains("[bridges]") && f.contains("cover the same version"), baseline);
+                f -> f.contains("[bridges]") && f.contains("are drawn by one build (a shared version) and both hold"), baseline);
+        String lifeJson = "bridges/lifecycle/bridge.json";
+        SelfTest.expect(root, "a bridge written for a loader the table lacks", r -> SelfTest.replace(r.resolve(lifeJson),
+                        "\"loaders\": [\"fabric\", \"neoforge\", \"forge\"],", "\"loaders\": [\"fabric\", \"neoforge\", \"forge\", \"sponge\"],"),
+                f -> f.contains("[bridges]") && f.contains("written for loader 'sponge', which eras/loaders.json does not list"), baseline);
+        SelfTest.expect(root, "a bridge written for a loader that is not a mod loader", r -> SelfTest.replace(r.resolve(lifeJson),
+                        "\"loaders\": [\"fabric\", \"neoforge\", \"forge\"],", "\"loaders\": [\"fabric\", \"neoforge\", \"forge\", \"javaagent\"],"),
+                f -> f.contains("[bridges]") && f.contains("'javaagent', which is a agent, not a mod loader"), baseline);
+        SelfTest.expect(root, "a loader whose overlay stops short of a version the bridge maps", r -> SelfTest.replace(r.resolve(lifeJson),
+                        "\"name\": \"forge-1.21\",\n          \"from\": \"1.21\",", "\"name\": \"forge-1.21\",\n          \"from\": \"1.21.1\","),
+                f -> f.contains("[bridges]") && f.contains("is written for forge but no overlay written for it covers Minecraft 1.21,"), baseline);
+        SelfTest.expect(root, "a loader's overlay that replaces a file every loader draws", r -> SelfTest.write(
+                        r.resolve("bridges/lifecycle/loader-events/overlays/fabric-1.21/src/mycelium/bridges/lifecycle/Game.java"),
+                        "package mycelium.bridges.lifecycle;\nfinal class Game {}\n"),
+                f -> f.contains("[bridges]") && f.contains("fabric-1.21 of loader-events is written for [fabric] and replaces src/mycelium/bridges/lifecycle/Game.java"), baseline);
+        SelfTest.expect(root, "two overlays of one loader that hold the same file", r -> {
+                    SelfTest.replace(r.resolve(lifeJson), "\"name\": \"fabric-26\",", "\"name\": \"fabric-26b\", \"from\": \"26.3\", \"to\": \"26.x\", \"loaders\": [\"fabric\"]},\n        {\"name\": \"fabric-26\",");
+                    SelfTest.copyTree(r.resolve("bridges/lifecycle/loader-events/overlays/fabric-26"), r.resolve("bridges/lifecycle/loader-events/overlays/fabric-26b"));
+                },
+                f -> f.contains("[bridges]") && f.contains("are drawn by one build (a shared version and loader) and both hold"), baseline);
         SelfTest.expect(root, "an overlay with no files", r -> SelfTest.delete(r.resolve("bridges/item-carrier/root-tag/overlays/1.14")),
                 f -> f.contains("[bridges]") && f.contains("overlay 1.14 of root-tag has no files"), baseline);
         SelfTest.expect(root, "an overlay directory nothing lists", r -> SelfTest.write(r.resolve("bridges/item-carrier/root-tag/overlays/ghost/src/mycelium/bridges/item_carrier/Nbt.java"),
@@ -828,6 +960,34 @@ final class BridgeSelfTest {
                 cache, versions, dir.resolve("work-two"), javac);
         JsonArray groups = two.report().getAsJsonArray("variants").get(0).getAsJsonObject().getAsJsonArray("groups");
         that(groups.size() == 2 && two.findings().isEmpty(), "bridges:linkage: the versions an overlay covers are a group of their own with their own compile: " + groups);
+
+        // a loader's half is written against the loader's API, which the game's names do not hold: it is left out of the compile, and said so
+        Path perLoader = Files.createDirectories(dir.resolve("bridges/mini5"));
+        SelfTest.write(perLoader.resolve("bridge.json"), "{\"schema\":1,\"id\":\"mini\",\"contract\":\"fake@1\",\"port\":\"Port\",\"implementation\":\"Impl\","
+                + "\"package\":\"mycelium.bridges.mini5\",\"divide\":\"mini.divide\",\"writtenIn\":[\"unobfuscated\"],\"loaders\":[\"fabric\",\"forge\"],"
+                + "\"variants\":{\"only\":{\"overlays\":[{\"name\":\"fab\",\"from\":\"26.1\",\"to\":\"26.3\",\"loaders\":[\"fabric\"]},"
+                + "{\"name\":\"for\",\"from\":\"26.1\",\"to\":\"26.3\",\"loaders\":[\"forge\"]}]}}}");
+        SelfTest.write(perLoader.resolve("only/src/mycelium/bridges/mini5/Impl.java"),
+                "package mycelium.bridges.mini5;\nimport mycelium.fake.v1.model.Port;\nimport net.minecraft.test.Stack;\n"
+                        + "public class Impl implements Port {\n    public int n() { return Stack.of().count(); }\n}\n");
+        SelfTest.write(perLoader.resolve("only/overlays/fab/src/mycelium/bridges/mini5/LoaderEvents.java"),
+                "package mycelium.bridges.mini5;\npublic final class LoaderEvents {\n    public static void wire() { net.fabricmc.api.ModInitializer m = null; }\n}\n");
+        SelfTest.write(perLoader.resolve("only/overlays/for/src/mycelium/bridges/mini5/LoaderEvents.java"),
+                "package mycelium.bridges.mini5;\npublic final class LoaderEvents {\n    public static void wire() { net.minecraftforge.common.MinecraftForge f = null; }\n}\n");
+        Bridges.Bridge perLoaderBridge = Bridges.parse(Files.readString(perLoader.resolve("bridge.json")), "mini5", perLoader, "mini5");
+        BridgeLinkage.Result halves = BridgeLinkage.bridge(perLoaderBridge, modelRoots, eras, fine, cache, versions, dir.resolve("work-loaders"), javac);
+        JsonObject halvesGroup = halves.report().getAsJsonArray("variants").get(0).getAsJsonObject().getAsJsonArray("groups").get(0).getAsJsonObject();
+        that(halves.findings().isEmpty() && halvesGroup.get("status").getAsString().equals("linked") && halvesGroup.getAsJsonObject("loaderHalvesNotLinked").has("fabric")
+                        && halvesGroup.getAsJsonObject("loaderHalvesNotLinked").has("forge")
+                        && halves.notes().stream().anyMatch(n -> n.contains("not linked") && n.contains("loaders' classes are not in the game's names data") && n.contains("fabric (1 file)")),
+                "bridges:linkage: a loader's half is left out of the compile, so it cannot fail it, and is reported as not linked, per loader: " + halves.findings() + halves.notes());
+        // ... and the loader-blind part is still held to the game: a bad reference in it fails whatever the loaders do
+        SelfTest.write(perLoader.resolve("only/src/mycelium/bridges/mini5/Impl.java"),
+                "package mycelium.bridges.mini5;\nimport mycelium.fake.v1.model.Port;\nimport net.minecraft.test.Stack;\n"
+                        + "public class Impl implements Port {\n    public int n() { return Stack.of().gone(); }\n}\n");
+        BridgeLinkage.Result blindBroken = BridgeLinkage.bridge(perLoaderBridge, modelRoots, eras, fine, cache, versions, dir.resolve("work-loaders-bad"), javac);
+        that(blindBroken.findings().size() == 1 && blindBroken.findings().get(0).contains("does not compile against Minecraft 26.3"),
+                "bridges:linkage: what every loader draws is still compiled against the game: " + blindBroken.findings());
 
         // what was proved is said in numbers, so a run that linked little does not read as one that linked everything
         that(BridgeLinkage.summary(ok.report()).equals("linked 2 of 3 version(s), 1 not linked (no name data: 1; the game or a compiler for it could not be had: 0; do not link: 0)"),

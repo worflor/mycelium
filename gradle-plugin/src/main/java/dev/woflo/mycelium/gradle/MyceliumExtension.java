@@ -179,6 +179,13 @@ public abstract class MyceliumExtension {
      */
     public abstract Property<String> getMinecraft();
 
+    /**
+     * The loader this project builds for ({@code fabric}, {@code neoforge}, {@code forge}: a key of {@code eras/loaders.json}). Only a bridge
+     * whose native half is written per loader reads it (decision 0016, "Loader halves"); the plugin has no other use for it. Unset, such a
+     * bridge draws nothing on this build, and says so (B2).
+     */
+    public abstract Property<String> getLoader();
+
     /** The Java a Minecraft version runs on, from the era table: for a target's toolchain. Needs {@code root} set. */
     public int javaFor(String minecraft) {
         return Eras.load(getRoot().get().getAsFile()).of(minecraft).java();

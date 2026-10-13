@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "id": "state.lifecycle",
+  "contract": "state.lifecycle@1",
+  "port": "LifecyclePort",
+  "implementation": "PlayerLifecycle",
+  "package": "mycelium.bridges.lifecycle",
+  "divide": "state.lifecycle",
+  "writtenIn": ["mojang", "unobfuscated"],
+  "loaders": ["fabric", "neoforge", "forge"],
+  "what": "Minecraft's players and server as a state.lifecycle@1 LifecyclePort: the loader's events turned into the contract's crossings (login, logout, respawn, death, dimension change, save, server start and stop), a HostStore for players and one for the server, and durable slots kept in the overworld's saved data. The loader's listeners are the half each loader overlay adds (LoaderEvents); everything else is the same on every loader.",
+  "variants": {
+    "loader-events": {
+      "overlays": [
+        {
+          "name": "saved-data-type",
+          "from": "26.3",
+          "to": "26.x",
+          "why": "saved data is a SavedDataType with an Identifier and a codec, the data storage moved to world.level.storage, and a player reaches its server through its level; tags moved to Optional getters at 1.21.5"
+        },
+        {
+          "name": "fabric-1.21",
+          "from": "1.21",
+          "to": "1.21.1",
+          "loaders": ["fabric"],
+          "why": "Fabric API: the player and connection events, the entity events (ServerEntityWorldChangeEvents) and the lifecycle events, with phases named by ResourceLocation"
+        },
+        {
+          "name": "fabric-26",
+          "from": "26.3",
+          "to": "26.x",
+          "loaders": ["fabric"],
+          "why": "Fabric API on 26.x: the same events, the world-change event renamed ServerEntityLevelChangeEvents, phases named by Identifier"
+        },
+        {
+          "name": "neoforge-1.21",
+          "from": "1.21",
+          "to": "1.21.1",
+          "loaders": ["neoforge"],
+          "why": "NeoForge's PlayerEvent, LivingDeathEvent, LevelEvent and server events on the NeoForge event bus, with an EventPriority"
+        },
+        {
+          "name": "neoforge-26",
+          "from": "26.3",
+          "to": "26.x",
+          "loaders": ["neoforge"],
+          "why": "NeoForge on 26.x: the same events on the NeoForge event bus"
+        },
+        {
+          "name": "forge-1.21",
+          "from": "1.21",
+          "to": "1.21.1",
+          "loaders": ["forge"],
+          "why": "Forge 52: the events on MinecraftForge.EVENT_BUS, with an EventPriority"
+        },
+        {
+          "name": "forge-26",
+          "from": "26.3",
+          "to": "26.x",
+          "loaders": ["forge"],
+          "why": "Forge 66: events are records with their own EventBus (BUS.addListener), a priority is a byte, and a cancellable event's listener answers whether to cancel"
+        }
+      ]
+    }
+  }
+}

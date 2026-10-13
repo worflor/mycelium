@@ -101,6 +101,8 @@ final class BridgeLinkage {
             // the versions this variant draws, grouped by the overlays that cover them: each group is one source
             Map<String, List<String>> groups = new LinkedHashMap<>();
             Map<String, Bridges.Selection> selections = new LinkedHashMap<>();
+            // per group, per loader: the file names of the half written against that loader's API
+            Map<String, Map<String, java.util.TreeSet<String>>> halves = new LinkedHashMap<>();
             for (String v : versions) {
                 if (!Eras.readable(v)) {
                     continue;
@@ -109,16 +111,37 @@ final class BridgeLinkage {
                 if (row == null || !row.realization().equals(variant.name())) {
                     continue;
                 }
-                Bridges.Selection s = Bridges.select(bridge, eras, v);
+                // the loader-blind part: what the game's names can check. A loader's half is written against its API, which the
+                // game's names do not hold, so it is counted and reported as not linked, never skipped silently
+                Bridges.Selection s = Bridges.selectNeutral(bridge, eras, v);
                 String key = s.overlays().stream().map(Bridges.Overlay::name).toList().toString();
                 groups.computeIfAbsent(key, k -> new ArrayList<>()).add(v);
                 selections.putIfAbsent(key, s);
+                for (Map.Entry<String, Map<String, Path>> half : Bridges.loaderFiles(bridge, eras, v).entrySet()) {
+                    halves.computeIfAbsent(key, k -> new LinkedHashMap<>()).computeIfAbsent(half.getKey(), k -> new java.util.TreeSet<>())
+                            .addAll(half.getValue().keySet().stream().map(f -> f.substring(f.lastIndexOf('/') + 1)).toList());
+                }
             }
             JsonObject vo = new JsonObject();
             vo.addProperty("variant", variant.name());
             JsonArray groupsJson = new JsonArray();
             for (Map.Entry<String, List<String>> g : groups.entrySet()) {
-                groupsJson.add(group(bridge, selections.get(g.getKey()), g.getValue(), models, data, cache, work, javac, findings, notes));
+                JsonObject one = group(bridge, selections.get(g.getKey()), g.getValue(), models, data, cache, work, javac, findings, notes);
+                Map<String, java.util.TreeSet<String>> half = halves.getOrDefault(g.getKey(), Map.of());
+                if (!half.isEmpty()) {
+                    JsonObject loaders = new JsonObject();
+                    StringBuilder said = new StringBuilder();
+                    for (Map.Entry<String, java.util.TreeSet<String>> h : half.entrySet()) {
+                        loaders.add(h.getKey(), array(new ArrayList<>(h.getValue())));
+                        said.append(said.length() == 0 ? "" : "; ").append(h.getKey()).append(" (").append(h.getValue().size()).append(" file")
+                                .append(h.getValue().size() == 1 ? "" : "s").append(")");
+                    }
+                    one.add("loaderHalvesNotLinked", loaders);
+                    notes.add("bridge " + bridge.slug() + ", variant " + selections.get(g.getKey()).describe() + ": the half written against each loader's"
+                            + " own API is not linked, since the loaders' classes are not in the game's names data: " + said
+                            + " (the mod's build compiles it against the loader)");
+                }
+                groupsJson.add(one);
             }
             vo.add("groups", groupsJson);
             variants.add(vo);

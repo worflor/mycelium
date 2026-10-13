@@ -87,6 +87,7 @@ public abstract class BridgeCheckTask extends DefaultTask {
             switch (bridge.get("status").getAsString()) {
                 case "none" -> found.add("B2", slug, "bridge " + slug + " has no realization on "
                         + (imported.has("minecraft") ? "Minecraft " + imported.get("minecraft").getAsString() : "this build (no target version)")
+                        + (imported.has("loader") ? " for " + imported.get("loader").getAsString() : "")
                         + " and was not imported: " + bridge.get("why").getAsString()
                         + " (the mod writes that half natively there, or does not claim the version)");
                 case "override" -> {
@@ -131,6 +132,9 @@ public abstract class BridgeCheckTask extends DefaultTask {
         report.addProperty("schema", 1);
         if (imported.has("minecraft")) {
             report.addProperty("minecraft", imported.get("minecraft").getAsString());
+        }
+        if (imported.has("loader")) {
+            report.addProperty("loader", imported.get("loader").getAsString());
         }
         report.add("bridges", out);
         report.add("findings", found.toJson());

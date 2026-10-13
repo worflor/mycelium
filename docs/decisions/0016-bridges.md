@@ -132,3 +132,38 @@ for versions the mod claims in `range { }`.
   them; `conformanceClassesOutOfJar()` also leaves the conformance classes out, for a mod whose tests are not in the main source
   set. `item-presentation` (decision 0012, "Somnium, adopted") is the second bridge with cases; Somnium's shipping jar no longer
   holds the clock's datapack files.
+
+## Loader halves (2026-10-13)
+
+The decision said it in one line: "Where a loader truly differs, a variant may split by loader the same way, from data." The Threshold's
+bridge (`bridges/lifecycle`, decision 0013) is the first divide that is the loader's own: Fabric, NeoForge and Forge each deliver a
+player's login, logout, respawn and death through events of their own, and the events themselves moved between 1.21 and 26.x. Nothing
+else in that bridge differs by loader (the game's classes are the same names on all three), so the split is small, and it is data.
+
+- **Where the loader is known.** A build names it: `mycelium { loader = "fabric" }` (a key of `eras/loaders.json`, set once in
+  `myceliumDefaults` or per loader project). The plugin has no other use for it, and holds no loader name: `bridge.json` lists the
+  `loaders` the native half is written for, and the table says what each is.
+- **How a bridge splits.** Not as a variant. A variant is a realization of the divide on a range of versions, and a realization does
+  not depend on the loader; what depends on it is a few classes. So the half of a loader is an **overlay with `"loaders"`**, drawn only
+  by a build for one of them, and a loader's overlay **adds files and replaces none**. A version's change (the saved-data API) and a
+  loader's half (its events) compose, and neither knows the other. Alternatives weighed: a variant per loader (the neutral core would be
+  copied three times, and the version overlays with it); a `loaders` field on realization rows (the table would grow a row per loader
+  per range, for a fact that is one class); a hook the mod registers (the mod would write the split itself, which is what the bridge is
+  for).
+- **The rules, kept by `myceliumRepository`.** The loaders are mod loaders of the table; a loader-aware bridge has an overlay for each of
+  its loaders on every version it maps (a build for a loader would otherwise draw no half); a loader's overlay replaces no file the
+  variant or a version overlay holds; two overlays one build can draw (a shared version, and a shared loader, an overlay for none sharing
+  every one) hold different files. The earlier "overlays may not overlap" is this rule with the loader added: it was a rule about
+  files all along.
+- **Selection.** `Bridges.select(bridge, eras, minecraft, loader)`. A loader-aware bridge on a build that names no loader, or a loader it
+  has no half for, draws nothing and says why (B2); a loader-blind bridge draws the same on any loader's build. The import report and the
+  evidence record the loader beside the variant and overlays.
+- **Linkage.** The loaders' classes are not in Mojang's names data, so `myceliumBridgeLinkage` compiles and links everything every
+  loader draws (a variant and its version overlays, with the conformance cases) against the game, and **counts each loader's files as not
+  linked**, per group, in the report and as a note. A loader-API linkage would need each loader's published jars pinned by hash and a
+  classpath for them (Fabric's are intermediary-named before 26.x, so a compile needs a remap): not cheap, and not done. What proves a
+  loader's half is the mod's build, which compiles it against the loader on every target, and the conformance cases, which drive the
+  game's own server paths so that the loader's events fire for real.
+- **What the first loader-aware bridge shows.** `bridges/lifecycle` has `LoaderEvents` in six overlays (three loaders by two ranges of
+  versions), each a wiring class of about forty lines that calls the neutral `Hooks`. The neutral core reaches it by name
+  (`PlayerLifecycle.install()`), so a mod's own code names no loader and needs no `//? if`.

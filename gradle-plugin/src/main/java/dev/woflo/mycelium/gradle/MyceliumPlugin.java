@@ -163,6 +163,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getBridges().set(chosenBridges);
             t.getNamespace().set(ext.getNamespace());
             t.getMinecraft().set(ext.getMinecraft());
+            t.getLoader().set(ext.getLoader());
             t.getSkip().set(ext.getBridges().getSkip());
             t.getOverrides().set(ext.getBridges().getOverrides());
             t.getConformance().set(ext.getBridges().getConformance());
@@ -942,6 +943,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             ext.getEras().convention(defaults.getEras());
             ext.getDowngraderVersion().convention(defaults.getDowngraderVersion());
             ext.getMinecraft().convention(defaults.getMinecraft());
+            ext.getLoader().convention(defaults.getLoader());
             ext.getLibraryRelocations().convention(defaults.getLibraryRelocations());
             ext.getIntegrations().convention(defaults.getIntegrations());
             ext.getPorts().convention(defaults.getPorts());
