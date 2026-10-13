@@ -48,6 +48,10 @@ to write down.
 | Range proofs | Not derived: the plugin cannot see which versions your tests ran on. A range with no keystone warns (R1), each version stays `interpolated`, and the manifest says so. | `range { keystones(...) }`. |
 | Contract harnesses | Mycelium's own check already ran each one and recorded a fingerprint of the sources (`contracts/proofs.json`). `myceliumVerify` takes a contract whose sources are unchanged, on every Java your gates run, as proven; the manifest records `proven-upstream` and the fingerprint. | `-Pmycelium.verify=always` runs every harness here. A changed source always runs. |
 
+The contract list is read when `myceliumImport` runs, after whatever writes the main sources: the plugin makes the import,
+verify and evidence tasks wait for the tasks that produce the source directories, and for Stonecutter's `stonecutterGenerate`
+by name, which nothing else declares as the sources' producer.
+
 ### Optional blocks
 
 - `checks { }`: the level of each check and per-site allowances (below).

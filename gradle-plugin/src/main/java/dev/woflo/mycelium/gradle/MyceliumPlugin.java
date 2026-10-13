@@ -55,6 +55,16 @@ public final class MyceliumPlugin implements Plugin<Project> {
         project.getPlugins().withType(JavaPlugin.class, applied -> modFlag.set(true));
         Provider<Boolean> isMod = modFlag;
         ConfigurableFileCollection derivationRoots = project.getObjects().fileCollection();
+        // whatever writes the main sources (a Stonecutter swap) runs before anything reads them to find the contracts; not
+        // myceliumImport, which writes into them
+        // Stonecutter swaps the sources in a task of its own that nothing declares as the sources' producer, so it is named.
+        org.gradle.api.tasks.TaskCollection<Task> stonecutter = project.getTasks().matching(task -> task.getName().equals("stonecutterGenerate"));
+        java.util.concurrent.Callable<Object> sourceGenerators = () -> {
+            List<Object> out = new ArrayList<>(derivationRoots.getBuildDependencies().getDependencies(null).stream()
+                    .filter(task -> !task.getName().equals("myceliumImport")).toList());
+            out.addAll(stonecutter);
+            return out;
+        };
         Provider<String> verifyProperty = project.getProviders().gradleProperty("mycelium.verify").orElse("");
         Provider<Directory> generated = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java");
         // The contracts this project imports: the explicit `contracts(...)` if given; in a mod (the Java plugin applied) what its
@@ -114,6 +124,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.setDescription("Imports selected Mycelium contract models under the artifact-owned namespace.");
             t.getRoot().set(ext.getRoot());
             t.getContracts().set(contracts);
+            // the contracts are read from the main sources, which a source generator (Stonecutter) may write first
+            t.dependsOn(sourceGenerators);
             t.getNamespace().set(ext.getNamespace());
             t.getSourceFingerprint().set(fingerprint);
             t.getOutputDir().set(generated);
@@ -124,6 +136,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.setDescription("Compiles and runs each selected Mycelium contract harness (reference + rejection matrix).");
             t.getRoot().set(ext.getRoot());
             t.getContracts().set(contracts);
+            t.dependsOn(sourceGenerators);
             t.getSourceFingerprint().set(fingerprint);
             t.getReportDir().set(reportDir);
             // Mycelium's own check already ran each harness (contracts/proofs.json): a mod re-runs one only when its imported
@@ -157,7 +170,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getIsolationReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/isolation"));
             t.getSurfaceReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
             t.getOutputDir().set(evidenceDir);
-            t.dependsOn(verifyTask);
+            t.dependsOn(verifyTask, sourceGenerators);
         });
 
         TaskProvider<CapsuleTask> capsuleTask = project.getTasks().register("myceliumCapsule", CapsuleTask.class, t -> {
