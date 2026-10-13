@@ -43,6 +43,7 @@
       "path": "world-clock",
       "package": "mycelium.world_clock.v1",
       "status": "reference",
+      "bridges": ["world-clock"],
       "provenance": "written for Cartomancy"
     },
     {

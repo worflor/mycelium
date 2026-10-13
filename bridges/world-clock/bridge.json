@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "id": "world.clock",
+  "contract": "world.clock@1",
+  "port": "ClockPort",
+  "implementation": "WorldClocks",
+  "package": "mycelium.bridges.world_clock",
+  "divide": "world.clock",
+  "writtenIn": [
+    "mojang",
+    "unobfuscated"
+  ],
+  "what": "Minecraft's time as a world.clock@1 ClockPort: the game's own world clocks, timelines and time packet from 26.1 (native-clock); before it, the overworld clock is vanilla's dayTime and a mod's own clocks live in saved data on the overworld, advanced on the server tick and synced by a payload the mod delivers (emulated-clock). Everything arithmetic is the pure model's.",
+  "variants": {
+    "native-clock": {
+      "overlays": [
+        {
+          "name": "26.1",
+          "from": "26.1",
+          "to": "26.2",
+          "why": "the clock manager exposes a clock's state only as a packed copy, reports a move as a flag, and a client can read only total ticks (26.3 gives each clock an instance and a move three outcomes)"
+        }
+      ]
+    },
+    "emulated-clock": {
+      "overlays": [
+        {
+          "name": "1.17",
+          "from": "1.17",
+          "to": "1.20.1",
+          "why": "saved data is a loader function and a supplier, saved by save(CompoundTag); there is no tick rate manager"
+        },
+        {
+          "name": "1.20.2",
+          "from": "1.20.2",
+          "to": "1.20.2",
+          "why": "saved data is a Factory, saved by save(CompoundTag); there is still no tick rate manager"
+        },
+        {
+          "name": "1.20.3",
+          "from": "1.20.3",
+          "to": "1.20.4",
+          "why": "the tick rate manager arrives; saved data is still a Factory saved by save(CompoundTag)"
+        },
+        {
+          "name": "1.21.5",
+          "from": "1.21.5",
+          "to": "1.21.10",
+          "why": "saved data is a SavedDataType with a codec"
+        },
+        {
+          "name": "1.21.11",
+          "from": "1.21.11",
+          "to": "1.21.11",
+          "why": "game rules become registry-backed (GameRules.ADVANCE_TIME) and are read from a level"
+        }
+      ]
+    }
+  }
+}

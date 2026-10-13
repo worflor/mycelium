@@ -72,6 +72,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         Provider<Directory> importedRoot = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium");
         Provider<Directory> bridgeSources = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/bridges/java");
         Provider<Directory> conformanceSources = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/conformance/java");
+        Provider<Directory> conformanceResources = project.getLayout().getBuildDirectory().dir("generated/resources/mycelium/conformance");
         // The contracts this project imports: the explicit `contracts(...)` if given; in a mod (the Java plugin applied) what the
         // compiled sources reference under the namespace, with their requirements; in the verification project (no Java plugin),
         // none imported and every contract verified. Chosen when the build runs, by a task that waits for whatever writes the
@@ -177,6 +178,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getSourceFingerprint().set(bridgesFingerprint);
             t.getOutputDir().set(bridgeSources);
             t.getConformanceDir().set(conformanceSources);
+            t.getConformanceResourcesDir().set(conformanceResources);
             t.getReportFile().set(bridgesReport.map(d -> d.file("import.json")));
             t.dependsOn(sourceGenerators);
             // a verification project has no sources to add them to
@@ -488,6 +490,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                             + sourceSets.getNames() + ")");
                 }
                 target.getJava().srcDir(bridgeImportTask.flatMap(ImportBridgesTask::getConformanceDir));
+                target.getResources().srcDir(bridgeImportTask.flatMap(ImportBridgesTask::getConformanceResourcesDir));
             });
             // What can be said of the bridges once the classes are compiled: an override implements the port (B1), a bridge the game
             // cannot map on this version was not imported (B2). The evidence manifest carries the choice and the result.

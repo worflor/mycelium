@@ -271,6 +271,24 @@ public final class Bridges {
         return out;
     }
 
+    /**
+     * The data files a variant's conformance cases need in the mod's resources (a clock on 26.1 and later is a datapack file, so the
+     * case that uses one needs it beside the game's): everything under {@code conformance-resources/} of the variant and of the
+     * overlays that cover the version, an overlay's file replacing the same path. They are laid out as they are, no package moving.
+     */
+    public static Map<String, Path> conformanceResourceFiles(Selection s) throws IOException {
+        Map<String, Path> out = new TreeMap<>();
+        if (!s.maps()) {
+            return out;
+        }
+        Path variant = s.bridge().variantDir(s.variant().name());
+        out.putAll(allFiles(variant.resolve("conformance-resources")));
+        for (Overlay o : s.overlays()) {
+            out.putAll(allFiles(variant.resolve("overlays").resolve(o.name()).resolve("conformance-resources")));
+        }
+        return out;
+    }
+
     private static Map<String, Path> files(Selection s, String part) throws IOException {
         Map<String, Path> out = new TreeMap<>();
         if (!s.maps()) {
@@ -280,6 +298,20 @@ public final class Bridges {
         out.putAll(javaFiles(variant.resolve(part)));
         for (Overlay o : s.overlays()) {
             out.putAll(javaFiles(variant.resolve("overlays").resolve(o.name()).resolve(part)));
+        }
+        return out;
+    }
+
+    /** Every file under {@code dir}, by its path relative to it (forward slashes). */
+    static Map<String, Path> allFiles(Path dir) throws IOException {
+        Map<String, Path> out = new TreeMap<>();
+        if (!Files.isDirectory(dir)) {
+            return out;
+        }
+        try (Stream<Path> walk = Files.walk(dir)) {
+            for (Path p : (Iterable<Path>) walk.filter(Files::isRegularFile)::iterator) {
+                out.put(dir.relativize(p).toString().replace('\\', '/'), p);
+            }
         }
         return out;
     }
@@ -323,10 +355,23 @@ public final class Bridges {
      * relative paths written (sources, then conformance), for a report.
      */
     public static List<String> materialize(Selection s, String namespace, Path srcOut, Path conformanceOut) throws IOException {
+        return materialize(s, namespace, srcOut, conformanceOut, null);
+    }
+
+    /** As above, and with {@code resourcesOut} the conformance cases' data files (a datapack clock) land there, as they are. */
+    public static List<String> materialize(Selection s, String namespace, Path srcOut, Path conformanceOut, Path resourcesOut) throws IOException {
         List<String> written = new ArrayList<>();
         write(sourceFiles(s), namespace, srcOut, written, "");
         if (conformanceOut != null) {
             write(conformanceFiles(s), namespace, conformanceOut, written, "conformance: ");
+            if (resourcesOut != null) {
+                for (Map.Entry<String, Path> f : conformanceResourceFiles(s).entrySet()) {
+                    Path dest = resourcesOut.resolve(f.getKey());
+                    Files.createDirectories(dest.getParent());
+                    Files.copy(f.getValue(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    written.add("conformance resource: " + f.getKey());
+                }
+            }
         }
         return written;
     }

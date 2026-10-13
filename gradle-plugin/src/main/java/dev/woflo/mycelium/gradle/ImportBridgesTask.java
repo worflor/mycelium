@@ -70,6 +70,10 @@ public abstract class ImportBridgesTask extends DefaultTask {
     @OutputDirectory
     public abstract DirectoryProperty getConformanceDir();
 
+    /** The data files the conformance cases need (a clock on 26.1 and later is a datapack file), for the mod's resources. */
+    @OutputDirectory
+    public abstract DirectoryProperty getConformanceResourcesDir();
+
     @OutputFile
     public abstract RegularFileProperty getReportFile();
 
@@ -78,8 +82,9 @@ public abstract class ImportBridgesTask extends DefaultTask {
         Path root = getRoot().get().getAsFile().toPath();
         Path out = clean(getOutputDir().get().getAsFile().toPath());
         Path conformance = clean(getConformanceDir().get().getAsFile().toPath());
+        Path resources = clean(getConformanceResourcesDir().get().getAsFile().toPath());
         JsonObject report = importInto(root, getContracts().get(), getNamespace().get(), getMinecraft().getOrNull(), getUse().get(),
-                getSkip().get(), getOverrides().get(), getConformance().get(), out, conformance, getLogger()::lifecycle);
+                getSkip().get(), getOverrides().get(), getConformance().get(), out, conformance, resources, getLogger()::lifecycle);
         Path file = getReportFile().get().getAsFile().toPath();
         Files.createDirectories(file.getParent());
         Files.writeString(file, new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(report) + "\n", StandardCharsets.UTF_8);
@@ -88,6 +93,12 @@ public abstract class ImportBridgesTask extends DefaultTask {
     /** What the task does apart from Gradle: the self-tests run it on a scratch copy of the repository. */
     static JsonObject importInto(Path root, List<String> contracts, String namespace, String minecraft, List<String> use, List<String> skip,
                                  Map<String, String> overrides, boolean conformance, Path out, Path conformanceOut,
+                                 java.util.function.BiConsumer<String, Object[]> log) throws IOException {
+        return importInto(root, contracts, namespace, minecraft, use, skip, overrides, conformance, out, conformanceOut, null, log);
+    }
+
+    static JsonObject importInto(Path root, List<String> contracts, String namespace, String minecraft, List<String> use, List<String> skip,
+                                 Map<String, String> overrides, boolean conformance, Path out, Path conformanceOut, Path resourcesOut,
                                  java.util.function.BiConsumer<String, Object[]> log) throws IOException {
         ContractRegistry registry = ContractRegistry.load(root.toFile());
         List<String> wanted = new ArrayList<>(use.isEmpty() ? Bridges.broughtBy(registry, contracts) : use);
@@ -137,7 +148,7 @@ public abstract class ImportBridgesTask extends DefaultTask {
                 log.accept("Mycelium: bridge {} cannot map on Minecraft {}: {}", new Object[] {slug, minecraft, selection.why()});
                 continue;
             }
-            List<String> written = Bridges.materialize(selection, namespace, out, conformance ? conformanceOut : null);
+            List<String> written = Bridges.materialize(selection, namespace, out, conformance ? conformanceOut : null, resourcesOut);
             one.addProperty("status", "variant");
             one.addProperty("variant", selection.variant().name());
             JsonArray overlays = new JsonArray();

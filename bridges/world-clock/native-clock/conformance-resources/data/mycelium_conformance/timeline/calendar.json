@@ -1,0 +1,9 @@
+{
+  "clock": "mycelium_conformance:calendar",
+  "period_ticks": 7000,
+  "time_markers": {
+    "mycelium_conformance:early": {"ticks": 1500, "show_in_commands": true},
+    "mycelium_conformance:late": {"ticks": 6000, "show_in_commands": true},
+    "mycelium_conformance:turn": {"ticks": 0, "show_in_commands": false}
+  }
+}
