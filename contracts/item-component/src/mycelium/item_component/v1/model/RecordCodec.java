@@ -123,6 +123,11 @@ public final class RecordCodec<T> implements ComponentCodec<T>, FieldAwareCodec<
         return new ComponentDefinition<>(id, this, defaultValue).withFieldAwareCodec(this);
     }
 
+    /** A definition of the component {@code id} with no default (see {@link ComponentDefinition#withoutDefault}). */
+    public ComponentDefinition<T> definition(ComponentId id) {
+        return definition(id, null);
+    }
+
     // ---- ComponentCodec
 
     @Override

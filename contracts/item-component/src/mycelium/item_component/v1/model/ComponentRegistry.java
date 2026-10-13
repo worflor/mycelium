@@ -64,6 +64,16 @@ public final class ComponentRegistry {
             return register(new ComponentDefinition<>(id, codec, defaultValue));
         }
 
+        /** Registers a presence component ({@link ComponentDefinition#presence}). */
+        public Builder registerPresence(ComponentId id) {
+            return register(ComponentDefinition.presence(id));
+        }
+
+        /** Registers a component with no default ({@link ComponentDefinition#withoutDefault}). */
+        public <T> Builder registerWithoutDefault(ComponentId id, ComponentCodec<T> codec) {
+            return register(ComponentDefinition.withoutDefault(id, codec));
+        }
+
         public ComponentRegistry build() {
             return new ComponentRegistry(defs);
         }

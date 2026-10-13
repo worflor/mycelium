@@ -2,7 +2,9 @@ package mycelium.item_component.v1.harness;
 
 import mycelium.harness.Check;
 import mycelium.harness.Seeded;
+import mycelium.item_component.v1.fixtures.CarrierFactory;
 import mycelium.item_component.v1.fixtures.RecordBinding;
+import mycelium.item_component.v1.fixtures.ReferenceTranslator;
 import mycelium.item_component.v1.model.*;
 
 import java.util.*;
@@ -14,14 +16,24 @@ import java.util.function.Supplier;
 public final class ItemComponentContractTests {
     private final Supplier<RosettaTranslator> translators;
     private final RecordBinding records;
+    private final CarrierFactory carriers;
 
     public ItemComponentContractTests(Supplier<RosettaTranslator> translators) {
         this(translators, RecordBinding.reference());
     }
 
     public ItemComponentContractTests(Supplier<RosettaTranslator> translators, RecordBinding records) {
+        this(translators, records, CarrierFactory.reference());
+    }
+
+    public ItemComponentContractTests(CarrierFactory carriers) {
+        this(ReferenceTranslator::create, RecordBinding.reference(), carriers);
+    }
+
+    public ItemComponentContractTests(Supplier<RosettaTranslator> translators, RecordBinding records, CarrierFactory carriers) {
         this.translators = translators;
         this.records = records;
+        this.carriers = carriers;
     }
 
     public Check run() {
@@ -47,6 +59,8 @@ public final class ItemComponentContractTests {
         t8AdversarialEdgeCases(c);
         t9IntegratedCompilerLifecycle(c);
         t12RecordCombinator(c);
+        t13PresenceComponents(c);
+        new CarrierContractTests(carriers).run(c);
         return c;
     }
 
@@ -632,6 +646,55 @@ public final class ItemComponentContractTests {
         c.that(CHARM.semanticEquals(withMemory, CHARM.freeze(withMemory))
                 && CHARM.semanticHash(withMemory) == CHARM.semanticHash(CHARM.freeze(withMemory))
                 && !CHARM.semanticEquals(withMemory, withoutMemory), "T12:record-round-trip");
+    }
+
+    /**
+     * T13: a component whose meaning is presence, or that has no meaningful default, is written whenever it is carried
+     * and is absent when it is not; real defaults in the same registry are still elided (T2).
+     */
+    private void t13PresenceComponents(Check c) {
+        RosettaTranslator translator = translators.get();
+        ComponentDefinition<Unit> flag = ComponentDefinition.presence(ComponentId.of("test:flag"));
+        ComponentDefinition<Integer> level = ComponentDefinition.withoutDefault(ComponentId.of("test:level"), ComponentCodec.INT);
+        ComponentDefinition<Integer> count = new ComponentDefinition<>(ComponentId.of("test:count"), ComponentCodec.INT, 0);
+        ComponentRegistry registry = ComponentRegistry.builder().register(flag).register(level).register(count).build();
+
+        c.that(flag.isPresence() && !flag.hasDefault() && !level.hasDefault() && !level.isPresence()
+                && count.hasDefault() && !count.isPresence(), "T13:presence-round-trip");
+
+        // A mark round-trips: carried it is written (as an entry, not elided), and it reads back present
+        CarrierSnapshot marked = CarrierSnapshot.empty().withMark(flag);
+        TagNode.TagCompound written = translator.toLegacyNbt(marked, registry);
+        c.that(innerOf(written, flag.id()) != null && innerOf(written, flag.id()).isEmpty(), "T13:presence-round-trip");
+        CarrierSnapshot back = translator.fromLegacyNbt(written, registry);
+        c.that(back.has(flag), "T13:presence-round-trip");
+        c.equal(marked, back, "T13:presence-round-trip");
+        // ... beside other state, and as an explicit removal
+        CarrierSnapshot both = CarrierSnapshot.empty().withMark(flag).with(count, 5);
+        c.equal(both, translator.fromLegacyNbt(translator.toLegacyNbt(both, registry), registry), "T13:presence-round-trip");
+        CarrierSnapshot removed = CarrierSnapshot.empty().withRemoval(flag.id());
+        CarrierSnapshot removedBack = translator.fromLegacyNbt(translator.toLegacyNbt(removed, registry), registry);
+        c.that(removedBack.isRemoved(flag.id()) && !removedBack.has(flag), "T13:presence-round-trip");
+
+        // A value with no default is written even when it equals what a default would have been
+        CarrierSnapshot zero = CarrierSnapshot.empty().with(level, 0);
+        TagNode.TagCompound zeroNbt = translator.toLegacyNbt(zero, registry);
+        c.that(!zeroNbt.isEmpty() && zeroNbt.has(RosettaTranslator.FENCED_NAMESPACE), "T13:no-default-written");
+        c.equal(zero, translator.fromLegacyNbt(zeroNbt, registry), "T13:no-default-written");
+
+        // Absence is absence: nothing is made present that was not carried
+        c.that(translator.toLegacyNbt(CarrierSnapshot.empty(), registry).isEmpty(), "T13:absence-is-absence");
+        CarrierSnapshot plain = translator.fromLegacyNbt(TagNode.TagCompound.empty(), registry);
+        c.that(plain.isEmpty() && !plain.has(flag) && !plain.has(level), "T13:absence-is-absence");
+        CarrierSnapshot onlyCount = translator.fromLegacyNbt(
+                translator.toLegacyNbt(CarrierSnapshot.empty().with(count, 5), registry), registry);
+        c.that(!onlyCount.has(flag) && !onlyCount.has(level) && onlyCount.getOptional(flag).isEmpty()
+                && onlyCount.getOptional(level).isEmpty(), "T13:absence-is-absence");
+
+        // T2 still elides a real default, in the same registry as a mark
+        TagNode.TagCompound mixed = translator.toLegacyNbt(CarrierSnapshot.empty().withMark(flag).with(count, 0), registry);
+        c.that(innerOf(mixed, flag.id()) != null && innerOf(mixed, count.id()) == null
+                && ((TagNode.TagCompound) mixed.get(RosettaTranslator.FENCED_NAMESPACE)).size() == 1, "T13:default-still-elided");
     }
 
     private static boolean isSorted(TagNode.TagCompound compound) {

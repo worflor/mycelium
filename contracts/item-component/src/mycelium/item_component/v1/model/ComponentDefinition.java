@@ -26,6 +26,32 @@ public record ComponentDefinition<T>(
         defaultValue = defaultValue != null ? codec.freeze(defaultValue) : null;
     }
 
+    /**
+     * A component whose meaning is its presence (a mark, a flag): a stack carries it or it does not. It has no default,
+     * so it is never elided (T2 elides only real defaults) and an absent one is never materialised (T13).
+     */
+    public static ComponentDefinition<Unit> presence(ComponentId id) {
+        return withoutDefault(id, ComponentCodec.UNIT);
+    }
+
+    /**
+     * A component with no meaningful default: whatever value a stack carries is written, even one a default would have
+     * been (an {@code int} 0 that means "zero", not "unset"), and a stack without it simply has none.
+     */
+    public static <T> ComponentDefinition<T> withoutDefault(ComponentId id, ComponentCodec<T> codec) {
+        return new ComponentDefinition<>(id, codec, null);
+    }
+
+    /** Whether the component has a default T2 may elide; false for a presence component and any {@link #withoutDefault}. */
+    public boolean hasDefault() {
+        return defaultValue != null;
+    }
+
+    /** Whether this is a presence component: a {@link Unit} mark with no default. */
+    public boolean isPresence() {
+        return defaultValue == null && codec == ComponentCodec.UNIT;
+    }
+
     public ComponentDefinition<T> withNetworkSynced(boolean synced) {
         return new ComponentDefinition<>(id, codec, defaultValue, synced, affectsIdentity, fieldAwareCodec);
     }

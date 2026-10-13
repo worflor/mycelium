@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-10-12 - item.component@1: Rosetta learns from its first consumer (additive)
+
+What Somnium's adapter had to build around the translator is now in the contract, additively within `@1` (no law, label
+or required method changed). `contracts/item-component/SPEC.md` has the model, laws T13 to T20, the matrix and examples.
+
+- **Presence components (T13).** `ComponentDefinition.presence(id)` and `withoutDefault(id, codec)`, with `hasDefault()` and
+  `isPresence()`; `RecordCodec.definition(id)`, `ComponentRegistry.Builder.registerPresence / registerWithoutDefault`,
+  `CarrierSnapshot.has(def) / withMark(def)`. A mark or a value with no default is written whenever carried, absent when
+  not, and T2 still elides real defaults. (The no-default behaviour already existed through a `null` default; it is now declared.)
+- **Typed write outcomes (T14).** `FencedCarrier` (`StandardFencedCarrier`) over a root `TagCompound`: `write`, `set`, `clear`
+  return `WriteOutcome.Written(root, changed)` or `Refused(reason, detail, root)`; `OnQuarantine` (`REFUSE` default, `KEEP`,
+  `REPLACE`) says what a write does with unreadable data. The anti-data-loss guarantee holds in `REFUSE` and `KEEP`.
+- **One decode path (T15).** `FencedCarrier.read(root, def)` returns `ComponentRead` (`Present`, `Absent`, `Removed`,
+  `Quarantined`) as the whole-snapshot read looked up, so single and whole reads cannot disagree.
+- **Declared legacy-key migration (T16 to T20).** `LegacyKeyMigration`: root or nested old keys to a component or the fields of
+  one (with a codec or a `Reader`), marks, and retired keys; applied on read, stripped on write, idempotent, unreadable old
+  values quarantined under `"!legacy:<key>"`, unnamed keys untouched.
+- **Honest SPEC.** Section 0 marks what a consumer has proven (translator, records, fenced read/write: Somnium) and what is
+  design only (`TranslationPlan`, `ItemPrototype`, `ChannelPolicy`, `NativeProjectionRecipe`, `LogicalNbtBridge`), and that
+  T13 to T20 await a consumer.
+- **Verification.** 13 broken implementations join the matrix (`ElidingMarksTranslator`, `MaterializingMarksTranslator`,
+  `SilentNoOpCarrier`, `QuarantineDestroyingCarrier`, `LyingChangedCarrier`, `StubbornCarrier`, `DirectEntryDecodeCarrier`,
+  `QuietReadCarrier`, `IgnoringMigrationCarrier`, `KeyRetainingCarrier`, `StaleOverwritingCarrier`,
+  `DroppingMigrationCarrier`, `OverreachingMigrationCarrier`), each caught for its label; the matrix is now 23. README count 161 to 174.
+
+Ran: `bash run-contracts.sh item-component` (reference clean, 23 of 23 caught), `./gradlew check`.
+
+
 ## 2026-10-12 - item.presentation@1: the Sigil, item presentation compiled from component state
 
 New contract `item.presentation@1` (`contracts/item-presentation`, `docs/decisions/0012-sigil-item-presentation.md`), written for Somnium,

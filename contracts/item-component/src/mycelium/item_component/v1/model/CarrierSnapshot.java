@@ -84,6 +84,16 @@ public final class CarrierSnapshot {
         return components.containsKey(id);
     }
 
+    /** Whether the component is carried: for a presence component, whether the mark is there. */
+    public boolean has(ComponentDefinition<?> def) {
+        return components.containsKey(def.id());
+    }
+
+    /** This snapshot with a presence component marked. */
+    public CarrierSnapshot withMark(ComponentDefinition<Unit> presence) {
+        return with(presence, Unit.INSTANCE);
+    }
+
     public boolean isRemoved(ComponentId id) {
         return removals.contains(id);
     }
@@ -380,6 +390,26 @@ public final class CarrierSnapshot {
             }
         }
         return new CarrierSnapshot(canon, unmappedTags, removals, recoveryRecords, rawEnvelope, retainedResiduals);
+    }
+
+    /** This snapshot without the unmapped (quarantined or foreign) tag stored under {@code key}. */
+    public CarrierSnapshot withoutUnmappedTag(String key) {
+        if (!unmappedTags.containsKey(key)) return this;
+        Map<String, TagNode> nextUnmapped = new TreeMap<>(unmappedTags);
+        nextUnmapped.remove(key);
+        return new CarrierSnapshot(components, nextUnmapped, removals, recoveryRecords, rawEnvelope, retainedResiduals);
+    }
+
+    /** This snapshot without the recovery records about {@code id}. */
+    public CarrierSnapshot withoutRecoveryFor(ComponentId id) {
+        List<RecoveryRecord> next = new ArrayList<>();
+        for (RecoveryRecord rec : recoveryRecords) {
+            if (!(rec.componentId().isPresent() && rec.componentId().get().equals(id))) {
+                next.add(rec);
+            }
+        }
+        return next.size() == recoveryRecords.size() ? this
+                : new CarrierSnapshot(components, unmappedTags, removals, next, rawEnvelope, retainedResiduals);
     }
 
     public CarrierSnapshot withUnmappedTag(String key, TagNode tag) {
