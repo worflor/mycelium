@@ -4,6 +4,8 @@ import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.plugins.BasePlugin;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.jvm.toolchain.JavaLanguageVersion;
+import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.language.base.plugins.LifecycleBasePlugin;
 
 /**
@@ -47,7 +49,20 @@ public final class MyceliumRepositoryPlugin implements Plugin<Project> {
             t.setDescription("Pins name data in eras/names.json by SHA-256 for given versions, or reports pins whose files changed (by hand).");
             t.getRoot().set(project.getLayout().getProjectDirectory());
         });
+        JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);
+        // Every bridge variant linked against the versions it covers (decision 0016): Mycelium's own proof, before any mod builds one.
+        TaskProvider<BridgeLinkageTask> bridgeLinkage = project.getTasks().register("myceliumBridgeLinkage", BridgeLinkageTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Compiles each bridge variant against the game and holds its references to every version it covers.");
+            t.getRoot().set(project.getLayout().getProjectDirectory());
+            t.getCache().set(project.getLayout().dir(project.provider(() -> MyceliumPlugin.namesCache(project))));
+            t.getOffline().set(project.getGradle().getStartParameter().isOffline());
+            // a compiler as new as the newest Java a game runs on: the one running Gradle may be older than the class files it reads
+            t.getJavac().set(toolchains.compilerFor(spec -> spec.getLanguageVersion().set(
+                    JavaLanguageVersion.of(ext.resolvedEras().stream().mapToInt(Integer::intValue).max().orElse(21)))).map(c -> c.getExecutablePath()));
+            t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/bridge-linkage"));
+        });
         project.getTasks().named(LifecycleBasePlugin.CHECK_TASK_NAME, check -> check.dependsOn(
-                repository, "myceliumVerify", "myceliumPurity", "myceliumPureCompile", "myceliumEras", proofs));
+                repository, "myceliumVerify", "myceliumPurity", "myceliumPureCompile", "myceliumEras", proofs, bridgeLinkage));
     }
 }

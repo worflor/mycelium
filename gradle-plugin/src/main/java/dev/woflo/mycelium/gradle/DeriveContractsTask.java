@@ -35,6 +35,10 @@ public abstract class DeriveContractsTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getExplicit();
 
+    /** The bridges the mod asks for by name (`bridges { use(...) }`): the contracts they implement are imported with them. */
+    @Input
+    public abstract ListProperty<String> getUse();
+
     /** False in the verification project (no Java plugin): nothing is derived there. */
     @Input
     public abstract Property<Boolean> getMod();
@@ -51,7 +55,7 @@ public abstract class DeriveContractsTask extends DefaultTask {
     @InputFiles
     public abstract ConfigurableFileCollection getPureSources();
 
-    /** The imports' own directory: a reference there is the import, not a use. */
+    /** The directory every import writes under (models, bridges, conformance): a reference there is the import, not a use. */
     @Internal
     public abstract DirectoryProperty getGeneratedDir();
 
@@ -62,12 +66,32 @@ public abstract class DeriveContractsTask extends DefaultTask {
         doNotTrackState("reads sources a generator writes without declaring them; a text scan is cheap, and the tasks that use the list compare its content");
     }
 
+    /** The contracts of the bridges the mod asked for, added to {@code ids} when they are not there (a bridge needs its contract's model). */
+    static List<String> withBridgeContracts(java.io.File root, List<String> ids, List<String> use) {
+        if (use.isEmpty()) {
+            return ids;
+        }
+        List<String> out = new java.util.ArrayList<>(ids);
+        try {
+            for (String slug : use) {
+                String contract = Bridges.require(root.toPath(), slug).contract();
+                if (!out.contains(contract)) {
+                    out.add(contract);
+                }
+            }
+        } catch (IOException e) {
+            throw new org.gradle.api.GradleException("Mycelium: cannot read the bridges: " + e.getMessage(), e);
+        }
+        return out;
+    }
+
     @TaskAction
     public void run() throws IOException {
         List<String> explicit = getExplicit().get();
         List<String> ids = !explicit.isEmpty() || !getMod().get() ? explicit
                 : MyceliumPlugin.deriveContracts(getRoot().get().getAsFile(), getMainSources().getFiles(), getPureSources().getFiles(),
                         getNamespace().get(), getGeneratedDir().get().getAsFile());
+        ids = withBridgeContracts(getRoot().get().getAsFile(), ids, getUse().get());
         java.nio.file.Path out = getContractList().get().getAsFile().toPath();
         Files.createDirectories(out.getParent());
         Files.writeString(out, String.join("\n", ids), StandardCharsets.UTF_8);

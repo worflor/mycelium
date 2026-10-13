@@ -25,7 +25,7 @@ import java.util.Set;
  */
 public final class ContractRegistry {
     /** The fields a row may carry. Anything else is refused. */
-    static final Set<String> FIELDS = Set.of("id", "path", "package", "status", "supersedes", "requires", "provenance");
+    static final Set<String> FIELDS = Set.of("id", "path", "package", "status", "supersedes", "requires", "bridges", "provenance");
     static final Set<String> TOP = Set.of("schema", "note", "contracts");
     static final int SCHEMA = 2;
 
@@ -36,12 +36,20 @@ public final class ContractRegistry {
      * @param supersedes the id this one replaces, or null; a build may import one of the two, never both
      * @param requires   the contracts whose models this one's model may import (exact ids; docs/decisions/0014): they
      *                   exist, are not retired and are acyclic, which {@link #parse} refuses otherwise
+     * @param bridges    the slugs of the bridges that carry this contract's native half (docs/decisions/0016): importing the
+     *                   contract brings them. Each exists under {@code bridges/} and names this contract (the repository check)
      * @param provenance who it was written for and where it came from: history, not checked
      */
     public record Entry(String id, String path, String pkg, String status, String supersedes, List<String> requires,
-                        String provenance) {
+                        List<String> bridges, String provenance) {
         public Entry {
             requires = List.copyOf(requires);
+            bridges = List.copyOf(bridges);
+        }
+
+        public Entry(String id, String path, String pkg, String status, String supersedes, List<String> requires,
+                     String provenance) {
+            this(id, path, pkg, status, supersedes, requires, List.of(), provenance);
         }
 
         public Entry(String id, String path, String pkg, String status, String supersedes, String provenance) {
@@ -114,7 +122,8 @@ public final class ContractRegistry {
                 }
             }
             Entry entry = new Entry(id, o.get("path").getAsString(), o.get("package").getAsString(),
-                    o.get("status").getAsString(), text(o, "supersedes"), requires(o, id, where), text(o, "provenance"));
+                    o.get("status").getAsString(), text(o, "supersedes"), ids(o, "requires", id, where), ids(o, "bridges", id, where),
+                    text(o, "provenance"));
             if (registry.byId.put(entry.id(), entry) != null) {
                 throw new IllegalStateException(where + ": contract " + id + " is listed twice");
             }
@@ -128,16 +137,19 @@ public final class ContractRegistry {
         return registry;
     }
 
-    private static List<String> requires(JsonObject o, String id, String where) {
+    /** A row's list of exact names ({@code requires}: contract ids; {@code bridges}: bridge slugs), once each. */
+    private static List<String> ids(JsonObject o, String field, String id, String where) {
         List<String> out = new ArrayList<>();
-        if (o.has("requires")) {
-            if (!o.get("requires").isJsonArray()) {
-                throw new IllegalStateException(where + ": contract " + id + ": 'requires' is an array of contract ids");
+        if (o.has(field)) {
+            if (!o.get(field).isJsonArray()) {
+                throw new IllegalStateException(where + ": contract " + id + ": '" + field + "' is an array of "
+                        + (field.equals("bridges") ? "bridge slugs" : "contract ids"));
             }
-            for (JsonElement e : o.getAsJsonArray("requires")) {
+            for (JsonElement e : o.getAsJsonArray(field)) {
                 String r = e.isJsonPrimitive() ? e.getAsString() : "";
                 if (r.isBlank() || out.contains(r)) {
-                    throw new IllegalStateException(where + ": contract " + id + ": 'requires' lists exact contract ids, once each");
+                    throw new IllegalStateException(where + ": contract " + id + ": '" + field + "' lists exact "
+                            + (field.equals("bridges") ? "bridge slugs" : "contract ids") + ", once each");
                 }
                 out.add(r);
             }

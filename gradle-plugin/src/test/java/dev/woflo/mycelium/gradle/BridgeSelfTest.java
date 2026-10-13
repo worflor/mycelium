@@ -1,0 +1,604 @@
+package dev.woflo.mycelium.gradle;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import org.gradle.api.GradleException;
+import org.gradle.api.Project;
+import org.gradle.api.plugins.JavaPlugin;
+import org.gradle.testfixtures.ProjectBuilder;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+import static dev.woflo.mycelium.gradle.SelfTest.that;
+
+/**
+ * Self-tests for decision 0016, bridges: the variant and overlays a version draws, the sources laid out under a mod's
+ * namespace, an override, a skip, the conformance wiring, the override check, the repository check shown to fire on each
+ * way a bridge can be broken, and the linkage gate shown to refuse a planted bad reference on a game built here (nothing
+ * reads the network).
+ */
+final class BridgeSelfTest {
+    private BridgeSelfTest() {
+    }
+
+    static void run(Path root) throws Exception {
+        selection(root);
+        layout(root);
+        importTask(root);
+        overrideCheck();
+        Path tmp = Files.createTempDirectory("mycelium-bridges-");
+        try {
+            wiring(root, tmp);
+            linkage(tmp);
+        } finally {
+            SelfTest.delete(tmp);
+        }
+        repository(root);
+    }
+
+    private static Bridges.Bridge carrier(Path root) throws IOException {
+        return Bridges.require(root, "item-carrier");
+    }
+
+    // --- which variant and overlays a version draws ------------------------------------------------------------------------
+
+    static void selection(Path root) throws IOException {
+        Eras eras = Eras.load(root.toFile());
+        Bridges.Bridge b = carrier(root);
+        String[][] expect = {
+                {"26.3", "custom-data + 1.21.5"}, {"26.1", "custom-data + 1.21.5"}, {"1.21.11", "custom-data + 1.21.5"},
+                {"1.21.5", "custom-data + 1.21.5"}, {"1.21.4", "custom-data"}, {"1.21.1", "custom-data"}, {"1.20.5", "custom-data"},
+                {"1.20.4", "root-tag"}, {"1.20.1", "root-tag"}, {"1.15", "root-tag"}, {"1.14.4", "root-tag + 1.14"}, {"1.14", "root-tag + 1.14"},
+                {"1.13.2", "none"}, {"1.12.2", "none"}, {"b1.7.3", "none"}};
+        for (String[] e : expect) {
+            Bridges.Selection s = Bridges.select(b, eras, e[0]);
+            that(s.describe().equals(e[1]), "bridges:Minecraft " + e[0] + " draws " + e[1] + ", not " + s.describe());
+        }
+        Bridges.Selection none = Bridges.select(b, eras, "1.13.2");
+        that(!none.maps() && none.why().contains("Mojang") && Bridges.sourceFiles(none).isEmpty() && Bridges.conformanceFiles(none).isEmpty(),
+                "bridges:a version the game cannot do it on maps nowhere and says why: " + none.why());
+        that(SelfTest.refuses(() -> Bridges.select(b, Eras.parse("{\"schema\":2,\"eras\":[]}", "t"), "1.21.1"), "no item.carrier row covers"),
+                "bridges:a table without rows answers no version, by name");
+        that(SelfTest.refuses(() -> Bridges.select(b, Eras.parse("{\"schema\":2,\"eras\":[],\"realizations\":{\"item.carrier\":["
+                        + "{\"from\":\"1.0\",\"to\":\"26.x\",\"realization\":\"magic\"}]}}", "t"), "1.21.1"), "has no variant for"),
+                "bridges:a realization the bridge has no variant for is refused, by name");
+        Map<String, Path> modern = Bridges.sourceFiles(Bridges.select(b, eras, "1.21.11"));
+        Map<String, Path> older = Bridges.sourceFiles(Bridges.select(b, eras, "1.21.1"));
+        that(modern.keySet().equals(older.keySet()) && !modern.get("mycelium/bridges/item_carrier/Nbt.java").equals(older.get("mycelium/bridges/item_carrier/Nbt.java"))
+                        && modern.get("mycelium/bridges/item_carrier/ItemCarrier.java").equals(older.get("mycelium/bridges/item_carrier/ItemCarrier.java")),
+                "bridges:an overlay replaces the same-named file of its variant and leaves the others");
+        that(Bridges.conformanceFiles(Bridges.select(b, eras, "1.21.11")).containsKey("mycelium/bridges/item_carrier/conformance/ItemCarrierConformance.java")
+                        && Bridges.conformanceFiles(Bridges.select(b, eras, "1.21.11")).get("mycelium/bridges/item_carrier/conformance/Wire.java").toString().replace('\\', '/').contains("overlays/1.21.5/conformance"),
+                "bridges:the conformance cases are the bridge's, and what they need of a variant is the variant's (or its overlay's)");
+    }
+
+    // --- laid out under a mod's namespace ------------------------------------------------------------------------------------
+
+    static void layout(Path root) throws IOException {
+        Eras eras = Eras.load(root.toFile());
+        Path out = Files.createTempDirectory("mycelium-bridge-layout-");
+        try {
+            Path src = out.resolve("src");
+            Path conformance = out.resolve("conformance");
+            List<String> written = Bridges.materialize(Bridges.select(carrier(root), eras, "1.21.11"), "com.example.mod.mycelium", src, conformance);
+            Path nbt = src.resolve("com/example/mod/mycelium/bridges/item_carrier/Nbt.java");
+            String text = Files.readString(nbt);
+            that(written.contains("com/example/mod/mycelium/bridges/item_carrier/ItemCarrier.java") && Files.isRegularFile(nbt),
+                    "bridges:the sources land under the mod's namespace: " + written);
+            that(text.contains("package com.example.mod.mycelium.bridges.item_carrier;")
+                            && text.contains("import com.example.mod.mycelium.item_component.v1.model.TagNode;") && !text.contains("import mycelium."),
+                    "bridges:the package and the contract's model are rewritten to the mod's own copy, as a model's imports are");
+            that(text.contains("c.keySet()") && !text.contains("getAllKeys"), "bridges:the overlay's accessors are what a 1.21.11 mod gets");
+            that(Files.isRegularFile(conformance.resolve("com/example/mod/mycelium/bridges/item_carrier/conformance/ItemCarrierConformance.java"))
+                            && Files.readString(conformance.resolve("com/example/mod/mycelium/bridges/item_carrier/conformance/Wire.java")).contains("value()"),
+                    "bridges:the conformance cases are laid out apart, with the overlay's rig");
+            Path older = out.resolve("older");
+            Bridges.materialize(Bridges.select(carrier(root), eras, "1.20.1"), "com.example.mod.mycelium", older.resolve("src"), null);
+            String root1201 = Files.readString(older.resolve("src/com/example/mod/mycelium/bridges/item_carrier/ItemCarrier.java"));
+            that(root1201.contains("stack.getTag()") && !root1201.contains("CustomData") && !Files.exists(older.resolve("conformance")),
+                    "bridges:1.20.1 draws the root-tag variant, and no conformance unless asked");
+            Path none = out.resolve("none");
+            that(Bridges.materialize(Bridges.select(carrier(root), eras, "1.12.2"), "x.y", none.resolve("src"), none.resolve("c")).isEmpty(),
+                    "bridges:a version the bridge cannot map on writes nothing");
+        } finally {
+            SelfTest.delete(out);
+        }
+        // a bridge that reaches the harness is refused, as a model is
+        Path scratch = SelfTest.copy(root);
+        try {
+            SelfTest.append(scratch.resolve("bridges/item-carrier/custom-data/src/mycelium/bridges/item_carrier/ItemCarrier.java"), "// mycelium.harness.Check\n");
+            Path out2 = Files.createTempDirectory("mycelium-bridge-harness-");
+            try {
+                that(SelfTest.refuses(() -> {
+                    try {
+                        Bridges.materialize(Bridges.select(Bridges.require(scratch, "item-carrier"), Eras.load(scratch.toFile()), "1.21.1"), "x.y", out2, null);
+                    } catch (IOException e) {
+                        throw new IllegalStateException(e);
+                    }
+                }, "must not depend on the harness"), "bridges:a bridge that reaches the harness is refused");
+            } finally {
+                SelfTest.delete(out2);
+            }
+        } finally {
+            SelfTest.delete(scratch);
+        }
+    }
+
+    // --- the import: use, skip, override, conformance --------------------------------------------------------------------------
+
+    private static JsonObject imported(Path root, List<String> contracts, String minecraft, List<String> use, List<String> skip,
+                                       Map<String, String> overrides, boolean conformance, Path out) throws IOException {
+        SelfTest.delete(out); // as the task cleans its outputs
+        return ImportBridgesTask.importInto(root, contracts, "com.example.mod.mycelium", minecraft, use, skip, overrides, conformance,
+                out.resolve("src"), out.resolve("conformance"), (message, args) -> { });
+    }
+
+    private static JsonObject bridge(JsonObject report, String slug) {
+        for (JsonElement e : report.getAsJsonArray("bridges")) {
+            if (e.getAsJsonObject().get("slug").getAsString().equals(slug)) {
+                return e.getAsJsonObject();
+            }
+        }
+        return null;
+    }
+
+    static void importTask(Path root) throws IOException {
+        Path out = Files.createTempDirectory("mycelium-bridge-import-");
+        List<String> contracts = List.of("item.component@1");
+        try {
+            JsonObject taken = imported(root, contracts, "1.21.1", List.of(), List.of(), Map.of(), false, out);
+            JsonObject one = bridge(taken, "item-carrier");
+            that(one != null && one.get("status").getAsString().equals("variant") && one.get("variant").getAsString().equals("custom-data")
+                            && one.getAsJsonArray("overlays").isEmpty() && !one.get("conformance").getAsBoolean(),
+                    "bridges:a contract brings its bridge, the variant its version draws: " + taken);
+            that(Files.isRegularFile(out.resolve("src/com/example/mod/mycelium/bridges/item_carrier/ItemCarrier.java"))
+                            && !Files.exists(out.resolve("conformance/com")), "bridges:the sources are written and the conformance cases are not, unless asked");
+
+            JsonObject withConformance = imported(root, contracts, "26.3", List.of(), List.of(), Map.of(), true, out);
+            JsonObject modern = bridge(withConformance, "item-carrier");
+            that(modern.getAsJsonArray("overlays").size() == 1 && modern.getAsJsonArray("overlays").get(0).getAsString().equals("1.21.5")
+                            && modern.get("conformance").getAsBoolean()
+                            && Files.isRegularFile(out.resolve("conformance/com/example/mod/mycelium/bridges/item_carrier/conformance/ItemCarrierConformance.java")),
+                    "bridges:conformance() adds the cases, and the record names the variant and overlays: " + modern);
+
+            JsonObject overridden = imported(root, contracts, "1.21.1", List.of(), List.of(), Map.of("item-carrier", "com.example.MyCarrier"), true, out);
+            JsonObject o = bridge(overridden, "item-carrier");
+            that(o.get("status").getAsString().equals("override") && o.get("class").getAsString().equals("com.example.MyCarrier")
+                            && !Files.exists(out.resolve("src/com")) && !Files.exists(out.resolve("conformance/com")),
+                    "bridges:an override drops the bridge's sources and is recorded with its class: " + o);
+
+            JsonObject skipped = imported(root, contracts, "1.21.1", List.of(), List.of("item-carrier"), Map.of(), false, out);
+            that(bridge(skipped, "item-carrier").get("status").getAsString().equals("skipped") && !Files.exists(out.resolve("src/com")),
+                    "bridges:a skipped bridge imports nothing and the record says it was skipped");
+
+            JsonObject unused = imported(root, List.of("random.seeded@1"), "1.21.1", List.of(), List.of(), Map.of(), false, out);
+            that(unused.getAsJsonArray("bridges").isEmpty(), "bridges:a contract without a bridge brings none");
+            JsonObject used = imported(root, List.of("random.seeded@1"), "1.20.1", List.of("item-carrier"), List.of(), Map.of(), false, out);
+            that(bridge(used, "item-carrier").get("variant").getAsString().equals("root-tag"),
+                    "bridges:use(...) names a bridge the contracts do not bring, and the target version still chooses the variant");
+
+            JsonObject cannot = imported(root, contracts, "1.12.2", List.of(), List.of(), Map.of(), false, out);
+            that(bridge(cannot, "item-carrier").get("status").getAsString().equals("none") && bridge(cannot, "item-carrier").get("why").getAsString().contains("Mojang"),
+                    "bridges:a version the bridge cannot map on is recorded as none, with why: " + cannot);
+
+            that(refusesGradle(() -> imported(root, contracts, "1.21.1", List.of(), List.of("item-carrier"), Map.of("item-carrier", "x.Y"), false, out),
+                            "names a bridge this project does not use"), "bridges:an override of a bridge the mod does not use is refused, by name");
+            that(refusesGradle(() -> imported(root, contracts, null, List.of(), List.of(), Map.of(), false, out), "is not set"),
+                    "bridges:a bridge is chosen by the target version, so a build without one is refused");
+            that(refusesGradle(() -> imported(root, contracts, "1.21.1", List.of("ghost"), List.of(), Map.of(), false, out), "no bridge 'ghost'"),
+                    "bridges:a bridge that does not exist is named, with the ones that do");
+            JsonObject overrideNeedsNoVersion = imported(root, contracts, null, List.of(), List.of(), Map.of("item-carrier", "x.Y"), false, out);
+            that(bridge(overrideNeedsNoVersion, "item-carrier").get("status").getAsString().equals("override"),
+                    "bridges:an override needs no target version, since nothing is chosen");
+        } finally {
+            SelfTest.delete(out);
+        }
+    }
+
+    private static boolean refusesGradle(Fetch f, String fragment) {
+        try {
+            f.run();
+            return false;
+        } catch (GradleException e) {
+            return e.getMessage().contains(fragment);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private interface Fetch {
+        void run() throws IOException;
+    }
+
+    // --- an override is held to the port ---------------------------------------------------------------------------------------
+
+    private static byte[] clazz(String name, String superName, String... interfaces) {
+        ClassWriter w = new ClassWriter(0);
+        w.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, superName, interfaces);
+        w.visitEnd();
+        return w.toByteArray();
+    }
+
+    static void overrideCheck() throws IOException {
+        String port = "com/example/mod/mycelium/item_component/v1/model/StackCarrier";
+        Path classes = Files.createTempDirectory("mycelium-bridge-classes-");
+        try {
+            Map<String, byte[]> files = Map.of(
+                    "com/example/Direct", clazz("com/example/Direct", "java/lang/Object", port),
+                    "com/example/Base", clazz("com/example/Base", "java/lang/Object", port),
+                    "com/example/Sub", clazz("com/example/Sub", "com/example/Base"),
+                    "com/example/Plain", clazz("com/example/Plain", "java/lang/Object", "java/lang/Runnable"),
+                    "com/example/Outside", clazz("com/example/Outside", "net/minecraft/world/Thing"));
+            for (Map.Entry<String, byte[]> e : files.entrySet()) {
+                Path p = classes.resolve(e.getKey() + ".class");
+                Files.createDirectories(p.getParent());
+                Files.write(p, e.getValue());
+            }
+            Map<String, BridgeCheckTask.Hierarchy> h = BridgeCheckTask.hierarchy(Set.of(classes.toFile()));
+            that(BridgeCheckTask.implementsPort(h, "com/example/Direct", port) == BridgeCheckTask.Verdict.YES, "bridges:a class that implements the port is one");
+            that(BridgeCheckTask.implementsPort(h, "com/example/Sub", port) == BridgeCheckTask.Verdict.YES, "bridges:and so is one that extends such a class");
+            that(BridgeCheckTask.implementsPort(h, "com/example/Plain", port) == BridgeCheckTask.Verdict.NO, "bridges:a class that does not is not");
+            that(BridgeCheckTask.implementsPort(h, "com/example/Nowhere", port) == BridgeCheckTask.Verdict.MISSING, "bridges:a class the project does not compile is missing");
+            that(BridgeCheckTask.implementsPort(h, "com/example/Outside", port) == BridgeCheckTask.Verdict.UNSEEN,
+                    "bridges:a class extending something outside the project cannot be judged, and says so");
+
+            // the task, on a report that names each, with the levels of the default table
+            Path dir = Files.createTempDirectory("mycelium-bridge-check-");
+            try {
+                Path report = dir.resolve("import.json");
+                for (String[] c : new String[][] {{"com.example.Direct", "true"}, {"com.example.Plain", "false"}, {"com.example.Nowhere", "false"},
+                        {"com.example.Outside", "true"}}) {
+                    SelfTest.write(report, "{\"schema\":1,\"minecraft\":\"1.21.1\",\"bridges\":[{\"slug\":\"item-carrier\",\"id\":\"item.carrier\","
+                            + "\"contract\":\"item.component@1\",\"port\":\"StackCarrier\",\"status\":\"override\",\"class\":\"" + c[0] + "\"}]}");
+                    boolean holds = FlexibleSelfTest.runs(checkTask(dir, report, classes, List.of()));
+                    that(holds == Boolean.parseBoolean(c[1]), "bridges:B1 holds an override to the port (" + c[0] + " " + (holds ? "passes" : "fails") + ")");
+                }
+                SelfTest.write(report, "{\"schema\":1,\"minecraft\":\"1.21.1\",\"bridges\":[{\"slug\":\"item-carrier\",\"id\":\"item.carrier\","
+                        + "\"contract\":\"item.component@1\",\"port\":\"StackCarrier\",\"status\":\"override\",\"class\":\"com.example.Plain\"}]}");
+                that(FlexibleSelfTest.runs(checkTask(dir, report, classes, List.of(Checks.encodeLevel("B1", Checks.Level.WARN)))),
+                        "bridges:B1 can be lowered to warn");
+                that(FlexibleSelfTest.runs(checkTask(dir, report, classes, List.of(Checks.encodeAllowance("B1", "item-carrier", "ours is a test double")))),
+                        "bridges:B1 can be allowed with a reason");
+                SelfTest.write(report, "{\"schema\":1,\"minecraft\":\"1.12.2\",\"bridges\":[{\"slug\":\"item-carrier\",\"id\":\"item.carrier\","
+                        + "\"contract\":\"item.component@1\",\"port\":\"StackCarrier\",\"status\":\"none\",\"why\":\"no names\"}]}");
+                that(FlexibleSelfTest.runs(checkTask(dir, report, classes, List.of())), "bridges:B2 warns by default for a bridge that cannot map on the target");
+                that(!FlexibleSelfTest.runs(checkTask(dir, report, classes, List.of(Checks.encodeLevel("B2", Checks.Level.FAIL)))),
+                        "bridges:and fails when the mod says it should");
+                JsonObject written = com.google.gson.JsonParser.parseString(Files.readString(dir.resolve("report/bridges.json"))).getAsJsonObject();
+                that(written.getAsJsonArray("findings").size() == 1 && written.getAsJsonArray("bridges").get(0).getAsJsonObject().get("status").getAsString().equals("none"),
+                        "bridges:the check's record carries the choice and what it found, for the evidence manifest: " + written);
+            } finally {
+                SelfTest.delete(dir);
+            }
+        } finally {
+            SelfTest.delete(classes);
+        }
+    }
+
+    private static BridgeCheckTask checkTask(Path dir, Path report, Path classes, List<String> checks) {
+        Project p = ProjectBuilder.builder().withProjectDir(dir.toFile()).build();
+        BridgeCheckTask t = p.getTasks().register("bridges" + System.nanoTime(), BridgeCheckTask.class).get();
+        t.getRoot().set(Path.of("..").toAbsolutePath().normalize().toFile());
+        t.getNamespace().set("com.example.mod.mycelium");
+        t.getChecks().set(checks);
+        t.getImportReport().set(report.toFile());
+        t.getClasses().from(classes.toFile());
+        t.getReportDir().set(dir.resolve("report").toFile());
+        return t;
+    }
+
+    // --- the plugin's wiring, on a throwaway project -----------------------------------------------------------------------------
+
+    static void wiring(Path root, Path tmp) throws Exception {
+        Path dir = Files.createDirectories(tmp.resolve("wiring"));
+        Project p = FlexibleSelfTest.mod(dir, "wiring", null, root);
+        MyceliumExtension ext = p.getExtensions().getByType(MyceliumExtension.class);
+        ext.getRoot().set(root.toFile());
+        ext.getMinecraft().set("1.21.1");
+        ext.getNamespace().set("fixture.bridges.mycelium");
+        ((org.gradle.api.internal.project.ProjectInternal) p).evaluate();
+        org.gradle.api.tasks.SourceSetContainer sets = p.getExtensions().getByType(org.gradle.api.plugins.JavaPluginExtension.class).getSourceSets();
+        Path bridges = p.getLayout().getBuildDirectory().dir("generated/sources/mycelium/bridges/java").get().getAsFile().toPath();
+        Path conformance = p.getLayout().getBuildDirectory().dir("generated/sources/mycelium/conformance/java").get().getAsFile().toPath();
+        that(sets.getByName("main").getJava().getSrcDirs().stream().anyMatch(d -> d.toPath().equals(bridges)),
+                "bridges:the imported bridges are part of the mod's main sources");
+        that(sets.getByName("main").getJava().getSrcDirs().stream().noneMatch(d -> d.toPath().equals(conformance)),
+                "bridges:the conformance cases are not, unless the mod asks");
+        Set<String> compile = new HashSet<>();
+        reachable(p.getTasks().getByName("compileJava")).forEach(t -> compile.add(t.getName()));
+        Set<String> check = new HashSet<>();
+        reachable(p.getTasks().getByName("check")).forEach(t -> check.add(t.getName()));
+        that(compile.contains("myceliumBridgeImport") && !compile.contains("myceliumBridges"),
+                "bridges:the sources are imported before the mod compiles, and the check waits for the compile: " + compile);
+        that(check.contains("myceliumBridges"), "bridges:check holds the bridges (B1, B2): " + check);
+        Set<String> evidence = new HashSet<>();
+        reachable(p.getTasks().getByName("myceliumEvidence")).forEach(t -> evidence.add(t.getName()));
+        that(evidence.contains("myceliumBridges"), "bridges:the evidence manifest waits for the bridges' record");
+
+        // conformance(): the game-test sources are main unless the project has a gametest source set, or names one
+        Path dir2 = Files.createDirectories(tmp.resolve("conf"));
+        Project q = FlexibleSelfTest.mod(dir2, "conf", null, root);
+        MyceliumExtension eq = q.getExtensions().getByType(MyceliumExtension.class);
+        eq.getRoot().set(root.toFile());
+        eq.getMinecraft().set("1.21.1");
+        eq.bridges(b -> b.conformance());
+        ((org.gradle.api.internal.project.ProjectInternal) q).evaluate();
+        Path qc = q.getLayout().getBuildDirectory().dir("generated/sources/mycelium/conformance/java").get().getAsFile().toPath();
+        that(q.getExtensions().getByType(org.gradle.api.plugins.JavaPluginExtension.class).getSourceSets().getByName("main").getJava().getSrcDirs().stream()
+                .anyMatch(d -> d.toPath().equals(qc)), "bridges:conformance() joins main, where a mod that keeps its game tests beside its code has them");
+
+        Path dir3 = Files.createDirectories(tmp.resolve("gametest"));
+        Project g = FlexibleSelfTest.mod(dir3, "gametest", null, root);
+        MyceliumExtension eg = g.getExtensions().getByType(MyceliumExtension.class);
+        eg.getRoot().set(root.toFile());
+        eg.getMinecraft().set("1.21.1");
+        org.gradle.api.tasks.SourceSetContainer gs = g.getExtensions().getByType(org.gradle.api.plugins.JavaPluginExtension.class).getSourceSets();
+        gs.create("gametest");
+        eg.bridges(b -> b.conformance());
+        ((org.gradle.api.internal.project.ProjectInternal) g).evaluate();
+        Path gc = g.getLayout().getBuildDirectory().dir("generated/sources/mycelium/conformance/java").get().getAsFile().toPath();
+        that(gs.getByName("gametest").getJava().getSrcDirs().stream().anyMatch(d -> d.toPath().equals(gc))
+                        && gs.getByName("main").getJava().getSrcDirs().stream().noneMatch(d -> d.toPath().equals(gc)),
+                "bridges:conformance() joins the gametest source set when the project has one");
+
+        Path dir4 = Files.createDirectories(tmp.resolve("named"));
+        Project n = FlexibleSelfTest.mod(dir4, "named", null, root);
+        MyceliumExtension en = n.getExtensions().getByType(MyceliumExtension.class);
+        en.getRoot().set(root.toFile());
+        en.bridges(b -> b.conformance("nowhere"));
+        boolean refused = false;
+        try {
+            ((org.gradle.api.internal.project.ProjectInternal) n).evaluate();
+        } catch (RuntimeException e) {
+            refused = String.valueOf(e.getMessage()).contains("names a source set") || String.valueOf(e.getCause()).contains("names a source set");
+        }
+        that(refused, "bridges:conformance(\"nowhere\") names a source set the project lacks, and is refused by name");
+
+        // declared once: the root's bridges block is every project's
+        Project top = ProjectBuilder.builder().withProjectDir(Files.createDirectories(tmp.resolve("top")).toFile()).withName("top").build();
+        top.getPluginManager().apply(MyceliumDefaultsPlugin.class);
+        MyceliumExtension d = top.getExtensions().getByType(MyceliumDefaultsPlugin.Defaults.class);
+        d.getRoot().set(root.toFile());
+        d.bridges(b -> {
+            b.override("item-carrier", "com.example.MyCarrier");
+            b.conformance();
+            b.skip("other");
+        });
+        Project a = FlexibleSelfTest.mod(Files.createDirectories(tmp.resolve("top/a")), "a", top, root);
+        MyceliumExtension ea = a.getExtensions().getByType(MyceliumExtension.class);
+        that(ea.getBridges().getOverrides().get().equals(Map.of("item-carrier", "com.example.MyCarrier")) && ea.getBridges().getConformance().get()
+                        && ea.getBridges().getSkip().get().equals(List.of("other")),
+                "bridges:a bridges block written once at the root is every project's");
+        that(SelfTest.refuses(() -> ea.getBridges().override("item-carrier", ""), "takes a bridge slug and a fully qualified class name"),
+                "bridges:an override without a class is refused where it is written");
+
+        // contracts follow the bridges a mod names: it implements that contract's port
+        Path src = Files.createDirectories(dir.resolve("src/main/java/mod"));
+        SelfTest.write(src.resolve("Mod.java"), "package mod;\nclass Mod { fixture.bridges.mycelium.bridges.item_carrier.ItemCarrier c; }\n");
+        List<String> ids = MyceliumPlugin.deriveContracts(root.toFile(), sets.getByName("main").getJava().getSrcDirs(), ext.getPure().getSources().getFiles(),
+                ext.getNamespace().get(), p.getLayout().getBuildDirectory().dir("generated/sources/mycelium").get().getAsFile());
+        that(ids.equals(List.of("item.component@1")), "bridges:a source naming a bridge brings the contract whose port it implements: " + ids);
+        that(DeriveContractsTask.withBridgeContracts(root.toFile(), List.of("random.seeded@1"), List.of("item-carrier"))
+                        .equals(List.of("random.seeded@1", "item.component@1")),
+                "bridges:use(\"item-carrier\") brings its contract as well");
+        // what the import wrote is not the mod's own use of anything
+        Path generated = Files.createDirectories(p.getLayout().getBuildDirectory().dir("generated/sources/mycelium/bridges/java/fixture").get().getAsFile().toPath());
+        SelfTest.write(generated.resolve("Gen.java"), "package fixture;\nclass Gen { fixture.bridges.mycelium.data_catalog.v1.model.Catalog c; }\n");
+        ids = MyceliumPlugin.deriveContracts(root.toFile(), sets.getByName("main").getJava().getSrcDirs(), ext.getPure().getSources().getFiles(),
+                ext.getNamespace().get(), p.getLayout().getBuildDirectory().dir("generated/sources/mycelium").get().getAsFile());
+        that(!ids.contains("data.catalog@1"), "bridges:what a bridge's import wrote is the import, not a use: " + ids);
+        that(MyceliumPlugin.isImported(generated.toFile(), p.getLayout().getBuildDirectory().dir("generated/sources/mycelium").get().getAsFile())
+                        && !MyceliumPlugin.isImported(src.toFile(), p.getLayout().getBuildDirectory().dir("generated/sources/mycelium").get().getAsFile()),
+                "bridges:the imported root holds every import, and nothing of the mod's own");
+
+        // a contract used through its bridge is used (U1)
+        Project u = ProjectBuilder.builder().withProjectDir(dir.toFile()).build();
+        UsageTask t = u.getTasks().register("usageThroughBridge", UsageTask.class).get();
+        t.getRoot().set(root.toFile());
+        t.getContracts().set(List.of("item.component@1"));
+        t.getNamespace().set("fixture.bridges.mycelium");
+        t.getFailOnUnused().set(true);
+        t.getChecks().set(List.of());
+        t.getSources().from(src.toFile());
+        t.getReportDir().set(dir.resolve("usage").toFile());
+        that(FlexibleSelfTest.runs(t), "bridges:a contract the mod uses only through its bridge is used (U1)");
+    }
+
+    private static Set<org.gradle.api.Task> reachable(org.gradle.api.Task from) {
+        Set<org.gradle.api.Task> seen = new HashSet<>();
+        List<org.gradle.api.Task> todo = new ArrayList<>(List.of(from));
+        while (!todo.isEmpty()) {
+            org.gradle.api.Task t = todo.remove(todo.size() - 1);
+            for (org.gradle.api.Task d : t.getTaskDependencies().getDependencies(t)) {
+                if (seen.add(d)) {
+                    todo.add(d);
+                }
+            }
+        }
+        return seen;
+    }
+
+    // --- the repository check, shown to fire on each way a bridge can be broken ----------------------------------------------------
+
+    static void repository(Path root) throws IOException {
+        Path base = SelfTest.copy(root);
+        java.util.Set<String> baseline = SelfTest.findings(base);
+        SelfTest.delete(base);
+        that(baseline.stream().noneMatch(f -> f.startsWith("[bridges]") || f.contains("item.carrier")), "bridges:the repository as it stands has no finding about its bridges: " + baseline);
+        String carrierJson = "bridges/item-carrier/bridge.json";
+        String model = "contracts/item-component/src/mycelium/item_component/v1/model/StackCarrier.java";
+        SelfTest.expect(root, "an overlay outside its variant's range", r -> SelfTest.replace(r.resolve(carrierJson), "\"from\": \"1.21.5\"", "\"from\": \"1.20.1\""),
+                f -> f.contains("[bridges]") && f.contains("overlay 1.21.5 of custom-data covers Minecraft 1.20.4") && f.contains("'root-tag'"), baseline);
+        SelfTest.expect(root, "an overlay that runs backwards", r -> SelfTest.replace(r.resolve(carrierJson), "\"from\": \"1.14\", \"to\": \"1.14.4\"", "\"from\": \"1.14.4\", \"to\": \"1.14\""),
+                f -> f.contains("[bridges]") && f.contains("runs backwards"), baseline);
+        SelfTest.expect(root, "an overlay bound that names no real version", r -> SelfTest.replace(r.resolve(carrierJson), "\"to\": \"1.14.4\"", "\"to\": \"1.14.44\""),
+                f -> f.contains("[bridges]") && f.contains("bound '1.14.44' is not a version the launcher names"), baseline);
+        SelfTest.expect(root, "two overlays that meet", r -> {
+                    SelfTest.replace(r.resolve(carrierJson), "\"overlays\": [\n        {\"name\": \"1.14\"", "\"overlays\": [\n        {\"name\": \"1.14b\", \"from\": \"1.14.2\", \"to\": \"1.14.4\"},\n        {\"name\": \"1.14\"");
+                    SelfTest.copyTree(r.resolve("bridges/item-carrier/root-tag/overlays/1.14"), r.resolve("bridges/item-carrier/root-tag/overlays/1.14b"));
+                },
+                f -> f.contains("[bridges]") && f.contains("cover the same version"), baseline);
+        SelfTest.expect(root, "an overlay with no files", r -> SelfTest.delete(r.resolve("bridges/item-carrier/root-tag/overlays/1.14")),
+                f -> f.contains("[bridges]") && f.contains("overlay 1.14 of root-tag has no files"), baseline);
+        SelfTest.expect(root, "an overlay directory nothing lists", r -> SelfTest.write(r.resolve("bridges/item-carrier/root-tag/overlays/ghost/src/mycelium/bridges/item_carrier/Nbt.java"),
+                        "package mycelium.bridges.item_carrier;\nclass Nbt {}\n"),
+                f -> f.contains("[bridges]") && f.contains("overlays/ghost") && f.contains("no version draws it"), baseline);
+        SelfTest.expect(root, "a table row for a variant the bridge lacks", r -> SelfTest.replace(r.resolve("eras/minecraft.json"), "\"realization\": \"root-tag\"", "\"realization\": \"nbt-tag\""),
+                f -> f.contains("[bridges]") && f.contains("'nbt-tag'") && f.contains("no variant for"), baseline);
+        SelfTest.expect(root, "a variant no row draws", r -> SelfTest.replace(r.resolve("eras/minecraft.json"), "\"realization\": \"root-tag\"", "\"realization\": \"custom-data\""),
+                f -> f.contains("[bridges]") && f.contains("variant root-tag is drawn by no row"), baseline);
+        SelfTest.expect(root, "a gap in the carrier table", r -> SelfTest.replace(r.resolve("eras/minecraft.json"), "\"from\": \"1.14\", \"to\": \"1.20.4\"", "\"from\": \"1.15\", \"to\": \"1.20.4\""),
+                f -> f.contains("Minecraft 1.14 falls in no item.carrier row"), baseline);
+        SelfTest.expect(root, "an overlap in the carrier table", r -> SelfTest.replace(r.resolve("eras/minecraft.json"), "\"from\": \"1.14\", \"to\": \"1.20.4\"", "\"from\": \"1.14\", \"to\": \"1.20.5\""),
+                f -> f.contains("Minecraft 1.20.5 falls in several item.carrier rows"), baseline);
+        SelfTest.expect(root, "a bridge whose contract does not list it", r -> SelfTest.replace(r.resolve("contracts/registry.json"), "\"bridges\": [\"item-carrier\"],", ""),
+                f -> f.contains("[bridges]") && f.contains("whose registry row does not list it"), baseline);
+        SelfTest.expect(root, "a row listing a bridge that is not there", r -> SelfTest.replace(r.resolve("contracts/registry.json"), "[\"item-carrier\"]", "[\"item-carrier\", \"ghost\"]"),
+                f -> f.contains("[bridges]") && f.contains("lists the bridge 'ghost'"), baseline);
+        SelfTest.expect(root, "a port that is not in the model", r -> SelfTest.delete(r.resolve(model)),
+                f -> f.contains("[bridges]") && f.contains("the port StackCarrier is not in item.component@1's model"), baseline);
+        SelfTest.expect(root, "a variant without its implementation", r -> SelfTest.delete(r.resolve("bridges/item-carrier/root-tag/src/mycelium/bridges/item_carrier/ItemCarrier.java")),
+                f -> f.contains("[bridges]") && f.contains("variant root-tag does not define ItemCarrier"), baseline);
+        SelfTest.expect(root, "an implementation that is not the port", r -> SelfTest.replace(r.resolve("bridges/item-carrier/root-tag/src/mycelium/bridges/item_carrier/ItemCarrier.java"),
+                        "implements StackCarrier<ItemStack>", "implements Runnable"),
+                f -> f.contains("[bridges]") && f.contains("does not implement StackCarrier"), baseline);
+        SelfTest.expect(root, "a variant without the rig the conformance cases need", r -> SelfTest.delete(r.resolve("bridges/item-carrier/root-tag/conformance")),
+                f -> f.contains("[bridges]") && f.contains("none of its own to run them with"), baseline);
+        SelfTest.expect(root, "a source in a package that is not the bridge's", r -> SelfTest.replace(r.resolve("bridges/item-carrier/root-tag/src/mycelium/bridges/item_carrier/Nbt.java"),
+                        "package mycelium.bridges.item_carrier;", "package mycelium.bridges.elsewhere;"),
+                f -> f.contains("[bridges]") && f.contains("declares package 'mycelium.bridges.elsewhere' but sits in"), baseline);
+        SelfTest.expect(root, "a bridge reaching the harness", r -> SelfTest.append(r.resolve("bridges/item-carrier/root-tag/src/mycelium/bridges/item_carrier/Nbt.java"),
+                        "// mycelium.harness.Check\n"),
+                f -> f.contains("[bridges]") && f.contains("mentions mycelium.harness"), baseline);
+        SelfTest.expect(root, "a bridge.json field nothing reads", r -> SelfTest.replace(r.resolve(carrierJson), "\"schema\": 1,", "\"schema\": 1, \"liveConsumers\": [],"),
+                f -> f.contains("[bridges]") && f.contains("unknown field 'liveConsumers'"), baseline);
+        SelfTest.expect(root, "a bridge written in names nobody has data for", r -> SelfTest.replace(r.resolve(carrierJson), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"mojang\", \"srg2\"]"),
+                f -> f.contains("[bridges]") && f.contains("'srg2'"), baseline);
+        SelfTest.expect(root, "name data no loader and no bridge reads", r -> SelfTest.replace(r.resolve(carrierJson), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"unobfuscated\"]"),
+                f -> f.contains("[names]") && f.contains("mojang 1.14.4 is data no loader's runtime is named mojang on") && f.contains("no bridge is written in mojang"), baseline);
+        SelfTest.expect(root, "a directory under bridges/ that is not a bridge", r -> SelfTest.mkdirs(r.resolve("bridges/not-a-bridge")),
+                f -> f.contains("[bridges]") && f.contains("has no bridge.json"), baseline);
+        SelfTest.expect(root, "a document naming a bridge file that is not there", r -> SelfTest.append(r.resolve("AGENTS.md"), "\nSee `bridges/item-carrier/Nowhere.java`.\n"),
+                f -> f.contains("Nowhere.java"), baseline);
+    }
+
+    // --- linkage, on a game built here ---------------------------------------------------------------------------------------------
+
+    /** A game with one class, {@code net.minecraft.test.Stack}, whose {@code count()} it has or lacks; written as a jar. */
+    private static Path game(Path dir, String name, boolean hasCount) throws IOException {
+        Path src = dir.resolve(name + "-src/net/minecraft/test/Stack.java");
+        SelfTest.write(src, "package net.minecraft.test;\npublic class Stack {\n    public static Stack of() { return new Stack(); }\n"
+                + (hasCount ? "    public int count() { return 1; }\n" : "") + "}\n");
+        Path classes = Files.createDirectories(dir.resolve(name + "-classes"));
+        Process p = new ProcessBuilder(BridgeLinkage.runningJavac().toString(), "--release", "17", "-d", classes.toString(), src.toString())
+                .redirectErrorStream(true).start();
+        String output = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        try {
+            if (p.waitFor() != 0) {
+                throw new IllegalStateException("self-test setup: the fake game did not compile: " + output);
+            }
+        } catch (InterruptedException e) {
+            throw new IllegalStateException(e);
+        }
+        Path jar = dir.resolve(name + ".jar");
+        try (ZipOutputStream z = new ZipOutputStream(Files.newOutputStream(jar))) {
+            z.putNextEntry(new ZipEntry("net/minecraft/test/Stack.class"));
+            z.write(Files.readAllBytes(classes.resolve("net/minecraft/test/Stack.class")));
+            z.closeEntry();
+        }
+        return jar;
+    }
+
+    private static String entry(String version, Path jar) throws IOException {
+        return "\"" + version + "\":{\"inputs\":[{\"role\":\"game\",\"url\":\"" + jar.toUri() + "\",\"sha256\":\"" + NameCache.sha256(jar) + "\"}]}";
+    }
+
+    static void linkage(Path tmp) throws Exception {
+        Path dir = Files.createDirectories(tmp.resolve("linkage"));
+        Path models = Files.createDirectories(dir.resolve("models/mycelium/fake/v1/model"));
+        SelfTest.write(models.resolve("Port.java"), "package mycelium.fake.v1.model;\npublic interface Port {\n    int n();\n}\n");
+        Path bridgeDir = Files.createDirectories(dir.resolve("bridges/mini"));
+        SelfTest.write(bridgeDir.resolve("bridge.json"), "{\"schema\":1,\"id\":\"mini\",\"contract\":\"fake@1\",\"port\":\"Port\",\"implementation\":\"Impl\","
+                + "\"package\":\"mycelium.bridges.mini\",\"divide\":\"mini.divide\",\"writtenIn\":[\"unobfuscated\"],"
+                + "\"variants\":{\"only\":{\"overlays\":[]}}}");
+        SelfTest.write(bridgeDir.resolve("only/src/mycelium/bridges/mini/Impl.java"),
+                "package mycelium.bridges.mini;\nimport mycelium.fake.v1.model.Port;\nimport net.minecraft.test.Stack;\n"
+                        + "public class Impl implements Port {\n    public int n() { return Stack.of().count(); }\n}\n");
+        Bridges.Bridge bridge = Bridges.parse(Files.readString(bridgeDir.resolve("bridge.json")), "mini", bridgeDir, "mini");
+        Eras eras = Eras.parse("{\"schema\":2,\"eras\":[],\"realizations\":{\"mini.divide\":[{\"from\":\"26.1\",\"to\":\"26.3\",\"realization\":\"only\"}]}}", "t");
+        List<String> versions = List.of("26.3", "26.2", "26.1");
+        Path with = game(dir, "with", true);
+        Path without = game(dir, "without", false);
+        NameCache cache = new NameCache(dir.resolve("cache"), false);
+        Path javac = BridgeLinkage.runningJavac();
+        List<Path> modelRoots = List.of(dir.resolve("models"));
+
+        NameData fine = NameData.parse(lock(entry("26.3", with) + "," + entry("26.2", with)), "fine");
+        BridgeLinkage.Result ok = BridgeLinkage.bridge(bridge, modelRoots, eras, fine, cache, versions, dir.resolve("work-ok"), javac);
+        that(ok.findings().isEmpty(), "bridges:linkage: a variant whose references exist on every version with name data links: " + ok.findings());
+        JsonObject group = ok.report().getAsJsonArray("variants").get(0).getAsJsonObject().getAsJsonArray("groups").get(0).getAsJsonObject();
+        that(group.get("compiledAgainst").getAsString().equals("26.3") && group.getAsJsonArray("linked").size() == 2
+                        && group.getAsJsonArray("noNameData").size() == 1 && group.get("status").getAsString().equals("linked"),
+                "bridges:linkage: it was compiled against the newest version with data, linked on each, and the one without data is named: " + group);
+        that(ok.notes().size() == 1 && ok.notes().get(0).contains("26.1"), "bridges:linkage: a version with no name data is reported, not failed (decision 0017): " + ok.notes());
+
+        // the planted reference: a method one version of the claim lacks
+        NameData lacksOlder = NameData.parse(lock(entry("26.3", with) + "," + entry("26.2", without)), "lacks");
+        BridgeLinkage.Result older = BridgeLinkage.bridge(bridge, modelRoots, eras, lacksOlder, cache, versions, dir.resolve("work-older"), javac);
+        that(older.findings().size() == 1 && older.findings().get(0).contains("Minecraft 26.2") && older.findings().get(0).contains("net/minecraft/test/Stack.count()I")
+                        && older.findings().get(0).contains("bridge mini, variant only"),
+                "bridges:linkage: a method a version of the claim lacks fails there, naming the bridge, the variant, the version and the reference: " + older.findings());
+
+        // the planted reference on the version it is compiled against: a compile error that names it
+        NameData lacksNewest = NameData.parse(lock(entry("26.3", without) + "," + entry("26.2", with)), "newest");
+        BridgeLinkage.Result newest = BridgeLinkage.bridge(bridge, modelRoots, eras, lacksNewest, cache, versions, dir.resolve("work-newest"), javac);
+        that(newest.findings().size() == 1 && newest.findings().get(0).contains("does not compile against Minecraft 26.3")
+                        && newest.findings().get(0).contains("count"), "bridges:linkage: a variant that does not compile where it claims to fails, naming the symbol: " + newest.findings());
+
+        // no data at all is reported and nothing is claimed
+        NameData nothing = NameData.parse(lock(entry("26.3", with)), "none");
+        BridgeLinkage.Result bare = BridgeLinkage.bridge(bridge, modelRoots, Eras.parse("{\"schema\":2,\"eras\":[],\"realizations\":{\"mini.divide\":[{\"from\":\"26.1\","
+                + "\"to\":\"26.2\",\"realization\":\"only\"}]}}", "t"), nothing, cache, versions, dir.resolve("work-bare"), javac);
+        that(bare.findings().isEmpty() && bare.report().getAsJsonArray("variants").get(0).getAsJsonObject().getAsJsonArray("groups").get(0).getAsJsonObject()
+                        .get("status").getAsString().equals("unlinked"), "bridges:linkage: a group none of whose versions has data is unlinked, not linked: " + bare.report());
+        // a compiler that is not there is not a compile that failed
+        BridgeLinkage.Result nocompiler = BridgeLinkage.bridge(bridge, modelRoots, eras, fine, cache, versions, dir.resolve("work-nojavac"), dir.resolve("no-such-javac"));
+        that(nocompiler.findings().isEmpty() && nocompiler.notes().stream().anyMatch(n -> n.contains("no Java compiler")),
+                "bridges:linkage: without a Java compiler a variant is left unlinked and the note says why: " + nocompiler.notes());
+        // an overlay is a group of its own, with its own compile
+        Path overlaid = Files.createDirectories(dir.resolve("bridges/mini2"));
+        SelfTest.copyTree(bridgeDir, overlaid);
+        SelfTest.write(overlaid.resolve("bridge.json"), "{\"schema\":1,\"id\":\"mini\",\"contract\":\"fake@1\",\"port\":\"Port\",\"implementation\":\"Impl\","
+                + "\"package\":\"mycelium.bridges.mini2\",\"divide\":\"mini.divide\",\"writtenIn\":[\"unobfuscated\"],"
+                + "\"variants\":{\"only\":{\"overlays\":[{\"name\":\"late\",\"from\":\"26.3\",\"to\":\"26.3\"}]}}}");
+        // (the package is the bridge's own: move the sources there)
+        Files.createDirectories(overlaid.resolve("only/src/mycelium/bridges/mini2"));
+        Files.move(overlaid.resolve("only/src/mycelium/bridges/mini/Impl.java"), overlaid.resolve("only/src/mycelium/bridges/mini2/Impl.java"));
+        SelfTest.replace(overlaid.resolve("only/src/mycelium/bridges/mini2/Impl.java"), "package mycelium.bridges.mini;", "package mycelium.bridges.mini2;");
+        SelfTest.write(overlaid.resolve("only/overlays/late/src/mycelium/bridges/mini2/Impl.java"),
+                "package mycelium.bridges.mini2;\nimport mycelium.fake.v1.model.Port;\nimport net.minecraft.test.Stack;\n"
+                        + "public class Impl implements Port {\n    public int n() { return Stack.of().count() + 1; }\n}\n");
+        Bridges.Bridge withOverlay = Bridges.parse(Files.readString(overlaid.resolve("bridge.json")), "mini2", overlaid, "mini2");
+        BridgeLinkage.Result two = BridgeLinkage.bridge(withOverlay, modelRoots, eras, NameData.parse(lock(entry("26.3", with) + "," + entry("26.2", with)), "two"),
+                cache, versions, dir.resolve("work-two"), javac);
+        JsonArray groups = two.report().getAsJsonArray("variants").get(0).getAsJsonObject().getAsJsonArray("groups");
+        that(groups.size() == 2 && two.findings().isEmpty(), "bridges:linkage: the versions an overlay covers are a group of their own with their own compile: " + groups);
+    }
+
+    private static String lock(String entries) {
+        return "{\"schema\":1,\"namespaces\":{\"unobfuscated\":{\"reads\":\"jar\",\"owns\":[\"net/minecraft/\"],\"versions\":{" + entries + "}}}}";
+    }
+}

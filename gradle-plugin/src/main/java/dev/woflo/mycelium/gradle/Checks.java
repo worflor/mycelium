@@ -79,6 +79,10 @@ public final class Checks {
                 "NoSuchMethodError on a claimed version");
         check("L2", Level.WARN, "pinned name data was available to link against",
                 "a version quietly not linked because its data could not be fetched");
+        check("B1", Level.FAIL, "a bridge the mod overrides is a class the project compiles and it implements the bridge's port",
+                "an override the contract's laws cannot be held to: a typo, or a class that is not the port");
+        check("B2", Level.WARN, "a bridge has a realization on the target version",
+                "a mod that targets a version a bridge cannot map on and does not know it: the bridge was not imported there");
         check("PR1", Level.FAIL, "the committed presentation lock holds every selection the programs need",
                 "an item drawn with no model on a version (a warn writes no presentation files)");
     }

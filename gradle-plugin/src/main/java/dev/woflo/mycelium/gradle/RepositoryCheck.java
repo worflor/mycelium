@@ -66,7 +66,7 @@ public final class RepositoryCheck {
     }
 
     /** Documents that describe the present; the others (CHANGELOG, DESIGN, archive, decision records) are history. */
-    static final List<String> LIVING = List.of("README.md", "AGENTS.md", "CONTRACT-PACKAGE.md");
+    static final List<String> LIVING = List.of("README.md", "AGENTS.md", "CONTRACT-PACKAGE.md", "BRIDGE-PACKAGE.md");
 
     /** Private copies of the shared harness a package may not keep (CONTRACT-PACKAGE.md, rule on the harness). */
     static final Set<String> SHARED_HARNESS = Set.of("Check.java", "ContractRun.java", "Suite.java", "Seeded.java");
@@ -93,6 +93,7 @@ public final class RepositoryCheck {
         patterns(root, report);
         eras(root, report);
         names(root, report);
+        BridgeCheck.run(root, registry, report);
         docs(root, registry, matrices, report);
         return report;
     }
@@ -376,7 +377,7 @@ public final class RepositoryCheck {
                 covered++;
             }
         }
-        presentation(eras, real, versions, report);
+        realizations(eras, real, versions, report);
         packFormat(eras, real, versions, report);
         report.result("eras", covered, all.size() + " eras cover " + covered + " real versions exactly once ("
                 + outside + " before Classic are not targets); " + loaders.loaders().size() + " loaders, "
@@ -429,39 +430,48 @@ public final class RepositoryCheck {
     }
 
     /**
-     * The presentation table (docs/decisions/0012): each row has real bounds in order, and every real version falls in exactly
-     * one row, so the compiler holds no version of its own and a version can never be left without an answer.
+     * The realization tables (docs/decisions/0012, 0016), one per divide: each row has real bounds in order, and every real
+     * version falls in exactly one row, so the compiler or bridge holds no version of its own and a version can never be left
+     * without an answer. The divides the compiler owns have a vocabulary ({@link Eras#VOCABULARY}); a bridge's divide takes it
+     * from the bridge ({@link BridgeCheck}).
      */
-    private static void presentation(Eras eras, Set<String> real, List<String> versions, Report report) {
-        List<Eras.Presentation> rows = eras.presentation();
-        if (rows.isEmpty()) {
-            report.find("eras", "eras/minecraft.json has no \"presentation\" table: item.presentation has no realization for any version");
-            return;
-        }
-        for (int i = 0; i < rows.size(); i++) {
-            Eras.Presentation p = rows.get(i);
-            for (String bound : List.of(p.from(), p.to())) {
-                if (!Eras.isLine(bound) && !real.contains(bound)) {
-                    report.find("eras", "presentation '" + p.realization() + "': bound '" + bound + "' is not a version the launcher names");
-                }
-            }
-            if (Eras.readable(Eras.lineStart(p.from())) && Eras.readable(Eras.lineStart(p.to())) && !Eras.atMost(Eras.lineStart(p.from()), p.to())) {
-                report.find("eras", "presentation '" + p.realization() + "' runs backwards: from " + p.from() + " to " + p.to());
+    private static void realizations(Eras eras, Set<String> real, List<String> versions, Report report) {
+        for (String divide : Eras.VOCABULARY.keySet()) {
+            if (eras.realizations(divide).isEmpty()) {
+                report.find("eras", "eras/minecraft.json has no realization table for " + divide + ": it has no realization for any version");
             }
         }
-        for (String v : versions) {
-            if (!Eras.readable(v)) {
+        for (java.util.Map.Entry<String, List<Eras.Realization>> table : eras.realizations().entrySet()) {
+            String divide = table.getKey();
+            List<Eras.Realization> rows = table.getValue();
+            if (rows.isEmpty()) {
+                report.find("eras", "the " + divide + " realization table has no rows: it has no realization for any version");
                 continue;
             }
-            List<String> in = new ArrayList<>();
-            for (Eras.Presentation p : rows) {
-                if (p.covers(v)) {
-                    in.add(p.realization() + " " + p.from() + ".." + p.to());
+            for (Eras.Realization p : rows) {
+                for (String bound : List.of(p.from(), p.to())) {
+                    if (!Eras.isLine(bound) && !real.contains(bound)) {
+                        report.find("eras", divide + " '" + p.realization() + "': bound '" + bound + "' is not a version the launcher names");
+                    }
+                }
+                if (Eras.readable(Eras.lineStart(p.from())) && Eras.readable(Eras.lineStart(p.to())) && !Eras.atMost(Eras.lineStart(p.from()), p.to())) {
+                    report.find("eras", divide + " '" + p.realization() + "' runs backwards: from " + p.from() + " to " + p.to());
                 }
             }
-            if (in.size() != 1) {
-                report.find("eras", "Minecraft " + v + " falls in " + (in.isEmpty() ? "no presentation row" : "several presentation rows " + in)
-                        + ": every real version must fall in exactly one");
+            for (String v : versions) {
+                if (!Eras.readable(v)) {
+                    continue;
+                }
+                List<String> in = new ArrayList<>();
+                for (Eras.Realization p : rows) {
+                    if (p.covers(v)) {
+                        in.add(p.realization() + " " + p.from() + ".." + p.to());
+                    }
+                }
+                if (in.size() != 1) {
+                    report.find("eras", "Minecraft " + v + " falls in " + (in.isEmpty() ? "no " + divide + " row" : "several " + divide + " rows " + in)
+                            + ": every real version must fall in exactly one");
+                }
             }
         }
     }
@@ -541,8 +551,8 @@ public final class RepositoryCheck {
 
     /**
      * {@code eras/names.json} against the version list and the era table: every entry is for a real version, and on that version
-     * some loader runs under that naming (data nothing would read is a pin nobody checks), so the linkage gate can only ever be
-     * handed data that belongs to a version it can be asked about (docs/decisions/0010).
+     * some loader runs under that naming, or a bridge is written in it there (data nothing would read is a pin nobody checks), so
+     * the linkage gates can only ever be handed data that belongs to a version they can be asked about (decisions 0010 and 0016).
      */
     static void names(Path root, Report report) {
         Eras eras;
@@ -559,6 +569,12 @@ public final class RepositoryCheck {
         } catch (RuntimeException e) {
             report.find("names", e.getMessage());
             return;
+        }
+        List<Bridges.Bridge> bridges;
+        try {
+            bridges = Bridges.load(root);
+        } catch (IOException | RuntimeException e) {
+            bridges = List.of(); // the bridges check reports a bridge that cannot be read
         }
         Set<String> real = new HashSet<>(versions);
         int entries = 0;
@@ -583,14 +599,23 @@ public final class RepositoryCheck {
                         read = true;
                     }
                 }
+                for (Bridges.Bridge b : bridges) {
+                    Eras.Realization row = eras.realization(b.divide(), v);
+                    // a bridge written in these names is linked against them where the platform layer is written in them (the era's
+                    // names.dev) and the bridge maps
+                    String dev = era.names().dev();
+                    if (b.writtenIn().contains(ns) && (dev.equals(ns) || dev.startsWith(ns + "-")) && row != null && !row.realization().equals("none")) {
+                        read = true;
+                    }
+                }
                 if (!read) {
                     report.find("names", where + " is data no loader's runtime is named " + ns + " on: era '" + era.id()
-                            + "' (eras/minecraft.json names.runtime) runs " + runtimes(era, v) + " there, so nothing would read it");
+                            + "' (eras/minecraft.json names.runtime) runs " + runtimes(era, v) + " there, and no bridge is written in " + ns + " for it, so nothing would read it");
                 }
             }
         }
         report.result("names", entries, entries + " name data entries over " + data.namespaces().size()
-                + " namings, each for a real version some loader runs under that naming");
+                + " namings, each for a real version some loader runs under that naming or a bridge is written in");
     }
 
     private static String runtimes(Eras.Era era, String version) {
@@ -614,9 +639,9 @@ public final class RepositoryCheck {
     static final Pattern BACKTICK = Pattern.compile("`([^`\\n]+)`");
 
     /** Tokens in documents that name a path in this repository, checked to exist. */
-    static final List<String> PATH_ROOTS = List.of("contracts/", "harness/", "gradle-plugin/", "docs/", "eras/", "archive/",
+    static final List<String> PATH_ROOTS = List.of("contracts/", "bridges/", "harness/", "gradle-plugin/", "docs/", "eras/", "archive/",
             "build.gradle.kts", "settings.gradle.kts", "run-contracts.sh", "run-contracts.ps1", "README.md", "AGENTS.md",
-            "DESIGN.md", "CONTRACT-PACKAGE.md", "CHANGELOG.md");
+            "DESIGN.md", "CONTRACT-PACKAGE.md", "BRIDGE-PACKAGE.md", "CHANGELOG.md");
 
     static void docs(Path root, ContractRegistry registry, Map<String, Integer> matrices, Report report) throws IOException {
         List<Path> living = new ArrayList<>();

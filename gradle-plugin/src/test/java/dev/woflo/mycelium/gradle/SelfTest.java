@@ -55,6 +55,7 @@ public final class SelfTest {
         capsuleLinkage();
         surface();
         FlexibleSelfTest.run(root);
+        BridgeSelfTest.run(root);
         repository(root);
         System.out.println();
         System.out.println("Mycelium plugin self-test: " + (FAILURES.isEmpty() ? "PASS" : "FAIL") + " (" + assertions
@@ -1166,11 +1167,13 @@ public final class SelfTest {
         for (String[] e : expect) {
             that(e[1].equals(eras.presentationFor(e[0])), "presentation:" + e[0] + " is " + e[1]);
         }
-        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"presentation\":[{\"from\":\"1.0\",\"to\":\"1.x\",\"realization\":\"magic\"}]}", "t"),
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"realizations\":{\"item.presentation\":[{\"from\":\"1.0\",\"to\":\"1.x\",\"realization\":\"magic\"}]}}", "t"),
                 "is not one of"), "presentation:an unknown realization is refused, by name");
-        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"presentation\":[{\"from\":\"1.0\",\"realization\":\"none\"}]}", "t"),
-                "a presentation row is"), "presentation:a row without its range is refused");
-        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[]}", "t").presentationFor("1.21.4"), "no presentation row covers"),
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"realizations\":{\"item.presentation\":[{\"from\":\"1.0\",\"realization\":\"none\"}]}}", "t"),
+                "a item.presentation row is"), "presentation:a row without its range is refused");
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"presentation\":[]}", "t"), "is now \"realizations\""),
+                "presentation:the old top-level table is refused, by name");
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[]}", "t").presentationFor("1.21.4"), "no item.presentation row covers"),
                 "presentation:a table without rows answers no version");
 
         Path base = copy(root);
@@ -1178,10 +1181,10 @@ public final class SelfTest {
         delete(base);
         expect(root, "a gap in the presentation table", r -> replace(r.resolve("eras/minecraft.json"),
                         "\"from\": \"1.14\", \"to\": \"1.21.3\"", "\"from\": \"1.15\", \"to\": \"1.21.3\""),
-                f -> f.contains("Minecraft 1.14 falls in no presentation row"), baseline);
+                f -> f.contains("Minecraft 1.14 falls in no item.presentation row"), baseline);
         expect(root, "an overlap in the presentation table", r -> replace(r.resolve("eras/minecraft.json"),
                         "\"to\": \"1.13.2\", \"realization\": \"none\"", "\"to\": \"1.14\", \"realization\": \"none\""),
-                f -> f.contains("Minecraft 1.14 falls in several presentation rows"), baseline);
+                f -> f.contains("Minecraft 1.14 falls in several item.presentation rows"), baseline);
         expect(root, "a presentation bound that names no real version", r -> replace(r.resolve("eras/minecraft.json"),
                         "\"from\": \"1.21.4\", \"to\": \"26.x\"", "\"from\": \"1.21.44\", \"to\": \"26.x\""),
                 f -> f.contains("bound '1.21.44' is not a version the launcher names"), baseline);

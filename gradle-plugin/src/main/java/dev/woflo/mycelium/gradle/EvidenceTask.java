@@ -87,6 +87,10 @@ public abstract class EvidenceTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getErasReportDir();
 
+    /** {@code myceliumBridges}' report dir, if it ran: the bridge each contract brought, the variant and overlays chosen or the override (docs/decisions/0016). */
+    @Internal
+    public abstract DirectoryProperty getBridgesReportDir();
+
     /** The usage task's report dir, if it ran: whether the artifact's sources reference each contract. */
     @Internal
     public abstract DirectoryProperty getUsageReportDir();
@@ -212,6 +216,17 @@ public abstract class EvidenceTask extends DefaultTask {
                     + "mycelium.minecraft target set)");
         }
         evidence.add("pureShip", pureShip);
+
+        // Bridges (docs/decisions/0016): which variant and overlays the target drew, or the class that overrides it, and what the
+        // check found of an override. Written by myceliumBridges; the import's own report stands in only if that did not run.
+        Path bridgesFile = getBridgesReportDir().isPresent() ? getBridgesReportDir().get().getAsFile().toPath().resolve("bridges.json") : null;
+        if (bridgesFile != null && Files.isRegularFile(bridgesFile)) {
+            JsonObject bridges = JsonParser.parseString(Files.readString(bridgesFile, StandardCharsets.UTF_8)).getAsJsonObject();
+            bridges.addProperty("checked", true);
+            evidence.add("bridges", bridges);
+        } else {
+            evidence.add("bridges", notChecked("myceliumBridges did not run in this build (the project imports no bridge)"));
+        }
 
         JsonObject harness = null;
         Path results = getVerifyReportDir().isPresent()

@@ -56,17 +56,22 @@ public final class MyceliumPlugin implements Plugin<Project> {
         Provider<Boolean> isMod = modFlag;
         ConfigurableFileCollection derivationRoots = project.getObjects().fileCollection();
         // whatever writes the main sources (a Stonecutter swap) runs before anything reads them to find the contracts; not
-        // myceliumImport, which writes into them
+        // myceliumImport and myceliumBridgeImport, which write into them
         // Stonecutter swaps the sources in a task of its own that nothing declares as the sources' producer, so it is named.
         org.gradle.api.tasks.TaskCollection<Task> stonecutter = project.getTasks().matching(task -> task.getName().equals("stonecutterGenerate"));
         java.util.concurrent.Callable<Object> sourceGenerators = () -> {
             List<Object> out = new ArrayList<>(derivationRoots.getBuildDependencies().getDependencies(null).stream()
-                    .filter(task -> !task.getName().equals("myceliumImport")).toList());
+                    .filter(task -> !task.getName().equals("myceliumImport") && !task.getName().equals("myceliumBridgeImport")).toList());
             out.addAll(stonecutter);
             return out;
         };
         Provider<String> verifyProperty = project.getProviders().gradleProperty("mycelium.verify").orElse("");
         Provider<Directory> generated = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java");
+        // everything Mycelium imports (models, bridges, conformance cases) is written under this one directory: the text scans
+        // that look for the mod's own code never read below it
+        Provider<Directory> importedRoot = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium");
+        Provider<Directory> bridgeSources = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/bridges/java");
+        Provider<Directory> conformanceSources = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/conformance/java");
         // The contracts this project imports: the explicit `contracts(...)` if given; in a mod (the Java plugin applied) what the
         // compiled sources reference under the namespace, with their requirements; in the verification project (no Java plugin),
         // none imported and every contract verified. Chosen when the build runs, by a task that waits for whatever writes the
@@ -81,7 +86,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getMod().set(isMod);
             t.getMainSources().from(derivationRoots);
             t.getPureSources().from(ext.getPure().getSources());
-            t.getGeneratedDir().set(generated);
+            t.getGeneratedDir().set(importedRoot);
+            t.getUse().set(ext.getBridges().getUse());
             t.getContractList().set(project.getLayout().getBuildDirectory().file("mycelium/contracts.txt"));
             t.dependsOn(sourceGenerators);
         });
@@ -149,6 +155,32 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getNamespace().set(ext.getNamespace());
             t.getSourceFingerprint().set(fingerprint);
             t.getOutputDir().set(generated);
+        });
+
+        // Bridges (docs/decisions/0016): the native half of the divides the imported contracts cross, as source for this target.
+        Provider<String> bridgesFingerprint = project.provider(() -> {
+            Path root = ext.getRoot().get().getAsFile().toPath();
+            return Fingerprint.ofDirectories(List.of(root.resolve("bridges"), root.resolve("eras"), root.resolve("contracts/registry.json")));
+        });
+        Provider<Directory> bridgesReport = project.getLayout().getBuildDirectory().dir("mycelium/bridges");
+        TaskProvider<ImportBridgesTask> bridgeImportTask = project.getTasks().register("myceliumBridgeImport", ImportBridgesTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Imports the bridges the imported contracts bring, for the target Minecraft version, under the artifact-owned namespace.");
+            t.getRoot().set(ext.getRoot());
+            t.getContracts().set(contracts);
+            t.getNamespace().set(ext.getNamespace());
+            t.getMinecraft().set(ext.getMinecraft());
+            t.getUse().set(ext.getBridges().getUse());
+            t.getSkip().set(ext.getBridges().getSkip());
+            t.getOverrides().set(ext.getBridges().getOverrides());
+            t.getConformance().set(ext.getBridges().getConformance());
+            t.getSourceFingerprint().set(bridgesFingerprint);
+            t.getOutputDir().set(bridgeSources);
+            t.getConformanceDir().set(conformanceSources);
+            t.getReportFile().set(bridgesReport.map(d -> d.file("import.json")));
+            t.dependsOn(sourceGenerators);
+            // a verification project has no sources to add them to
+            t.onlyIf(spec -> isMod.get());
         });
 
         TaskProvider<VerifyContractsTask> verifyTask = project.getTasks().register("myceliumVerify", VerifyContractsTask.class, t -> {
@@ -388,12 +420,13 @@ public final class MyceliumPlugin implements Plugin<Project> {
             SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
             derivationRoots.from(sourceSets.getByName("main").getJava().getSourceDirectories());
             sourceSets.getByName("main").getJava().srcDir(importTask.flatMap(ImportContractsTask::getOutputDir));
+            sourceSets.getByName("main").getJava().srcDir(bridgeImportTask.flatMap(ImportBridgesTask::getOutputDir));
             // the compiled presentation joins the resources, and the build fails before packaging if the programs break a law
             sourceSets.getByName("main").getResources().srcDir(presentationTask.flatMap(PresentationTask::getOutputDir));
             project.getTasks().named("processResources", t -> t.dependsOn(presentationTask));
             // Every other main source is platform: the pure layer may not reach into its packages (P1).
             purityTask.configure(t -> t.getPlatformSources().from(sourceSets.getByName("main").getJava().getSourceDirectories()
-                    .filter(dir -> !dir.equals(generated.get().getAsFile()))));
+                    .filter(dir -> !isImported(dir, importedRoot.get().getAsFile()))));
             TaskProvider<UsageTask> usageTask = project.getTasks().register("myceliumUsage", UsageTask.class, t -> {
                 t.setGroup("mycelium");
                 t.setDescription("Reports imported Mycelium contracts that this artifact's own sources never reference.");
@@ -404,7 +437,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getChecks().set(checks);
                 t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories());
                 t.getSources().from(ext.getPure().getSources());
-                t.getImportedDir().set(generated);
+                t.getImportedDir().set(importedRoot);
                 t.getReportDir().set(usageDir);
                 t.dependsOn(importTask);
             });
@@ -431,7 +464,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.setGroup("mycelium");
                 t.setDescription("Reports how much of this artifact's own sources touch platform packages outside its declared ports.");
                 t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories()
-                        .filter(dir -> !dir.equals(generated.get().getAsFile())));
+                        .filter(dir -> !isImported(dir, importedRoot.get().getAsFile())));
                 t.getPlatformPackages().set(ext.getRoot().map(dir -> Loaders.load(dir.getAsFile()).platformPackages()));
                 t.getPorts().set(ext.getPorts());
                 t.getFailOnGrowth().set(ext.getSurfaceFailOnGrowth());
@@ -439,6 +472,38 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.onlyIf(spec -> Checks.decode(checks.get()).level("S1") != Checks.Level.OFF);
                 t.getBaselineFile().set(ext.getSurfaceBaseline());
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
+            });
+            // The conformance cases join the game-test sources when the mod asks (bridges { conformance() }): the gametest source set if
+            // the project has one, else main, where a mod that keeps its game tests beside its code has them.
+            project.afterEvaluate(p -> {
+                if (!ext.getBridges().getConformance().getOrElse(false)) {
+                    return;
+                }
+                String named = ext.getBridges().getConformanceSourceSet().getOrElse("");
+                org.gradle.api.tasks.SourceSet target = named.isEmpty()
+                        ? (sourceSets.findByName("gametest") != null ? sourceSets.getByName("gametest") : sourceSets.getByName("main"))
+                        : sourceSets.findByName(named);
+                if (target == null) {
+                    throw new org.gradle.api.GradleException("Mycelium bridges: bridges { conformance(\"" + named + "\") } names a source set this project does not have ("
+                            + sourceSets.getNames() + ")");
+                }
+                target.getJava().srcDir(bridgeImportTask.flatMap(ImportBridgesTask::getConformanceDir));
+            });
+            // What can be said of the bridges once the classes are compiled: an override implements the port (B1), a bridge the game
+            // cannot map on this version was not imported (B2). The evidence manifest carries the choice and the result.
+            TaskProvider<BridgeCheckTask> bridgeCheckTask = project.getTasks().register("myceliumBridges", BridgeCheckTask.class, t -> {
+                t.setGroup("mycelium");
+                t.setDescription("Holds the bridges' overrides to their ports and reports the variant each bridge drew for this target.");
+                t.getRoot().set(ext.getRoot());
+                t.getNamespace().set(ext.getNamespace());
+                t.getChecks().set(checks);
+                t.getImportReport().set(bridgeImportTask.flatMap(ImportBridgesTask::getReportFile));
+                t.getClasses().from(sourceSets.getByName("main").getOutput().getClassesDirs());
+                t.getReportDir().set(bridgesReport);
+            });
+            evidenceTask.configure(t -> {
+                t.getBridgesReportDir().set(bridgesReport);
+                t.dependsOn(bridgeCheckTask);
             });
             // The range gate (docs/decisions/0009): only for an artifact that declares one. It reads the processed resources, which
             // do not depend on the jar, so the evidence it feeds can go into the jar. It also runs after compileJava because
@@ -515,7 +580,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             // layer alone and the linkage gate are the proofs, and the text explains them.
             evidenceTask.configure(t -> t.mustRunAfter(isolationTask, surfaceTask));
             project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
-                    pureShip, surfaceTask, capsuleTask));
+                    pureShip, surfaceTask, capsuleTask, bridgeCheckTask));
             evidenceTask.configure(t -> t.dependsOn(usageTask, pureShip));
 
             // Downgrading the jar's own classes (docs/decisions/0007). Nothing in `check` or in a jar runs it: a consumer whose
@@ -586,6 +651,11 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 });
             });
         });
+    }
+
+    /** Whether a source directory is one Mycelium wrote (an import, a bridge, conformance cases): under the imported root. */
+    static boolean isImported(java.io.File dir, java.io.File importedRoot) {
+        return dir.getAbsoluteFile().toPath().startsWith(importedRoot.getAbsoluteFile().toPath());
     }
 
     /** Where pinned name data is kept: {@code -Pmycelium.names.cache}, the environment's {@code MYCELIUM_NAMES_CACHE}, or Gradle's user home. */
@@ -689,12 +759,23 @@ public final class MyceliumPlugin implements Plugin<Project> {
         }
         String text = all.toString();
         List<String> ids = new ArrayList<>();
+        // a bridge the mod's sources name brings its contract: the bridge implements that contract's port
+        try {
+            for (Bridges.Bridge b : Bridges.load(myceliumRoot.toPath())) {
+                if (java.util.regex.Pattern.compile("(?<![\\w.])" + java.util.regex.Pattern.quote(namespace + "." + b.relativePackage()) + "(?![\\w])")
+                        .matcher(text).find() && !ids.contains(b.contract())) {
+                    ids.add(b.contract());
+                }
+            }
+        } catch (java.io.IOException x) {
+            throw new org.gradle.api.GradleException("Mycelium: cannot read the bridges: " + x.getMessage(), x);
+        }
         for (ContractRegistry.Entry e : registry.all()) {
             if (e.status().equals("retired")) {
                 continue;
             }
             String needle = namespace + "." + e.relativePackage();
-            if (java.util.regex.Pattern.compile("(?<![\\w.])" + java.util.regex.Pattern.quote(needle) + "(?![\\w])").matcher(text).find()) {
+            if (!ids.contains(e.id()) && java.util.regex.Pattern.compile("(?<![\\w.])" + java.util.regex.Pattern.quote(needle) + "(?![\\w])").matcher(text).find()) {
                 ids.add(e.id());
             }
         }
@@ -779,6 +860,11 @@ public final class MyceliumPlugin implements Plugin<Project> {
             ext.getPackMeta().getDescription().convention(defaults.getPackMeta().getDescription());
             ext.getPackMeta().getEnabled().convention(defaults.getPackMeta().getEnabled());
             ext.getOverlays().getEntries().convention(defaults.getOverlays().getEntries());
+            ext.getBridges().getUse().convention(defaults.getBridges().getUse());
+            ext.getBridges().getSkip().convention(defaults.getBridges().getSkip());
+            ext.getBridges().getOverrides().convention(defaults.getBridges().getOverrides());
+            ext.getBridges().getConformance().convention(defaults.getBridges().getConformance());
+            ext.getBridges().getConformanceSourceSet().convention(defaults.getBridges().getConformanceSourceSet());
         }
         ext.getNamespace().convention(defaults == null ? namespace : defaults.getNamespace().orElse(namespace));
         ext.getTargetProfile().convention(defaults == null ? project.provider(project::getName)
@@ -802,6 +888,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         ext.getPure().getSuiteMain().convention("Run");
         ext.getPure().getStrict().convention(false);
         ext.getSurfaceFailOnGrowth().convention(false);
+        ext.getBridges().getConformance().convention(false);
         ext.getCapsule().getOuterJava().convention(8);
         ext.getCapsule().getNestedJars().convention(List.of());
         ext.getCapsule().getMappedPrefixes().convention(List.of());

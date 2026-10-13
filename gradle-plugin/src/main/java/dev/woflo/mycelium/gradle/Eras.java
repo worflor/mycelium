@@ -102,14 +102,24 @@ public final class Eras {
         return value;
     }
 
-    /** The mechanisms a version can draw an item's state with ({@code presentation} rows of the era table). */
-    public static final java.util.Set<String> REALIZATIONS = java.util.Set.of("item-definition", "model-overrides", "none");
+    /** The divide whose realization table says how a version draws an item's state (docs/decisions/0012). */
+    public static final String ITEM_PRESENTATION = "item.presentation";
 
     /**
-     * A range of versions and the mechanism they draw an item's state with (docs/decisions/0012): its own table, because
-     * the ranges cross the eras (model overrides run from 1.14 to 1.21.3, through four eras). Bounds are as an era's are.
+     * The realizations a divide's table may name, for a divide the compiler (not a bridge) owns. A bridge's divide takes its
+     * vocabulary from the bridge's own variants ({@code bridge.json}), which the repository check holds the table to; "none"
+     * is always allowed and means the game cannot do it there.
      */
-    public record Presentation(String from, String to, String realization, String what) {
+    public static final java.util.Map<String, java.util.Set<String>> VOCABULARY = java.util.Map.of(
+            ITEM_PRESENTATION, java.util.Set.of("item-definition", "model-overrides", "none"));
+
+    /**
+     * A range of versions and the realization a divide takes on them (decisions 0012 and 0016): one table per divide,
+     * because the ranges cross the eras (model overrides run from 1.14 to 1.21.3, through four eras). Bounds are as an
+     * era's are. A realization is a name the divide's compiler or bridge defines; {@code none} says the game cannot do it,
+     * and {@code what} says why or how.
+     */
+    public record Realization(String from, String to, String realization, String what) {
         public boolean covers(String minecraft) {
             return atLeast(minecraft, from) && atMost(minecraft, to);
         }
@@ -181,12 +191,12 @@ public final class Eras {
     }
 
     private final List<Era> eras;
-    private final List<Presentation> presentation;
+    private final java.util.Map<String, List<Realization>> realizations;
     private final List<PackFormat> packFormats;
 
-    private Eras(List<Era> eras, List<Presentation> presentation, List<PackFormat> packFormats) {
+    private Eras(List<Era> eras, java.util.Map<String, List<Realization>> realizations, List<PackFormat> packFormats) {
         this.eras = eras;
-        this.presentation = presentation;
+        this.realizations = realizations;
         this.packFormats = packFormats;
     }
 
@@ -213,7 +223,7 @@ public final class Eras {
                     strings(o, "loaders"), names(o, id, where), walls(o, id, where), strings(o, "notes"), since(o),
                     outerJava(o, id, where)));
         }
-        return new Eras(out, presentation(root, where), packFormats(root, where));
+        return new Eras(out, realizations(root, where), packFormats(root, where));
     }
 
     private static List<PackFormat> packFormats(JsonObject root, String where) {
@@ -252,27 +262,42 @@ public final class Eras {
                 + "' (eras/minecraft.json, \"packFormat\"): resource packs begin at 1.6.1");
     }
 
-    private static List<Presentation> presentation(JsonObject root, String where) {
-        List<Presentation> out = new ArrayList<>();
-        if (!root.has("presentation")) {
+    private static java.util.Map<String, List<Realization>> realizations(JsonObject root, String where) {
+        java.util.Map<String, List<Realization>> out = new java.util.LinkedHashMap<>();
+        if (root.has("presentation")) {
+            throw new IllegalStateException(where + ": \"presentation\" is now \"realizations\": {\"item.presentation\": [...]} (docs/decisions/0016)");
+        }
+        if (!root.has("realizations")) {
             return out;
         }
-        for (JsonElement e : root.getAsJsonArray("presentation")) {
-            JsonObject o = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
-            for (String key : o.keySet()) {
-                if (!List.of("from", "to", "realization", "what").contains(key)) {
-                    throw new IllegalStateException(where + ": a presentation row has from, to, realization and what, not '" + key + "'");
+        if (!root.get("realizations").isJsonObject()) {
+            throw new IllegalStateException(where + ": \"realizations\" is an object of tables, one per divide");
+        }
+        for (java.util.Map.Entry<String, JsonElement> table : root.getAsJsonObject("realizations").entrySet()) {
+            String divide = table.getKey();
+            if (!table.getValue().isJsonArray()) {
+                throw new IllegalStateException(where + ": the realization table for " + divide + " is an array of rows");
+            }
+            List<Realization> rows = new ArrayList<>();
+            for (JsonElement e : table.getValue().getAsJsonArray()) {
+                JsonObject o = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
+                for (String key : o.keySet()) {
+                    if (!List.of("from", "to", "realization", "what").contains(key)) {
+                        throw new IllegalStateException(where + ": a " + divide + " row has from, to, realization and what, not '" + key + "'");
+                    }
                 }
+                if (!o.has("from") || !o.has("to") || !o.has("realization")) {
+                    throw new IllegalStateException(where + ": a " + divide + " row is {\"from\": version, \"to\": version, \"realization\": name}, not " + e);
+                }
+                String realization = o.get("realization").getAsString();
+                java.util.Set<String> vocabulary = VOCABULARY.get(divide);
+                if (vocabulary != null && !vocabulary.contains(realization)) {
+                    throw new IllegalStateException(where + ": " + divide + " realization '" + realization + "' is not one of " + new TreeSet<>(vocabulary));
+                }
+                rows.add(new Realization(o.get("from").getAsString(), o.get("to").getAsString(), realization,
+                        o.has("what") ? o.get("what").getAsString() : ""));
             }
-            if (!o.has("from") || !o.has("to") || !o.has("realization")) {
-                throw new IllegalStateException(where + ": a presentation row is {\"from\": version, \"to\": version, \"realization\": name}, not " + e);
-            }
-            String realization = o.get("realization").getAsString();
-            if (!REALIZATIONS.contains(realization)) {
-                throw new IllegalStateException(where + ": presentation realization '" + realization + "' is not one of " + new TreeSet<>(REALIZATIONS));
-            }
-            out.add(new Presentation(o.get("from").getAsString(), o.get("to").getAsString(), realization,
-                    o.has("what") ? o.get("what").getAsString() : ""));
+            out.put(divide, List.copyOf(rows));
         }
         return out;
     }
@@ -400,18 +425,46 @@ public final class Eras {
         return List.copyOf(eras);
     }
 
-    public List<Presentation> presentation() {
-        return List.copyOf(presentation);
+    /** Every divide's realization table, by divide ({@code item.presentation}, {@code item.carrier}, ...). */
+    public java.util.Map<String, List<Realization>> realizations() {
+        return realizations;
+    }
+
+    /** One divide's table; empty when the era table has none for it. */
+    public List<Realization> realizations(String divide) {
+        return realizations.getOrDefault(divide, List.of());
+    }
+
+    /** The row of {@code divide}'s table that covers a Minecraft version, or null when no row does. */
+    public Realization realization(String divide, String minecraft) {
+        for (Realization r : realizations(divide)) {
+            if (r.covers(minecraft)) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The realization {@code divide} takes on a Minecraft version ({@code none}: the game cannot do it there); a version no
+     * row covers is a refusal that says so, because the repository check holds every table to every real version.
+     */
+    public String realizationFor(String divide, String minecraft) {
+        Realization r = realization(divide, minecraft);
+        if (r == null) {
+            throw new IllegalArgumentException("Mycelium: no " + divide + " row covers Minecraft '" + minecraft
+                    + "' (eras/minecraft.json, \"realizations\")");
+        }
+        return r.realization();
+    }
+
+    public List<Realization> presentation() {
+        return realizations(ITEM_PRESENTATION);
     }
 
     /** The realization a Minecraft version draws an item's state with; a version no row covers is a refusal that says so. */
     public String presentationFor(String minecraft) {
-        for (Presentation p : presentation) {
-            if (p.covers(minecraft)) {
-                return p.realization();
-            }
-        }
-        throw new IllegalArgumentException("Mycelium: no presentation row covers Minecraft '" + minecraft + "' (eras/minecraft.json, \"presentation\")");
+        return realizationFor(ITEM_PRESENTATION, minecraft);
     }
 
     /** Whether a bound names a whole line ({@code 26.x}) rather than one version. */

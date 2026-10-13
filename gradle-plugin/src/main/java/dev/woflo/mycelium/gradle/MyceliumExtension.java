@@ -39,6 +39,17 @@ public abstract class MyceliumExtension {
         action.execute(getChecks());
     }
 
+    /**
+     * What the mod does with the bridges its contracts bring (docs/decisions/0016): take fewer, replace one with a class of
+     * its own, or add the conformance cases to its game tests. By default it gets every bridge of every contract it imports.
+     */
+    @Nested
+    public abstract BridgesSpec getBridges();
+
+    public void bridges(Action<? super BridgesSpec> action) {
+        action.execute(getBridges());
+    }
+
     /** Have the plugin write this target's {@code pack.mcmeta} from the era table (docs/decisions/0017). */
     @Nested
     public abstract PackMetaSpec getPackMeta();

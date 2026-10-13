@@ -57,7 +57,7 @@ final class FlexibleSelfTest {
                 failing.add(c.id());
             }
         });
-        that(failing.equals(Set.of("P1.split", "I1", "R0", "R3", "L1", "PR1")),
+        that(failing.equals(Set.of("P1.split", "I1", "R0", "R3", "L1", "PR1", "B1")),
                 "checks:only silent breakage fails by default (a split package, an integration leak, an unreal claim, metadata that refuses "
                         + "a claimed version, an unresolved reference, a presentation that draws nothing): " + failing);
         that(Checks.TABLE.get("P3").def() == Checks.Level.WARN && Checks.TABLE.get("P1").def() == Checks.Level.WARN

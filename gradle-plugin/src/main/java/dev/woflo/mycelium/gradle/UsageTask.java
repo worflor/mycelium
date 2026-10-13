@@ -102,8 +102,13 @@ public abstract class UsageTask extends DefaultTask {
             }
             String needle = getNamespace().get() + "." + entry.relativePackage();
             int files = 0;
+            // a contract is also used through the bridge that implements its port (decision 0016)
+            List<String> needles = new ArrayList<>(List.of(needle));
+            for (String slug : entry.bridges()) {
+                needles.add(getNamespace().get() + ".bridges." + slug.replace('-', '_'));
+            }
             for (String t : texts) {
-                if (t.contains(needle)) {
+                if (needles.stream().anyMatch(t::contains)) {
                     files++;
                 }
             }

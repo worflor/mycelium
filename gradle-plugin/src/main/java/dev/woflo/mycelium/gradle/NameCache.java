@@ -37,6 +37,11 @@ final class NameCache {
         this.offline = offline;
     }
 
+    /** The cache directory: what is derived from the pinned files (a game opened into jars) is kept beside them. */
+    Path dir() {
+        return dir;
+    }
+
     /** The cached file for {@code input}, fetched first when absent. Verified against the pin either way. */
     Path get(NameData.Input input) throws IOException {
         Path file = dir.resolve(input.sha256());
