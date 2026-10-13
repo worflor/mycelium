@@ -3,7 +3,7 @@
 ## 2026-10-13 - state.lifecycle@1: the lifecycle bridge, and bridges that split by loader
 
 `bridges/lifecycle` is the native half of the Threshold: `PlayerLifecycle`, a `LifecyclePort` that turns Fabric's, NeoForge's and Forge's events
-into the contract's crossings (decision 0013, "The bridge"; decision 0016, "Loader halves").
+into the contract's crossings (decision 0013, "The bridge"; decision 0016, "Loader halves"). Somnium adopted it the same day (its session-state leaks are fixed on it), and the bridge's conformance cases and nine game tests pass on Fabric, NeoForge and Forge, 26.3 and 1.21.1: what the game taught is in decision 0013, "The bridge, as built".
 
 - **The port** (additive in `@1`, SPEC section 5): `LifecyclePort<P, S>` gives a mod its registry, a `HostStore` for players and one for the server,
   `current(player)` (a `HostRef` while that object is the host's current one), `fire` and `cross` for its own transitions, and `write`, `materialize`

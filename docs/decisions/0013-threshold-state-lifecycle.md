@@ -110,6 +110,31 @@ is normative.
   built, so a missing policy is an exception naming the slot and the transition at start-up and in the mod's own tests.
   A Gradle task that runs it on a consumer's declarations waits for a consumer that needs it at build time.
 
+## The bridge, as built (Somnium, 2026-10-13)
+
+`bridges/lifecycle` implements `LifecyclePort` (SPEC section 5) on Minecraft 1.21 to 1.21.1 and 26.3 on, for Fabric, NeoForge and
+Forge; decision 0016 ("Loader halves") says how a bridge is split by loader. Somnium adopted it (`docs/design/the-threshold-in-somnium.md` there)
+and nine game tests (the conformance cases among them) pass on all six targets (Fabric, NeoForge and Forge on 1.21.1 and 26.3). What the game
+taught, that the model could not:
+
+- **Minecraft has no player clone.** A death and the End both go through the respawn copy, so `mycelium:clone` is never fired for a player.
+- **A respawn is one event on every loader** (the copy from the old player), but the logout is not one: Fabric's `DISCONNECT` is the connection's, the
+  game's `PlayerList.remove` is the list's. The bridge hears the list's (Fabric `ServerPlayerEvents.LEAVE`, the loaders' logout events), in
+  the phase after a mod's own, so a mod can act on a player in its own handler before the crossing drops their values.
+- **A session slot's end cannot clean the world.** The lifecycle drops a value; it does not know that the value is a bunch of display entities. Somnium
+  calls a release in its own logout and stop handlers, before the bridge's. An end observer on a session slot (run just before the drop, with
+  the value) would take those hooks out of every consumer. Not built; the first thing the next consumer should ask for.
+- **Mock players differ by version.** On 26.x the game test's mock player is placed in the player list and so is a host; on 1.21.1 it is not. A mod
+  whose tests use mock players keeps a value for an object the game never placed weakly by the object (Somnium's `Held`), which is also where a
+  write that arrives after the logout crossing lands (the game awards a stat as it removes a player), so nothing outlives the object.
+- **The saved data lives in a different place.** The overworld's data folder is the world's on 1.21 and the dimension's (`dimensions/minecraft/overworld/data`,
+  under the namespace folder `mycelium`) on 26.x; the conformance case looks through the world folder.
+- **A scheduled task that holds a ref reaches nothing after a respawn.** Somnium's `Fx.later(ticks, owner, beat)` is that case, driven in a game test (`threshold_delayed_beats`)
+  with a player who stays, one who leaves and one who dies.
+
+Not run in a game: a clone, a real client's disconnect, a real server stop (the cases drive `PlayerList.remove` and the bridge's stop), the
+versions between 1.21.1 and 26.3 (their rows say `none`).
+
 ## Evidence
 
 - `bash run-contracts.sh state-lifecycle`: the reference clean, every entry of the matrix caught for its own label (the
