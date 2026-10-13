@@ -34,7 +34,9 @@ public record Diagnostic(Kind kind, String where, String message, List<String> l
         /** The target Minecraft version has no presentation mechanism. */
         NO_REALIZATION,
         /** A model reference collides with the model the target writes for the item itself. */
-        MODEL_CLASH
+        MODEL_CLASH,
+        /** A display context rule that is malformed, or names a model the program never draws. */
+        CONTEXT
     }
 
     public Diagnostic {

@@ -13,6 +13,7 @@ import mycelium.item_presentation.v1.model.Case;
 import mycelium.item_presentation.v1.model.Compilation;
 import mycelium.item_presentation.v1.model.ComponentCatalog;
 import mycelium.item_presentation.v1.model.Condition;
+import mycelium.item_presentation.v1.model.Context;
 import mycelium.item_presentation.v1.model.Diagnostic;
 import mycelium.item_presentation.v1.model.Domain;
 import mycelium.item_presentation.v1.model.Evaluator;
@@ -70,6 +71,8 @@ public final class SigilContractTests {
         realization();
         wellFormed();
         adapter();
+        scalars();
+        contexts();
         tool();
         properties();
         return c;
@@ -569,6 +572,122 @@ public final class SigilContractTests {
         ok(plain.isBase() && plain.inDomain(), "S2:carrier-view-agrees", () -> "a snapshot carrying nothing read as " + plain);
     }
 
+    // --- a scalar component, read with no field ------------------------------------------------------------------
+
+    /** A component that is one string (Rosetta's {@code withoutDefault}) is read with no field, and held to its kind. */
+    private void scalars() {
+        ComponentDefinition<String> worn = ComponentDefinition.withoutDefault(ComponentId.of("example:worn"), ComponentCodec.STRING);
+        ComponentRegistry registry = ComponentRegistry.builder().register(worn).build();
+        Program p = Programs.mini("example:spool", "example:item/spool_base",
+                "\"part\": {\"component\": \"example:worn\", \"domain\": {\"enum\": [\"spool\", \"thread\", \"thread_end\"]}}",
+                "{\"when\": {\"part\": \"thread\"}, \"model\": \"example:item/thread\"},"
+                        + "{\"when\": {\"part\": \"thread_end\"}, \"model\": \"example:item/thread_end\"}");
+        Compilation.Compiled done = compiled(p, lockFor(p), MODERN, "scalar");
+        if (done == null) {
+            return;
+        }
+        for (String part : new String[] {"spool", "thread", "thread_end"}) {
+            CarrierSnapshot snapshot = CarrierSnapshot.builder().with(worn, part).build();
+            Selection sel = done.plan().select(new CarrierView(snapshot, registry, catalog));
+            Map<String, Object> tuple = new LinkedHashMap<>();
+            tuple.put("part", part);
+            String expected = Evaluator.evaluate(p, tuple);
+            ok(sel.model().equals(expected) && sel.inDomain(), "S2:carrier-view-agrees",
+                    () -> "a scalar " + part + " read from a carrier snapshot drew " + sel + ", not " + expected);
+        }
+        Selection plain = done.plan().select(new CarrierView(CarrierSnapshot.empty(), registry, catalog));
+        ok(plain.isBase() && plain.inDomain(), "S1:absent-component-reads-default", () -> "a stack without the scalar read as " + plain);
+        Selection stray = done.plan().select(new CarrierView(CarrierSnapshot.builder().with(worn, "band").build(), registry, catalog));
+        ok(stray.isBase() && !stray.inDomain(), "S1:out-of-domain-draws-base", () -> "a scalar outside its domain read as " + stray);
+
+        expectRejected(Programs.mini("example:probe", "example:item/probe",
+                "\"x\": {\"component\": \"example:worn\", \"domain\": {\"int\": [0, 2]}}", "{\"when\": {\"x\": 1}, \"model\": \"example:item/a\"}"),
+                Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
+        expectRejected(Programs.mini("example:probe", "example:item/probe",
+                "\"x\": {\"component\": \"example:worn\", \"field\": \"f\", \"domain\": {\"enum\": [\"a\"]}}", "{\"when\": {\"x\": \"a\"}, \"model\": \"example:item/a\"}"),
+                Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
+        expectRejected(Programs.mini("example:probe", "example:item/probe",
+                "\"x\": {\"component\": \"example:tool_state\", \"domain\": \"bool\"}", "{\"when\": {\"x\": true}, \"model\": \"example:item/a\"}"),
+                Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
+        // the catalog is held to the registry's codec: a scalar of another kind, or a scalar listed as a record
+        ComponentCatalog honest = ((Result.Ok<ComponentCatalog>) ComponentCatalog.parse(
+                "{\"schema\": 1, \"components\": {\"example:worn\": {\"networkSynced\": true, \"value\": \"string\"}}}")).value();
+        ok(honest.disagreements(registry).isEmpty(), "S5:catalog-agrees-with-registry", () -> "an honest scalar catalog disagrees: " + honest.disagreements(registry));
+        ComponentCatalog wrong = ((Result.Ok<ComponentCatalog>) ComponentCatalog.parse(
+                "{\"schema\": 1, \"components\": {\"example:worn\": {\"networkSynced\": true, \"value\": \"int\"}}}")).value();
+        ok(wrong.disagreements(registry).size() == 1, "S5:catalog-agrees-with-registry", () -> "a scalar of the wrong kind gave " + wrong.disagreements(registry));
+        ComponentCatalog asRecord = ((Result.Ok<ComponentCatalog>) ComponentCatalog.parse(
+                "{\"schema\": 1, \"components\": {\"example:worn\": {\"networkSynced\": true, \"fields\": {\"slot\": \"string\"}}}}")).value();
+        ok(!asRecord.disagreements(registry).isEmpty(), "S5:catalog-agrees-with-registry", () -> "a scalar listed with fields gave none");
+    }
+
+    // --- display contexts (S8) -------------------------------------------------------------------------------------
+
+    /**
+     * A program with display context rules (the panel: lit in the hand, flat in the inventory, a first-person knot). The
+     * item definition draws the rule's model in the contexts it names and the selected model elsewhere, in every display
+     * context; the item model with overrides has no contexts and draws the selected model; a rule for a model the program
+     * never draws is refused.
+     */
+    private void contexts() {
+        String inputs = "\"up\": {\"component\": \"minecraft:glider\", \"domain\": \"present\"}";
+        String cases = "{\"when\": {\"up\": true}, \"model\": \"example:item/panel_knot\"}";
+        String first = "{\"only\": [\"firstperson_righthand\", \"firstperson_lefthand\"], \"model\": \"example:item/panel_knot\", \"draw\": \"example:item/panel_knot_first\"}";
+        String lit = "{\"except\": [\"gui\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/panel_lit\"}";
+        Program p = panel(inputs, cases, first + "," + lit);
+        Compilation.Compiled modern = compiled(p, lockFor(p), MODERN, "contexts");
+        Compilation.Compiled legacy = compiled(p, lockFor(p), LEGACY, "contexts");
+        if (modern == null || legacy == null) {
+            return;
+        }
+        String definition = modern.artefacts().get(Layout.definition(p.item()));
+        String model = legacy.artefacts().get(Layout.model(p.item()));
+        for (Map<String, Object> tuple : Evaluator.tuples(p.pruned().inputs())) {
+            String selected = Evaluator.evaluate(p, tuple);
+            Selector selector = modern.plan().selectorOf(modern.plan().select(tuple));
+            for (String context : Context.NAMES) {
+                String expected = Evaluator.draw(p, selected, context);
+                String drawn = Simulators.modern(definition, selector, context);
+                ok(expected.equals(drawn), "S8:definition-draws-context-rules",
+                        () -> tuple + " in " + context + ": the rules draw " + expected + ", the item definition " + drawn);
+            }
+            String legacyDrawn = Simulators.legacy(model, legacy.plan().selectorOf(legacy.plan().select(tuple)));
+            ok(selected.equals(legacyDrawn), "S8:legacy-ignores-contexts", () -> tuple + ": the item model draws " + legacyDrawn + ", not " + selected);
+        }
+        ok(Evaluator.draw(p, "example:item/panel_flat", "gui").equals("example:item/panel_flat")
+                        && Evaluator.draw(p, "example:item/panel_flat", "ground").equals("example:item/panel_lit")
+                        && Evaluator.draw(p, "example:item/panel_knot", "firstperson_lefthand").equals("example:item/panel_knot_first")
+                        && Evaluator.draw(p, "example:item/panel_knot", "head").equals("example:item/panel_knot"),
+                "S8:rules-mean-only-and-except", () -> "the oracle misreads only/except");
+
+        // the rules survive the plan resource, and a bad rule is refused by kind
+        Result<Plan> reread = ReferencePlan.parse(modern.artefacts().get(Layout.plan(p.item())));
+        ok(reread instanceof Result.Ok<Plan> good && good.value().program().contexts().equals(p.pruned().contexts()), "S8:plan-keeps-rules",
+                () -> "the plan resource lost the rules: " + reread);
+        Program stray = panel(inputs, cases, "{\"only\": [\"gui\"], \"model\": \"example:item/never_drawn\", \"draw\": \"example:item/a\"}");
+        Compilation refused = compiler.compile(stray, lockFor(stray), catalog, MODERN);
+        ok(refused instanceof Compilation.Rejected r && r.diagnostics().stream().anyMatch(d -> d.kind() == Diagnostic.Kind.CONTEXT), "S8:rule-for-undrawn-model-rejected",
+                () -> "a rule for a model the program never draws gave " + refused);
+        ok(Program.parse(panelText(inputs, cases, "{\"only\": [\"gui\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/a\"},"
+                + "{\"except\": [\"gui\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/b\"}")) instanceof Result.Failed,
+                "S8:one-rule-per-model", () -> "two rules for one model were accepted");
+        ok(Program.parse(panelText(inputs, cases, "{\"only\": [\"first_person\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/a\"}")) instanceof Result.Failed,
+                "S8:unknown-context-rejected", () -> "a misspelt display context was accepted");
+        // the rules are in no order: written the other way round they compile to the same bytes
+        Program turned = panel(inputs, cases, lit + "," + first);
+        Compilation.Compiled again = compiled(turned, lockFor(turned), MODERN, "contexts-turned");
+        ok(again != null && again.artefacts().equals(modern.artefacts()), "S6:declaration-order-independent", () -> "rules written in another order compiled to other bytes");
+    }
+
+    private static Program panel(String inputs, String cases, String rules) {
+        return Programs.parse(panelText(inputs, cases, rules));
+    }
+
+    private static String panelText(String inputs, String cases, String rules) {
+        return "{\"item\": \"example:panel\", \"base\": \"example:item/panel_flat\", \"inputs\": {" + inputs + "}, \"cases\": [" + cases
+                + "], \"contexts\": [" + rules + "]}";
+    }
+
     // --- the build tool, over text -----------------------------------------------------------------------------------
 
     private void tool() {
@@ -589,7 +708,7 @@ public final class SigilContractTests {
             for (String[] target : new String[][] {{"1.21.4", "item-definition"}, {"1.20.1", "model-overrides"}}) {
                 Map<?, ?> built = report(SigilTool.compile(target[0], target[1], programs, Programs.CATALOG_JSON, lock));
                 Map<?, ?> files = (Map<?, ?>) built.get("files");
-                ok(Boolean.TRUE.equals(built.get("ok")) && files.size() == 4, "T1:tool-compiles", () -> target[1] + ": " + built);
+                ok(Boolean.TRUE.equals(built.get("ok")) && files.size() == 5 && files.containsKey(Layout.catalog()), "T1:tool-compiles", () -> target[1] + ": " + built);
                 String repeat = SigilTool.compile(target[0], target[1], programs, Programs.CATALOG_JSON, lock);
                 ok(repeat.equals(SigilTool.compile(target[0], target[1], programs, Programs.CATALOG_JSON, lock)), "T1:tool-is-deterministic", () -> "two runs differ");
             }

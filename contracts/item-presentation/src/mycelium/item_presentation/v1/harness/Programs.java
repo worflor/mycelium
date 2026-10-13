@@ -23,6 +23,7 @@ final class Programs {
             + "\"example:tool_state\": {\"networkSynced\": true, \"fields\": {\"seams\": \"int\", \"cracks\": \"int\", \"broken\": \"bool\"}},"
             + "\"example:server_state\": {\"networkSynced\": false, \"fields\": {\"deadline\": \"int\"}},"
             + "\"example:spool\": {\"networkSynced\": true, \"fields\": {\"thread\": \"string\", \"tension\": \"int\"}},"
+            + "\"example:worn\": {\"networkSynced\": true, \"value\": \"string\"},"
             + "\"minecraft:glider\": {\"networkSynced\": true, \"unit\": true}}}";
 
     static ComponentCatalog catalog() {

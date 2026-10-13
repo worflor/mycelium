@@ -55,6 +55,9 @@ public final class SigilTool {
                 report.item(e.getKey(), done.plan());
             }
         }
+        if (report.ok() && !files.isEmpty()) {
+            files.put(Layout.catalog(), loaded.catalog.toJson());
+        }
         return report.write(minecraft, realization, report.ok() ? files : null);
     }
 

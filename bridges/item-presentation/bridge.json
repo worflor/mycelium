@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "item.presentation",
+  "contract": "item.presentation@1",
+  "port": "StackPresenter",
+  "implementation": "ItemPresenter",
+  "package": "mycelium.bridges.item_presentation",
+  "divide": "item.presentation",
+  "writtenIn": ["mojang", "unobfuscated"],
+  "what": "Minecraft's custom model data as the selector of an item.presentation@1 StackPresenter: from 1.21.4 the first string of the minecraft:custom_model_data record, which the generated item definition selects on (item-definition); before it the locked number, which the generated item model's overrides test, in the stack's root tag before 1.20.5 and in the component of that name from it (model-overrides). It writes the selector onto a stack and into the raw item data a display entity is built from, and loads the generated plan. Which model a stack draws is the plan's.",
+  "variants": {
+    "item-definition": {},
+    "model-overrides": {
+      "overlays": [
+        {
+          "name": "1.20.5",
+          "from": "1.20.5",
+          "to": "1.21.3",
+          "why": "a stack's state became components: custom model data is the component minecraft:custom_model_data, a record of one number, and raw item data keeps it under components"
+        }
+      ]
+    }
+  }
+}

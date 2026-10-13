@@ -25,35 +25,55 @@ final class Simulators {
     private Simulators() {
     }
 
-    /** The model an item definition draws for a stack carrying this selector. */
+    /** The model an item definition draws for a stack carrying this selector, in no particular display context. */
     static String modern(String json, Selector selector) {
+        return modern(json, selector, "none");
+    }
+
+    /**
+     * The model an item definition draws for a stack carrying this selector, shown in this item display context: a
+     * {@code select} on {@code custom_model_data} string 0 chooses by string equality (the fallback also for a stack with
+     * no string), a {@code select} on {@code display_context} by the context's name, and a {@code model} is the leaf.
+     */
+    static String modern(String json, Selector selector, String context) {
         Map<?, ?> root = object(Json.parse(json), "the item definition");
-        Map<?, ?> model = object(root.get("model"), "model");
-        if (!"minecraft:model".equals(model.get("type")) && !"minecraft:select".equals(model.get("type"))) {
-            throw new IllegalStateException("the root model is neither minecraft:model nor minecraft:select");
-        }
-        if ("minecraft:model".equals(model.get("type"))) {
+        return resolve(object(root.get("model"), "model"), selector instanceof Selector.Key k ? k.key() : null, context);
+    }
+
+    private static String resolve(Map<?, ?> model, String string, String context) {
+        Object type = model.get("type");
+        if ("minecraft:model".equals(type)) {
             return (String) model.get("model");
         }
-        if (!"minecraft:custom_model_data".equals(model.get("property")) || !Long.valueOf(0).equals(model.get("index"))) {
-            throw new IllegalStateException("the select is not on custom_model_data string index 0");
+        if (!"minecraft:select".equals(type)) {
+            throw new IllegalStateException("a model is neither minecraft:model nor minecraft:select: " + type);
         }
-        String string = selector instanceof Selector.Key k ? k.key() : null;
         Object cases = model.get("cases");
         if (!(cases instanceof List<?> list)) {
             throw new IllegalStateException("the select has no cases array");
         }
-        if (string != null) {
+        String chosen;
+        if ("minecraft:custom_model_data".equals(model.get("property"))) {
+            if (!Long.valueOf(0).equals(model.get("index"))) {
+                throw new IllegalStateException("the select is not on custom_model_data string index 0");
+            }
+            chosen = string;
+        } else if ("minecraft:display_context".equals(model.get("property"))) {
+            chosen = context;
+        } else {
+            throw new IllegalStateException("the select is on " + model.get("property") + ", which the era does not draw by here");
+        }
+        if (chosen != null) {
             for (Object c : list) {
                 Map<?, ?> one = object(c, "a case");
                 Object when = one.get("when");
-                boolean hit = when instanceof String ? when.equals(string) : when instanceof List<?> w && w.contains(string);
+                boolean hit = when instanceof String ? when.equals(chosen) : when instanceof List<?> w && w.contains(chosen);
                 if (hit) {
-                    return (String) object(one.get("model"), "a case's model").get("model");
+                    return resolve(object(one.get("model"), "a case's model"), string, context);
                 }
             }
         }
-        return (String) object(model.get("fallback"), "fallback").get("model");
+        return resolve(object(model.get("fallback"), "fallback"), string, context);
     }
 
     /** The model an item model with overrides draws for a stack carrying this selector. */

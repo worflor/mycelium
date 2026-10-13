@@ -36,6 +36,15 @@ public final class Evaluator {
         return program.base();
     }
 
+    /**
+     * The model an item definition draws for a stack whose selection is {@code model}, in the item display {@code context}:
+     * the model itself, unless a display context rule of the program says otherwise. The oracle for law S8.
+     */
+    public static String draw(Program program, String model, String context) {
+        Context rule = program.contextFor(model);
+        return rule == null ? model : rule.drawn(model, context);
+    }
+
     /** How many tuples these inputs span: the product of their domain sizes, saturating at {@code Long.MAX_VALUE}. */
     public static long product(List<Input> inputs) {
         long p = 1;

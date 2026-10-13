@@ -72,6 +72,17 @@ public class ReferenceSigil implements SigilCompiler {
                         + ". Give the program's models other names"));
             }
         }
+        List<String> drawable = new ArrayList<>(keys);
+        drawable.add(program.base());
+        for (Context rule : program.contexts()) {
+            if (!drawable.contains(rule.model())) {
+                found.add(new Diagnostic(Diagnostic.Kind.CONTEXT, "contexts", "the rule for " + rule.model()
+                        + " names a model the program never draws (it draws " + drawable + ")"));
+            }
+        }
+        if (!found.isEmpty()) {
+            return new Compilation.Rejected(found);
+        }
         Map<String, Integer> codes = assignCodes(item, new ArrayList<>(keys), lock, found);
         if (!found.isEmpty() || codes == null) {
             return new Compilation.Rejected(found);
@@ -79,7 +90,7 @@ public class ReferenceSigil implements SigilCompiler {
         Plan plan = newPlan(pruned, target.realization(), codes);
         Map<String, String> artefacts = new TreeMap<>();
         if (target.realization() == Realization.ITEM_DEFINITION) {
-            artefacts.put(Layout.definition(item), render(itemDefinition(program.base(), new ArrayList<>(keys))));
+            artefacts.put(Layout.definition(item), render(itemDefinition(program.base(), new ArrayList<>(keys), program.contexts())));
         } else {
             artefacts.put(Layout.model(item), render(modelOverrides(program.base(), codes, lock.entries(item))));
         }
@@ -112,6 +123,16 @@ public class ReferenceSigil implements SigilCompiler {
             } else if (component.unit()) {
                 out.add(new Diagnostic(Diagnostic.Kind.TYPE, at, component.id() + " is a unit component: it has no field '"
                         + input.field() + "' (use a 'present' domain)"));
+            } else if (input.field().isEmpty()) {
+                if (component.scalar() == null) {
+                    out.add(new Diagnostic(Diagnostic.Kind.TYPE, at, component.id() + " is a record: the input needs the path of the field it reads"));
+                } else if (component.scalar() != input.domain().kind()) {
+                    out.add(new Diagnostic(Diagnostic.Kind.TYPE, at, component.id() + " is a scalar " + component.scalar().id()
+                            + ", and the input's domain is " + input.domain().kind().id()));
+                }
+            } else if (component.scalar() != null) {
+                out.add(new Diagnostic(Diagnostic.Kind.TYPE, at, component.id() + " is a scalar: it has no field '" + input.field()
+                        + "' (leave the field out)"));
             } else {
                 FieldKind kind = component.fields().get(input.field());
                 if (kind == null) {
@@ -191,10 +212,10 @@ public class ReferenceSigil implements SigilCompiler {
     // --- the artefacts ---------------------------------------------------------------------------------------------
 
     /** {@code items/<id>.json}: a select on the first custom model data string, a case per selection, the base as fallback. */
-    protected Map<String, Object> itemDefinition(String base, List<String> keys) {
+    protected Map<String, Object> itemDefinition(String base, List<String> keys, List<Context> contexts) {
         Map<String, Object> model;
         if (keys.isEmpty()) {
-            model = plainModel(base);
+            model = drawn(base, contexts);
         } else {
             model = new LinkedHashMap<>();
             model.put("type", "minecraft:select");
@@ -204,15 +225,39 @@ public class ReferenceSigil implements SigilCompiler {
             for (String key : keys) {
                 Map<String, Object> one = new LinkedHashMap<>();
                 one.put("when", key);
-                one.put("model", plainModel(key));
+                one.put("model", drawn(key, contexts));
                 cases.add(one);
             }
             model.put("cases", cases);
-            model.put("fallback", plainModel(base));
+            model.put("fallback", drawn(base, contexts));
         }
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("model", model);
         return root;
+    }
+
+    /** A model, or the select on the display context the program's rule for it makes (S8). */
+    protected Map<String, Object> drawn(String ref, List<Context> contexts) {
+        Context rule = null;
+        for (Context c : contexts) {
+            if (c.model().equals(ref)) {
+                rule = c;
+            }
+        }
+        if (rule == null) {
+            return plainModel(ref);
+        }
+        Map<String, Object> select = new LinkedHashMap<>();
+        select.put("type", "minecraft:select");
+        select.put("property", "minecraft:display_context");
+        Map<String, Object> one = new LinkedHashMap<>();
+        one.put("when", new ArrayList<Object>(rule.names()));
+        one.put("model", plainModel(rule.except() ? rule.model() : rule.draw()));
+        List<Object> cases = new ArrayList<>();
+        cases.add(one);
+        select.put("cases", cases);
+        select.put("fallback", plainModel(rule.except() ? rule.draw() : rule.model()));
+        return select;
     }
 
     private static Map<String, Object> plainModel(String ref) {

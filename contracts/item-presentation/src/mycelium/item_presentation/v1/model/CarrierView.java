@@ -47,13 +47,13 @@ public final class CarrierView implements ComponentView {
             return Optional.empty();
         }
         TagNode node = definition.encodeValue(value);
-        for (String step : fieldPath.split("\\.")) {
+        for (String step : fieldPath.isEmpty() ? new String[0] : fieldPath.split("\\.")) {
             if (!(node instanceof TagNode.TagCompound) || !((TagNode.TagCompound) node).has(step)) {
                 return Optional.empty();
             }
             node = ((TagNode.TagCompound) node).get(step);
         }
-        FieldKind kind = component.fields().get(fieldPath);
+        FieldKind kind = fieldPath.isEmpty() ? component.scalar() : component.fields().get(fieldPath);
         if (kind == null) {
             return Optional.empty();
         }

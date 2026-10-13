@@ -20,6 +20,11 @@ public final class Layout {
         return Ids.namespace(item) + ":item/" + Ids.path(item);
     }
 
+    /** The component catalog the plans were checked against, which an adapter reads its stacks through. */
+    public static String catalog() {
+        return "META-INF/mycelium/presentation/components.json";
+    }
+
     /** The plan a platform adapter reads at run time. */
     public static String plan(String item) {
         return "META-INF/mycelium/presentation/" + Ids.namespace(item) + "/" + Ids.path(item) + ".plan.json";

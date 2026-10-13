@@ -13,9 +13,10 @@ import java.util.TreeSet;
 /**
  * A presentation program, declared once per item: named inputs over the fields of components, ordered cases, and the
  * model drawn when no case applies. The first case whose guard holds wins. Inputs are held sorted by name, so the
- * order a program lists them in changes nothing it compiles to.
+ * order a program lists them in changes nothing it compiles to. {@code contexts} are the optional display context rules
+ * ({@link Context}): where the item definition draws another model than the one a stack selected; held sorted by model.
  */
-public record Program(String item, String base, List<Input> inputs, List<Case> cases) {
+public record Program(String item, String base, List<Input> inputs, List<Case> cases, List<Context> contexts) {
     public Program {
         Objects.requireNonNull(item, "item");
         Objects.requireNonNull(base, "base");
@@ -23,6 +24,24 @@ public record Program(String item, String base, List<Input> inputs, List<Case> c
         sorted.sort(Comparator.comparing(Input::name));
         inputs = Collections.unmodifiableList(sorted);
         cases = Collections.unmodifiableList(new ArrayList<>(cases));
+        List<Context> rules = new ArrayList<>(contexts);
+        rules.sort(Comparator.comparing(Context::model));
+        contexts = Collections.unmodifiableList(rules);
+    }
+
+    /** A program with no display context rules. */
+    public Program(String item, String base, List<Input> inputs, List<Case> cases) {
+        this(item, base, inputs, cases, Collections.<Context>emptyList());
+    }
+
+    /** The rule for a model, or {@code null}. */
+    public Context contextFor(String model) {
+        for (Context c : contexts) {
+            if (c.model().equals(model)) {
+                return c;
+            }
+        }
+        return null;
     }
 
     /** The input called {@code name}, or {@code null}. */
@@ -63,7 +82,7 @@ public record Program(String item, String base, List<Input> inputs, List<Case> c
 
     /** The same program with the inputs no case reads dropped. */
     public Program pruned() {
-        return new Program(item, base, readInputs(), cases);
+        return new Program(item, base, readInputs(), cases, contexts);
     }
 
     // --- checking ----------------------------------------------------------------------------------------------------
@@ -104,6 +123,16 @@ public record Program(String item, String base, List<Input> inputs, List<Case> c
                 out.add(new Diagnostic(Diagnostic.Kind.TEMPLATE, at + ".model", template));
             }
         }
+        List<String> ruled = new ArrayList<>();
+        for (int n = 0; n < contexts.size(); n++) {
+            Context rule = contexts.get(n);
+            String at = "contexts[" + n + "]";
+            out.addAll(rule.check(at));
+            if (ruled.contains(rule.model())) {
+                out.add(new Diagnostic(Diagnostic.Kind.CONTEXT, at, "two rules for " + rule.model() + ": a model has at most one"));
+            }
+            ruled.add(rule.model());
+        }
         return out;
     }
 
@@ -138,6 +167,17 @@ public record Program(String item, String base, List<Input> inputs, List<Case> c
             cs.add(one);
         }
         root.put("cases", cs);
+        if (!contexts.isEmpty()) {
+            List<Object> rules = new ArrayList<>();
+            for (Context c : contexts) {
+                Map<String, Object> one = new LinkedHashMap<>();
+                one.put(c.except() ? "except" : "only", new ArrayList<Object>(c.names()));
+                one.put("model", c.model());
+                one.put("draw", c.draw());
+                rules.add(one);
+            }
+            root.put("contexts", rules);
+        }
         return root;
     }
 
@@ -171,7 +211,7 @@ public record Program(String item, String base, List<Input> inputs, List<Case> c
             return null;
         }
         int before = out.size();
-        unknown(root, "program", Arrays.asList("item", "base", "inputs", "cases"), out);
+        unknown(root, "program", Arrays.asList("item", "base", "inputs", "cases", "contexts"), out);
         String item = text(root, "item", "item", out);
         String base = text(root, "base", "base", out);
         List<Input> inputs = new ArrayList<>();
@@ -198,10 +238,23 @@ public record Program(String item, String base, List<Input> inputs, List<Case> c
                 }
             }
         }
+        List<Context> contexts = new ArrayList<>();
+        Object ctx = root.get("contexts");
+        if (ctx != null && !(ctx instanceof List<?>)) {
+            out.add(new Diagnostic(Diagnostic.Kind.SCHEMA, "contexts", "\"contexts\" is an array of display context rules"));
+        } else if (ctx != null) {
+            List<?> list = (List<?>) ctx;
+            for (int n = 0; n < list.size(); n++) {
+                Context c = readContext(list.get(n), "contexts[" + n + "]", out);
+                if (c != null) {
+                    contexts.add(c);
+                }
+            }
+        }
         if (out.size() > before || item == null || base == null) {
             return null;
         }
-        return new Program(item, base, inputs, cases);
+        return new Program(item, base, inputs, cases, contexts);
     }
 
     private static Input readInput(String name, Object json, List<Diagnostic> out) {
@@ -233,6 +286,39 @@ public record Program(String item, String base, List<Input> inputs, List<Case> c
                     at, e.getMessage()));
             return null;
         }
+    }
+
+    private static Context readContext(Object json, String at, List<Diagnostic> out) {
+        if (!(json instanceof Map<?, ?> m)) {
+            out.add(new Diagnostic(Diagnostic.Kind.SCHEMA, at, "a display context rule is an object: only or except, model, draw"));
+            return null;
+        }
+        int before = out.size();
+        unknown(m, at, Arrays.asList("only", "except", "model", "draw"), out);
+        String model = text(m, "model", at + ".model", out);
+        String draw = text(m, "draw", at + ".draw", out);
+        if (m.containsKey("only") == m.containsKey("except")) {
+            out.add(new Diagnostic(Diagnostic.Kind.SCHEMA, at, "a rule lists the contexts it applies in (\"only\") or the ones it does not (\"except\"), one of them"));
+            return null;
+        }
+        boolean except = m.containsKey("except");
+        Object listed = m.get(except ? "except" : "only");
+        List<String> names = new ArrayList<>();
+        if (!(listed instanceof List<?> l)) {
+            out.add(new Diagnostic(Diagnostic.Kind.SCHEMA, at, "\"" + (except ? "except" : "only") + "\" is an array of display context names"));
+            return null;
+        }
+        for (Object o : l) {
+            if (!(o instanceof String)) {
+                out.add(new Diagnostic(Diagnostic.Kind.SCHEMA, at, "a display context name is a text"));
+                return null;
+            }
+            names.add((String) o);
+        }
+        if (out.size() > before || model == null || draw == null) {
+            return null;
+        }
+        return new Context(except, names, model, draw);
     }
 
     private static Case readCase(Object json, String at, List<Diagnostic> out) {
