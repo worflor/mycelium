@@ -60,7 +60,8 @@ final class Cmd {
         Tag existing = item.get("components");
         CompoundTag components = existing instanceof CompoundTag c ? c : new CompoundTag();
         if (selector instanceof Selector.Key key) {
-            CompoundTag data = new CompoundTag();
+            // keep what another mod put beside the selector (floats, flags, colors): only the strings are ours
+            CompoundTag data = components.get("minecraft:custom_model_data") instanceof CompoundTag d ? d : new CompoundTag();
             ListTag strings = new ListTag();
             strings.add(StringTag.valueOf(key.key()));
             data.put("strings", strings);
