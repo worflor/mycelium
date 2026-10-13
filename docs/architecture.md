@@ -20,7 +20,7 @@ the machine produced.
 | **Rejection matrix** | One broken implementation per law, ideally the bug a mod really made, and a `NoOp*`. The harness must catch every one for its own label. | `fixtures/` and `harness/` |
 | **Era data** | What changes at which version, as rows the compiler reads. Never numbers in code. | `eras/` (`docs/eras.md`) |
 | **Compilers** | Build-time tasks that import models, generate each target's artefacts, ship the jar. | `gradle-plugin/` (`docs/plugin.md`) |
-| **Gates** | Checks that fail the build: harnesses, purity, era Java, range, linkage, isolation, the repository itself. | the table below |
+| **Gates** | Checks of a mod: harnesses, purity, era Java, range, linkage, isolation, the repository itself. A proof fails the build; a check that explains has a level (`off`, `warn`, `fail`) the mod sets. | the table below, `docs/plugin.md` |
 | **Evidence** | What ran, what was not checked and why, written into the jar. | `META-INF/mycelium/evidence.json` |
 
 A mod that imports nothing still gets the gates and an evidence manifest. A mod that imports one contract carries that
@@ -70,6 +70,15 @@ These are the invariants every change keeps. Each says what keeps it.
 8. **Correct over friendly.** Agents are Mycelium's main users, so precision is a feature: exact ids, strict readers
    that refuse unknown fields, reports that say what they checked, gates that name the break. A convenient default that
    hides a decision is a defect here.
+9. **Offer, don't police** (`docs/decisions/0017-offer-dont-police.md`). Mycelium offers a mod its compiler, its proofs and
+   its data; it does not stand between the mod and its own code. A check fails by default only for silent breakage (a build
+   that would ship something that does not work and say nothing); every other check warns, and every check has a level and
+   per-site allowances the mod sets and the manifest records. Nothing blocks compilation: the proofs (compile alone, the era
+   gates, linkage) are what the build stands on, and the text checks explain them. What the build can derive from the mod's
+   own sources, the era table or Mycelium's own recorded proofs, a mod does not declare, and a declaration remains as an
+   override. This does not weaken principle 8: a default that hides a decision is still a defect, so each derivation and
+   each allowance is written into the evidence. *Kept by `docs/plugin.md`'s check table (every check, its default, what it
+   prevents) and the self-tests that fire each level.*
 
 ## What checks what
 
@@ -77,7 +86,7 @@ These are the invariants every change keeps. Each says what keeps it.
 
 | Gate | What it proves |
 |---|---|
-| `myceliumVerify` | every harness: the reference clean, every matrix entry caught for its label, a `NoOp*` among them |
+| `myceliumVerify` | every harness: the reference clean, every matrix entry caught for its label, a `NoOp*` among them. In a mod, only for a contract whose sources differ from what `contracts/proofs.json` (written by `myceliumRecordProofs`) says Mycelium proved |
 | `myceliumPurity`, `myceliumPureCompile` | the contract models are a pure layer (P1, P3), and compile alone |
 | `myceliumEras` | every harness on every Java an era runs on: stubs, linkage (P2), behaviour |
 | `myceliumRange` | an artifact's claimed Minecraft range against the era table, its proofs and its loader metadata |

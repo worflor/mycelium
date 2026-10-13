@@ -1,6 +1,7 @@
 package dev.woflo.mycelium.gradle;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -114,12 +115,79 @@ public final class Eras {
         }
     }
 
+    /** A pack format as the game's {@code version.json} names it: a major and, from 1.21.9, a minor ({@code 97.1}). */
+    public record Format(int major, int minor) {
+        static Format parse(JsonElement e, String where) {
+            String text = e.getAsString();
+            String[] p = text.split("\\.");
+            try {
+                return new Format(Integer.parseInt(p[0]), p.length > 1 ? Integer.parseInt(p[1]) : 0);
+            } catch (NumberFormatException x) {
+                throw new IllegalStateException(where + ": '" + text + "' is not a pack format (a number, or major.minor)");
+            }
+        }
+
+        @Override
+        public String toString() {
+            return minor == 0 ? String.valueOf(major) : major + "." + minor;
+        }
+    }
+
+    /**
+     * The pack formats a range of versions has (the game's own {@code version.json}, `pack_version`): {@code resource} for
+     * assets, {@code data} for data packs (`null` before 1.13, which has no data packs). {@code source} says where the row was
+     * read: from a real game jar, or from minecraft.wiki's "Pack format" table.
+     */
+    public record PackFormat(String from, String to, Format resource, Format data, String source) {
+        public boolean covers(String minecraft) {
+            return atLeast(minecraft, from) && atMost(minecraft, to);
+        }
+
+        /** From this resource format a pack names the range it reads ({@code min_format}/{@code max_format}); `pack_format` is gone. */
+        static final int RANGE_FORMATS_FROM = 65;
+
+        /** Resource pack formats that begin {@code supported_formats} (1.20.2). */
+        static final int SUPPORTED_FORMATS_FROM = 18;
+
+        /**
+         * The `pack.mcmeta` for a pack holding both assets and data on this version, in the schema the version reads:
+         * <ul>
+         *   <li>before 1.20.2: `pack_format` (the data format when there is one, else the resource format);</li>
+         *   <li>1.20.2 to 1.21.8: `pack_format` plus `supported_formats` [resource, data];</li>
+         *   <li>1.21.9 on: `min_format` and `max_format` (resource and data majors; a major covers its minors), no `pack_format`.</li>
+         * </ul>
+         */
+        public String mcmeta(String description) {
+            int res = resource.major();
+            int dat = data == null ? res : data.major();
+            JsonObject pack = new JsonObject();
+            pack.addProperty("description", description);
+            if (res >= RANGE_FORMATS_FROM) {
+                pack.addProperty("min_format", Math.min(res, dat));
+                pack.addProperty("max_format", Math.max(res, dat));
+            } else {
+                pack.addProperty("pack_format", dat);
+                if (res >= SUPPORTED_FORMATS_FROM) {
+                    JsonArray range = new JsonArray();
+                    range.add(Math.min(res, dat));
+                    range.add(Math.max(res, dat));
+                    pack.add("supported_formats", range);
+                }
+            }
+            JsonObject root = new JsonObject();
+            root.add("pack", pack);
+            return new com.google.gson.GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root) + "\n";
+        }
+    }
+
     private final List<Era> eras;
     private final List<Presentation> presentation;
+    private final List<PackFormat> packFormats;
 
-    private Eras(List<Era> eras, List<Presentation> presentation) {
+    private Eras(List<Era> eras, List<Presentation> presentation, List<PackFormat> packFormats) {
         this.eras = eras;
         this.presentation = presentation;
+        this.packFormats = packFormats;
     }
 
     public static Eras load(File myceliumRoot) {
@@ -145,7 +213,43 @@ public final class Eras {
                     strings(o, "loaders"), names(o, id, where), walls(o, id, where), strings(o, "notes"), since(o),
                     outerJava(o, id, where)));
         }
-        return new Eras(out, presentation(root, where));
+        return new Eras(out, presentation(root, where), packFormats(root, where));
+    }
+
+    private static List<PackFormat> packFormats(JsonObject root, String where) {
+        List<PackFormat> out = new ArrayList<>();
+        if (!root.has("packFormat")) {
+            return out;
+        }
+        for (JsonElement e : root.getAsJsonArray("packFormat")) {
+            JsonObject o = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
+            for (String key : o.keySet()) {
+                if (!List.of("from", "to", "resource", "data", "source").contains(key)) {
+                    throw new IllegalStateException(where + ": a packFormat row has from, to, resource, data and source, not '" + key + "'");
+                }
+            }
+            if (!o.has("from") || !o.has("to") || !o.has("resource") || !o.has("source")) {
+                throw new IllegalStateException(where + ": a packFormat row is {\"from\", \"to\", \"resource\", \"source\"} (and \"data\" from 1.13), not " + e);
+            }
+            out.add(new PackFormat(o.get("from").getAsString(), o.get("to").getAsString(), Format.parse(o.get("resource"), where),
+                    o.has("data") ? Format.parse(o.get("data"), where) : null, o.get("source").getAsString()));
+        }
+        return out;
+    }
+
+    public List<PackFormat> packFormats() {
+        return List.copyOf(packFormats);
+    }
+
+    /** The pack formats of a Minecraft version; a version with none (before resource packs, 1.6.1) is a refusal that says so. */
+    public PackFormat packFormatFor(String minecraft) {
+        for (PackFormat p : packFormats) {
+            if (p.covers(minecraft)) {
+                return p;
+            }
+        }
+        throw new IllegalArgumentException("Mycelium: no packFormat row covers Minecraft '" + minecraft
+                + "' (eras/minecraft.json, \"packFormat\"): resource packs begin at 1.6.1");
     }
 
     private static List<Presentation> presentation(JsonObject root, String where) {

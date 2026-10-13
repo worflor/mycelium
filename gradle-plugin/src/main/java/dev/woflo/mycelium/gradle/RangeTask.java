@@ -8,6 +8,7 @@ import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
@@ -53,6 +54,10 @@ public abstract class RangeTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getResourcesDir();
 
+    /** The mod's check levels and allowances ({@link Checks#decode}): R0 to R3 (docs/plugin.md). */
+    @Input
+    public abstract ListProperty<String> getChecks();
+
     @OutputFile
     public abstract RegularFileProperty getReportFile();
 
@@ -77,17 +82,17 @@ public abstract class RangeTask extends DefaultTask {
         }
         RangeGate.Result result = RangeGate.check(artifact, eras, loaders, real, found, getLinkageDeclared().getOrElse(false));
 
+        Checks.Findings problems = new Checks.Findings(Checks.decode(getChecks().get()));
+        for (String finding : result.findings()) {
+            problems.add(result.checkOf(finding), "*", finding);
+        }
+        result.report().add("checks", problems.toJson());
         File report = getReportFile().get().getAsFile();
         Files.createDirectories(report.toPath().getParent());
         Files.writeString(report.toPath(), new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(result.report()) + "\n",
                 StandardCharsets.UTF_8);
-        if (!result.findings().isEmpty()) {
-            StringBuilder message = new StringBuilder("Mycelium range: " + artifact.id() + " claims " + artifact.from() + " to "
-                    + artifact.to() + " on " + artifact.loader() + ", and " + result.findings().size() + (result.findings().size() == 1
-                    ? " thing does not hold:" : " things do not hold:"));
-            result.findings().forEach(f -> message.append("\n  - ").append(f));
-            throw new GradleException(message.toString());
-        }
+        problems.conclude(getLogger(), artifact.id() + " claims " + artifact.from() + " to " + artifact.to() + " on "
+                + artifact.loader() + ", and " + (problems.failing().size() + problems.warning().size()) + " thing(s) do not hold");
         JsonObject counts = result.report().getAsJsonObject("counts");
         getLogger().lifecycle("Mycelium: " + artifact.id() + " claims " + artifact.from() + " to " + artifact.to() + ": "
                 + counts.get("proven").getAsInt() + " proven, " + counts.get("pending").getAsInt() + " pending, "

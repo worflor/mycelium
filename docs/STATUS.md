@@ -9,6 +9,13 @@ counts are on `README.md`'s status line. History is `CHANGELOG.md`.
 
 ## Not built
 
+- **Overlays inside one jar.** `mycelium { overlays { } }` chooses a resource directory per schema era; the game's own
+  `overlays` in `pack.mcmeta` (one jar serving several pack formats, `supported_formats` ranges across a wall) is not
+  generated. `myceliumPackMeta` writes one target's `pack.mcmeta`.
+- **Range proofs from test runs.** The plugin cannot see which versions a mod's tests ran on, so keystones are still
+  declared; a range with none warns (R1) and its versions stay `interpolated` (decision 0017, item 4).
+- **Pack formats for versions that have no jar here.** The `packFormat` rows marked `wiki` in `eras/minecraft.json` were read
+  from minecraft.wiki's table, not a game jar; the others match the game's own `version.json`.
 - **Incubating a package in the mod that needs it.** A `localContracts` input to the plugin, so a mod can develop a
   package under the same gates in its own repository before it moves here (decision 0015). Until it exists, the package
   is written here, in the same piece of work as the mod's use of it.

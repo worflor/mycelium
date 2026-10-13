@@ -7,10 +7,15 @@ import com.google.gson.JsonParser;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.Optional;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
 
@@ -50,6 +55,23 @@ public abstract class VerifyContractsTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getContracts();
 
+    /**
+     * {@code off} (the verification project, Mycelium's own: every harness runs), {@code auto} (a mod: a contract whose
+     * sources are the ones Mycelium's own gate proved is not run again) or {@code always} ({@code -Pmycelium.verify=always}).
+     */
+    @Input
+    public abstract Property<String> getProofMode();
+
+    /** Mycelium's recorded proofs ({@link Proofs}), when there are any. */
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.NONE)
+    public abstract RegularFileProperty getProofsFile();
+
+    /** The Javas this build's era gates run on: a recorded proof must cover them. */
+    @Input
+    public abstract ListProperty<Integer> getNeededEras();
+
     @OutputDirectory
     public abstract DirectoryProperty getReportDir();
 
@@ -68,6 +90,8 @@ public abstract class VerifyContractsTask extends DefaultTask {
         String javaHome = System.getProperty("java.home");
         File javaBin = new File(javaHome, "bin/java" + (File.separatorChar == '\\' ? ".exe" : ""));
 
+        String proofMode = getProofMode().getOrElse("off");
+        Proofs.Recorded recorded = proofMode.equals("auto") ? Proofs.load(root) : Proofs.Recorded.NONE;
         JsonArray results = new JsonArray();
         List<String> failed = new ArrayList<>();
         for (ContractRegistry.Entry entry : entries) {
@@ -78,6 +102,17 @@ public abstract class VerifyContractsTask extends DefaultTask {
                 r.addProperty("status", "missing");
                 results.add(r);
                 failed.add(entry.id() + " (package missing at " + pkgSrc + ")");
+                continue;
+            }
+            if (proofMode.equals("auto") && Proofs.provenUpstream(root, registry, entry, recorded, getNeededEras().getOrElse(List.of()))) {
+                JsonObject r = new JsonObject();
+                r.addProperty("id", entry.id());
+                r.addProperty("status", "proven-upstream");
+                r.addProperty("fingerprint", recorded.contracts().get(entry.id()));
+                r.addProperty("why", "its sources are the ones Mycelium's own check proved (contracts/proofs.json), on every Java this build"
+                        + " gates; -Pmycelium.verify=always runs the harness here");
+                results.add(r);
+                getLogger().lifecycle("Mycelium: {} proven by Mycelium's own check (same sources); not run again", entry.id());
                 continue;
             }
             Path bundle = reportDir.resolve(entry.slug());
@@ -143,7 +178,7 @@ public abstract class VerifyContractsTask extends DefaultTask {
     }
 
     /** The shared harness (harness/sources.txt) and the package, each file once. */
-    private static List<Path> sources(Path root, Path pkgSrc, List<ContractRegistry.Entry> required) throws IOException {
+    static List<Path> sources(Path root, Path pkgSrc, List<ContractRegistry.Entry> required) throws IOException {
         List<Path> out = new ArrayList<>(Harness.sources(root));
         // the models this contract requires (docs/decisions/0014): their model packages only, never their fixtures or harness
         for (ContractRegistry.Entry r : required) {

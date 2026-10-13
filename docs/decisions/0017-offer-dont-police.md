@@ -40,6 +40,18 @@ still hand-written in every mod though the era table knows it.
 7. **Mycelium's own CI result is not re-run in every mod.** `myceliumVerify` in a mod checks that each imported contract's
    sources are the ones Mycelium proved (by fingerprint); it re-runs a harness only when they differ, or when asked.
 
+## Evidence of the build
+
+Built 2026-10-12 on branch `flexible`. The check table and the options are `docs/plugin.md` (Checks, Declaring once, Generated
+from the era table); the self-tests are `FlexibleSelfTest`; the fixtures are `flexible-consumer` and `defaults-consumer`.
+Decided where this text was silent: the check ids and defaults (`Checks.TABLE`); integration gates are every source outside the
+home that references it, reported rather than refused, unless the mod declares a closed list; range proofs are not derived (the
+plugin cannot see test runs), so a range with no keystone warns and its versions stay interpolated; the contract list is derived
+only in a project with the Java plugin; the recorded proofs are `contracts/proofs.json`, written by `myceliumRecordProofs` in
+this repository's `check`, and cover the Javas the era gates ran on; `artifactJars` defaults to `jar`; the root declares once
+with `myceliumDefaults { }` (`dev.woflo.mycelium.defaults`); and Somnium is the proof consumer (its patch is reported with the
+build). Not built: overlays inside one jar (`docs/STATUS.md`).
+
 ## Consequences
 
 - A mod's buildscripts shrink; the evidence manifest says more (levels, allowances, derived facts).

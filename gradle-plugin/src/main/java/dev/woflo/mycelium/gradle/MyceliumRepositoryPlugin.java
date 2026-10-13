@@ -27,6 +27,16 @@ public final class MyceliumRepositoryPlugin implements Plugin<Project> {
             t.getHarnessResults().set(verify.flatMap(v -> v.getReportDir().file("results.json")));
             t.dependsOn(verify);
         });
+        // After every harness and every era gate held, record what was proved (contracts/proofs.json): a mod's myceliumVerify
+        // takes a contract whose sources are unchanged as proven, and runs a harness only when they differ (docs/decisions/0017).
+        MyceliumExtension ext = project.getExtensions().getByType(MyceliumExtension.class);
+        TaskProvider<ProofRecordTask> proofs = project.getTasks().register("myceliumRecordProofs", ProofRecordTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Records contracts/proofs.json once every harness and every era gate has passed (a mod then need not re-run them).");
+            t.getRoot().set(project.getLayout().getProjectDirectory());
+            t.getEras().set(project.provider(ext::resolvedEras));
+            t.dependsOn(verify, "myceliumEras");
+        });
         project.getTasks().register("myceliumRefreshVersions", RefreshVersionsTask.class, t -> {
             t.setGroup("mycelium");
             t.setDescription("Rewrites eras/versions.json from Mojang's launcher manifest (by hand, when a version ships).");
@@ -38,6 +48,6 @@ public final class MyceliumRepositoryPlugin implements Plugin<Project> {
             t.getRoot().set(project.getLayout().getProjectDirectory());
         });
         project.getTasks().named(LifecycleBasePlugin.CHECK_TASK_NAME, check -> check.dependsOn(
-                repository, "myceliumVerify", "myceliumPurity", "myceliumPureCompile", "myceliumEras"));
+                repository, "myceliumVerify", "myceliumPurity", "myceliumPureCompile", "myceliumEras", proofs));
     }
 }

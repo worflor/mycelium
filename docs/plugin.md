@@ -23,12 +23,35 @@ plugins {
     id("dev.woflo.mycelium")
 }
 
+mycelium {
+    root = rootProject.file("../mycelium")
+    namespace = "com.example.mymod.mycelium"      // artifact-owned prefix (DESIGN §12)
+    minecraft = "1.21.1"                          // the era: its Java, its gate, its evidence (docs/eras.md)
+}
+```
 
-Imported models become the mod's own private code under `namespace`. Two mods that pin different majors carry
-different code and cannot conflict. No shared runtime is introduced.
+That is a whole declaration. The rest is derived, and a declaration overrides what is derived (below). Imported models
+become the mod's own private code under `namespace`. Two mods that pin different majors carry different code and cannot
+conflict. No shared runtime is introduced.
+
+The plugin offers; it does not police (`docs/decisions/0017-offer-dont-police.md`). Every check has a level you can set,
+nothing a text check says keeps your code from compiling, and what the build can find out for itself it does not ask you
+to write down.
+
+### What is derived
+
+| Fact | Derived from | Override |
+|---|---|---|
+| An integration's gates | Every source outside the integration's home package that references the home is a gate, reported in `isolation.json` (`gates: derived`). I1, the law that the other mod's API stays in the home, is still checked in full. | The fourth argument of `integration(...)`, a closed list of gate paths: I2 then reports a reference from anywhere else. |
+| The jar that ships | The project's `jar` task: the code and evidence go in it, and a loader's remap or repackaging step takes it from there. | `artifactJars("jar", "otherJar")`, or `artifactJars("*")` for every Jar task. |
+| The pack format, mixin level and Minecraft range | `eras/`, for the target version (below). | write your own. |
+| Range proofs | Not derived: the plugin cannot see which versions your tests ran on. A range with no keystone warns (R1), each version stays `interpolated`, and the manifest says so. | `range { keystones(...) }`. |
+| Contract harnesses | Mycelium's own check already ran each one and recorded a fingerprint of the sources (`contracts/proofs.json`). `myceliumVerify` takes a contract whose sources are unchanged, on every Java your gates run, as proven; the manifest records `proven-upstream` and the fingerprint. | `-Pmycelium.verify=always` runs every harness here. A changed source always runs. |
 
 ### Optional blocks
 
+- `checks { }`: the level of each check and per-site allowances (below).
+- `packMeta { }`, `overlays { }`, `mixinJava`, `minecraftRange(loader)`: what the era table generates for the target (below).
 - `pure { }`: the mod's pure layer, proven on every era and shipped downgraded where an era needs it (`docs/eras.md`).
 - `integration(...)`: an optional integration kept isolated (`docs/integrations.md`).
 - `ports(...)`: the mod's own packages that are meant to touch the platform, for `myceliumSurface`.
@@ -44,19 +67,20 @@ different code and cannot conflict. No shared runtime is introduced.
   `serverRuntimeOwns.set(listOf("net/minecraft/"))`.
 - `privateLibrary("library.api", "my.mod.privateapi")`: carries a feature library privately (below).
 - `artifactJars("jar")`: selects the Jar tasks that receive the artifact's private pure classes and evidence, which
-  keeps independent probes and source archives separate. An empty selection attaches to every Jar task; a nonempty
-  selection must name distinct Jar tasks in that project. The project's contract, purity and era checks apply
-  whichever archives receive the artifact.
+  keeps independent probes and source archives separate. The default is the `jar` task, the jar that ships;
+  `artifactJars("*")` attaches to every Jar task; a selection must name distinct Jar tasks in that project. The
+  project's contract, purity and era checks apply whichever archives receive the artifact.
 
 ## Tasks
 
 | Task | Effect |
 |---|---|
 | `myceliumImport` | Copies each selected contract's `model` (and its requirements') into `build/generated/sources/mycelium/java` under the mod's namespace, and adds it to `main`. A model that reaches the harness is refused. |
-| `myceliumVerify` | Compiles and runs each selected harness; collects each harness's report. In `check`. `-Pmycelium.contracts=a@1,b@1` overrides the selection for one run. |
-| `myceliumUsage` | Reports imported contracts the mod's own sources never use. Warns; `failOnUnused = true` fails. In `check`. |
-| `myceliumIsolation` | An optional integration's API is mentioned only in its home package and its gates. Before `compileJava` and in `check`. |
-| `myceliumPurity` | The pure layer mentions no platform package (P1), and reads no clock, environment or unseeded chance (P3). |
+| `myceliumVerify` | Compiles and runs each selected harness whose sources are not the ones Mycelium's own check proved (`contracts/proofs.json`); collects each harness's report. In `check`. `-Pmycelium.contracts=a@1,b@1` overrides the selection for one run; `-Pmycelium.verify=always` runs every harness. |
+| `myceliumUsage` | Reports imported contracts the mod's own sources never use (U1). Warns; `failOnUnused = true` fails. In `check`. |
+| `myceliumIsolation` | An optional integration's API is mentioned only in its home package (I1), and its home only from its gates (I2). In `check`; never before `compileJava`. |
+| `myceliumPurity` | The pure layer mentions no platform package (P1, warns), shares no package with the platform (P1.split, fails), and reads no clock, environment or unseeded chance (P3, warns). In `check`; never before `compileJava`. |
+| `myceliumPackMeta` | Writes the target's `pack.mcmeta` from the era table's `packFormat` rows, in the schema the version reads. Joins the resources when `packMeta { }` is declared. |
 | `myceliumPureCompile` | Compiles the pure layer alone. If it compiles there, it is pure in fact. |
 | `myceliumEraJava<N>` | One era's gate: every bundle on that Java's JVM (stubs, linkage P2, behaviour). `myceliumEras` runs every declared era. |
 | `myceliumPureShip` | Puts the pure layer's classes into this target's jar, downgraded and shaded from the era gate's own output when the era needs it, a no-op when it does not (below). |
@@ -69,8 +93,102 @@ different code and cannot conflict. No shared runtime is introduced.
 | `myceliumPresentationLock` | Appends the legacy codes the presentation programs need to the committed lock in the mod's sources, on request; never part of a build, and never changes an existing line. |
 | `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (every Jar by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
+| `myceliumRecordProofs` | This repository only: after every harness and every era gate has passed, writes `contracts/proofs.json` (a fingerprint of each contract's sources and the Javas the gates ran on) so a mod need not run them again. In `check`. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |
 | `myceliumRefreshNames` | This repository only: pins name data in `eras/names.json` for `--namespace=<name> --versions=<v,...>`, or reports pins whose files changed, by hand. |
+
+## Checks
+
+Every check has a level: `off`, `warn` or `fail`. The defaults fail only for **silent breakage**, a build that would ship
+something that does not work and say nothing. Everything else warns. A check that is a proof (the pure layer compiles alone
+`myceliumPureCompile`; a contract's harness; an era's stubs and linkage `myceliumEraJava<N>`; a capsule's ceilings) is not
+in the table: it holds or the artifact is not what it says. The table is the checks that explain.
+
+| Check | Default | What it holds | What it prevents |
+|---|---|---|---|
+| `P1` | warn | the pure layer names no platform package (text) | a pure layer that is not pure; `myceliumPureCompile` is the proof, this says where |
+| `P1.split` | **fail** | no package is split between the pure layer and the platform sources | two layers in one package: a pure class shadowed by, or package-private-linked to, the platform |
+| `P3` | warn | the pure layer reads no clock, environment or unseeded chance (`SecureRandom`, `UUID.randomUUID`, `getenv`, `getProperty`, `Math.random`, `new Random()`) | a pure layer that differs run to run. A policy: a mod that declares a law this breaks sets `fail` |
+| `I1` | **fail** | an optional integration's API is mentioned only in its home package | `NoClassDefFoundError` when the other mod is not installed |
+| `I2` | warn | the integration's home is referenced only from its gates (derived unless declared) | the home loaded without its guard |
+| `U1` | warn | an explicitly imported contract is referenced by the mod's own sources (`failOnUnused = true` sets `fail`) | a manifest that says the mod carries a contract it never uses |
+| `S1` | warn | the portability surface has not grown past `surfaceBaseline` (`surfaceFailOnGrowth = true` sets `fail`; `off` skips `myceliumSurface`) | the next port growing unseen |
+| `R0` | **fail** | the claimed range is real: both ends are versions, the loader exists on each, proofs name real versions the artifact claims | a claim about versions that do not exist |
+| `R1` | warn | the range declares a keystone | a range with no version it was run on (every version stays `interpolated`) |
+| `R2` | warn | each side of a wall inside the range has a proof | a claim across a wall nobody crossed (those versions stay `interpolated`) |
+| `R3` | **fail** | the loader's metadata accepts every claimed version | the loader refusing the artifact where it claims to run |
+| `L1` | **fail** | every game reference resolves on each claimed version that has name data | `NoSuchMethodError` on a claimed version |
+| `L2` | warn | pinned name data was available (not offline: when the data could not be had or read, the version stays as it was) | a version quietly not linked |
+| `PR1` | **fail** | the presentation programs compile for the target and the committed lock holds every selection | an item drawn with no model (a `warn` writes no presentation files and says so) |
+
+Set a level in one place, and allow one site with a reason:
+
+```kotlin
+mycelium {
+    checks {
+        fail("P3")                   // this mod declares a law the clock breaks
+        off("S1")
+        level("I2", "warn")          // the same, by name
+        allow("P3", "kernel/Rng.java", "seeded by the caller")   // a source path (matched as a path suffix), a version, or "*"
+    }
+}
+```
+
+A misspelt check id, a level other than `off`, `warn` or `fail`, and an allowance without a reason are refused where they are
+written. The levels, with each default they replaced, and every allowance with its reason are in the evidence manifest
+(`checks`), beside what the text checks last found (a finding an allowance covered is shown as `allowed`, with its reason):
+nothing is hidden by being allowed. A text check runs in `check` and never before `compileJava`, so a mod in the middle of a
+refactor can always compile.
+
+## Declaring once (`myceliumDefaults`)
+
+A multi-project build (Stonecutter: one project per version and loader) writes the mod's block once on the root project and
+every project inherits it:
+
+```kotlin
+// root build script
+plugins { id("dev.woflo.mycelium.defaults") }
+
+myceliumDefaults {
+    root = rootProject.file("../mycelium")
+    namespace = "com.example.mymod.mycelium"
+    artifactId = "mymod"
+    integration("voicechat", "com.example.voice", "de.maxhenkel.voicechat")     // no gates to list: they are derived
+    pure { sources.from(rootProject.file("kernels/src")); release = 21 }
+    checks { allow("P3", "kernel/Rng.java", "seeded by the caller") }
+}
+
+// each loader/version project
+mycelium { minecraft = sc.current.version }
+```
+
+`myceliumDefaults` takes everything `mycelium` does. A project's own scalar setting wins; what only a project knows (its
+name, its Minecraft version) stays in the project; the pure layer's sources and tests add up; the check levels and
+allowances merge, the project's after the default's. A list the project writes itself (`contracts(...)`, `ports(...)`,
+`integration(...)`) replaces the default list. The plugin's own tasks read the merged result, so the evidence manifest is
+the same whether a setting came from the root or the project.
+
+## Generated from the era table
+
+`eras/minecraft.json` knows what changes at which version, and so the mod does not. For the target `minecraft`:
+
+- **`pack.mcmeta`.** `mycelium { packMeta { description = "My mod resources" } }` has `myceliumPackMeta` write it into the
+  resources, in the schema the version reads: before 1.20.2 a `pack_format`; 1.20.2 to 1.21.8 a `pack_format` and
+  `supported_formats` [resource, data]; from 1.21.9 `min_format` and `max_format` (resource and data majors; a major covers its
+  minors) and no `pack_format`. The `packFormat` rows name the game's own `version.json` `pack_version`; each row's `source` says
+  whether it was read from a game jar or from minecraft.wiki's "Pack format" table, and `myceliumRepository` proves every real
+  version from 1.6.1 (the first with resource packs) falls in exactly one row. Forge serves a mod's data only with a
+  `pack.mcmeta`; Fabric and NeoForge make their own, so declare it in the Forge buildscript.
+- **The mixin compatibility level.** `mycelium.mixinJava` is `JAVA_8`, `JAVA_17`, `JAVA_21` or `JAVA_25` for the target's Java;
+  `mycelium.mixinJava(21)` caps it for a Mixin that stops lower (Forge's 0.8.7). Use it as the value of
+  `compatibilityLevel` when expanding a mixin config.
+- **The mod metadata's Minecraft range.** `mycelium.minecraftRange("fabric")` is a provider of the range as that loader's
+  metadata writes it (`CompatExpr`: a Fabric `depends`, a Forge `versionRange`), from the declared `range` if there is one, else
+  from the oldest to the newest `minecraft` of the projects in the build. It names a contiguous range, not the versions
+  between that were never targeted: declare `range { keystones(...) }` to say which were run.
+- **Resource overlays per schema era.** `overlays { base(file("src/main/resources-1211")); from("26.1", file("src/main/resources-2601")) }`
+  adds to the resources the directory whose version is the newest at or below the target. It chooses by version bound, not by
+  data; overlays inside one jar (`overlays` in `pack.mcmeta`) are not generated yet (`docs/STATUS.md`).
 
 ## Proven by fixtures
 
@@ -89,6 +207,12 @@ Each fixture is a small consumer build that must pass, with planted breaks the g
   version. The fixture supplies an exact server game archive; `-PlinkageServerBreak=1.21.1` leaves the method in Tiny
   mappings but removes it from that server archive, and the same gate must refuse it. `-PlinkageServerRuntime=false`
   proves the optional inputs may remain unset.
+- `./gradlew -p gradle-plugin/src/test/fixtures/flexible-consumer check` proves a mod whose whole declaration is a namespace and a
+  target: its contract found from its sources, an integration's gates derived, the pack metadata written for 1.21.1, an
+  overlay chosen, only `jar` carrying the evidence, and the checks at their levels in the manifest. `-Pflex=failP3`,
+  `-Pflex=allowP3` and `-Pflex=offP3` set the pure layer's clock check to each level; `-Pflex=leak` plants an integration
+  leak (I1) and `-Pflex=pureLeak` a pure layer that does not compile alone: `compileJava` still passes, `check` does not.
+- `./gradlew -p gradle-plugin/src/test/fixtures/defaults-consumer check` proves two projects inheriting one `myceliumDefaults`.
 - `gradle-plugin/src/test/fixtures/ship-consumer` ships a pure layer written for Java 21 to a Java 8 era
   (`docs/decisions/0006-shipping-downgraded-jars.md`).
 
@@ -106,7 +230,7 @@ is recompiled or re-downgraded for shipping: the bytes are exactly the ones the 
 (`docs/decisions/0006-shipping-downgraded-jars.md`).
 
 A target whose era is at least the pure layer's release needs no downgrade: `myceliumPureShip` is a no-op and says
-so (`ship.json`'s `why`). Every `Jar` task adds the ship task's classes and, only when a downgrade actually
+so (`ship.json`'s `why`). The artifact's jar adds the ship task's classes and, only when a downgrade actually
 happened, excludes the same packages from wherever `main` already compiled them (a consumer may add its pure
 sources to `main` directly, as `docs/decisions/0001-substrate.md` does for Somnium's kernels) — one path, never two, and never
 touched when there is nothing to ship.

@@ -102,6 +102,10 @@ public abstract class LinkageTask extends DefaultTask {
     @Input
     public abstract Property<Boolean> getOffline();
 
+    /** The mod's check levels and allowances ({@link Checks#decode}): L1 an unresolved reference, L2 name data unavailable. */
+    @Input
+    public abstract ListProperty<String> getChecks();
+
     /** The target Minecraft version of a capsule, whose own runtime-linkage report, if present, links it (ADR 0008). */
     @Input
     @Optional
@@ -245,13 +249,13 @@ public abstract class LinkageTask extends DefaultTask {
         Files.createDirectories(out.toPath().getParent());
         Files.writeString(out.toPath(), new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(report) + "\n",
                 StandardCharsets.UTF_8);
-        if (!result.findings().isEmpty()) {
-            StringBuilder message = new StringBuilder("Mycelium linkage: " + artifact.id() + " claims " + artifact.from() + " to " + artifact.to()
-                    + " on " + artifact.loader() + ", and " + result.findings().size() + (result.findings().size() == 1
-                    ? " version does not link:" : " versions do not link:"));
-            result.findings().forEach(f -> message.append("\n  - ").append(f));
-            throw new GradleException(message.toString());
+        Checks.Findings problems = new Checks.Findings(Checks.decode(getChecks().get()));
+        for (String finding : result.findings()) {
+            int colon = finding.indexOf(':');
+            problems.add(result.checkOf(finding), colon > 0 ? finding.substring(0, colon) : "*", finding);
         }
+        problems.conclude(getLogger(), "linkage: " + artifact.id() + " claims " + artifact.from() + " to " + artifact.to()
+                + " on " + artifact.loader() + ", and " + (problems.failing().size() + problems.warning().size()) + " thing(s) do not hold");
         JsonObject counts = report.getAsJsonObject("counts");
         getLogger().lifecycle("Mycelium: " + artifact.id() + " claims " + artifact.from() + " to " + artifact.to() + ": "
                 + counts.get("proven").getAsInt() + " proven, " + counts.get("pending").getAsInt() + " pending, "

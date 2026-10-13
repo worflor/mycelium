@@ -87,9 +87,16 @@ mycelium/
 the tasks do is `docs/plugin.md`.
 
 - **Wiring.** `MyceliumPlugin.java` (`dev.woflo.mycelium`, for consumers: registers the tasks, wires them into `check`
-  and every jar), `MyceliumExtension.java` (the `mycelium { }` block), `PureSpec.java` (`pure { }`), `RangeSpec.java`
-  (`range { }`), `LinkageSpec.java` (`range { linkage { } }`), `CapsuleSpec.java` (the capsule's ceilings, nested jars
-  and mapping profile).
+  and the jar that ships, derives the contract list), `MyceliumDefaultsPlugin.java` (`dev.woflo.mycelium.defaults`: the
+  `myceliumDefaults { }` block on a root project that every project inherits), `MyceliumExtension.java` (the
+  `mycelium { }` block), `PureSpec.java` (`pure { }`), `RangeSpec.java` (`range { }`), `LinkageSpec.java`
+  (`range { linkage { } }`), `CapsuleSpec.java` (the capsule's ceilings, nested jars and mapping profile).
+- **Check levels.** `Checks.java` (every check, its default level, allowances and findings; decision 0017),
+  `ChecksSpec.java` (`checks { }`).
+- **Generated from the era table.** `PackMetaSpec.java` (`packMeta { }`), `PackMetaTask.java` (`myceliumPackMeta`),
+  `OverlaySpec.java` (`overlays { }`: a resource directory per schema era).
+- **Proofs a mod takes from Mycelium.** `Proofs.java` (`contracts/proofs.json`: fingerprints of what Mycelium's own
+  check proved), `ProofRecordTask.java` (`myceliumRecordProofs`, this repository only).
 - **Contracts.** `ContractRegistry.java` (reads `contracts/registry.json` strictly; resolves selections and
   `supersedes`), `ImportContractsTask.java` (`myceliumImport`), `VerifyContractsTask.java` (`myceliumVerify`),
   `Harness.java` (what every runner shares: the harness's sources, and the bundle an era gate runs),

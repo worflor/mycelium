@@ -9,6 +9,7 @@ import org.gradle.api.file.Directory;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.plugins.JvmToolchainsPlugin;
+import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskProvider;
@@ -40,26 +41,35 @@ public final class MyceliumPlugin implements Plugin<Project> {
     @Override
     public void apply(Project project) {
         MyceliumExtension ext = project.getExtensions().create("mycelium", MyceliumExtension.class);
-        ext.getNamespace().convention(project.provider(() -> {
-            String group = String.valueOf(project.getGroup());
-            return group.isBlank() ? "mycelium.imported" : group + ".mycelium";
-        }));
-        ext.getVerify().convention(true);
-        ext.getFailOnUnused().convention(false);
-        ext.getTargetProfile().convention(project.getName());
-        ext.getArtifactId().convention(project.getName());
-        ext.getArtifactVersion().convention(project.provider(() -> String.valueOf(project.getVersion())));
-        ext.getArtifactJars().convention(List.of());
-        ext.getLibraryRelocations().convention(List.of());
-        ext.getDowngraderVersion().convention("2.0.1");
-        ext.getShadePrefix().convention(ext.getNamespace().map(n -> n.replace('.', '_') + "_jvmdg"));
-        ext.getPure().getRelease().convention(VerifyContractsTask.RELEASE);
-        ext.getPure().getSuiteMain().convention("Run");
-        ext.getPure().getStrict().convention(false);
-        ext.getSurfaceFailOnGrowth().convention(false);
-        ext.getCapsule().getOuterJava().convention(8);
-        ext.getCapsule().getNestedJars().convention(List.of());
-        ext.getCapsule().getMappedPrefixes().convention(List.of());
+        ext.project = project;
+        // `myceliumDefaults { }` on the root project (dev.woflo.mycelium.defaults): written once, inherited by every project
+        // that applies this plugin (docs/decisions/0017). A project's own setting always wins.
+        Project rootProject = project.getRootProject();
+        MyceliumExtension defaults = project == rootProject ? null
+                : rootProject.getExtensions().findByType(MyceliumDefaultsPlugin.Defaults.class);
+        conventions(project, ext, defaults);
+        Provider<List<String>> checks = project.provider(() -> ext.getChecks().merged(defaults == null ? null : defaults.getChecks()));
+        // A mod is a project with the Java plugin. A flag set when the plugin arrives, not a lookup of the project later:
+        // nothing a task holds may reach the Project (the configuration cache).
+        Property<Boolean> modFlag = project.getObjects().property(Boolean.class).convention(false);
+        project.getPlugins().withType(JavaPlugin.class, applied -> modFlag.set(true));
+        Provider<Boolean> isMod = modFlag;
+        ConfigurableFileCollection derivationRoots = project.getObjects().fileCollection();
+        Provider<String> verifyProperty = project.getProviders().gradleProperty("mycelium.verify").orElse("");
+        Provider<Directory> generated = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java");
+        // The contracts this project imports: the explicit `contracts(...)` if given; in a mod (the Java plugin applied) what its
+        // own sources reference under the namespace, with their requirements; in the verification project (no Java plugin), none
+        // imported and every contract verified.
+        Provider<List<String>> contracts = project.provider(() -> {
+            List<String> explicit = ext.getContracts().get();
+            if (!explicit.isEmpty() || !isMod.get()) {
+                return explicit;
+            }
+            return deriveContracts(ext.getRoot().get().getAsFile(), derivationRoots.getFiles(), ext.getPure().getSources().getFiles(),
+                    ext.getNamespace().get(), generated.get().getAsFile());
+        });
+        Provider<String> contractMode = project.provider(() -> !ext.getContracts().get().isEmpty() ? "declared"
+                : isMod.get() ? "derived" : "all-verified");
 
         // `-Pmycelium.contracts=a@1,b@1` overrides the selection for one invocation (useful while packages land).
         List<String> contractOverride = listProperty(project, "mycelium.contracts");
@@ -83,13 +93,15 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 }
             }
             ContractRegistry registry = ContractRegistry.load(root.toFile());
-            for (ContractRegistry.Entry entry : registry.withRequirements(registry.resolve(ext.getContracts().get()))) {
-                dirs.add(root.resolve("contracts").resolve(entry.path()).resolve("src"));
+            List<String> ids = contracts.get();
+            if (!ids.isEmpty() || !isMod.get()) {
+                for (ContractRegistry.Entry entry : registry.withRequirements(registry.resolve(ids))) {
+                    dirs.add(root.resolve("contracts").resolve(entry.path()).resolve("src"));
+                }
             }
             return Fingerprint.ofDirectories(dirs);
         });
 
-        Provider<Directory> generated = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java");
         Provider<Directory> reportDir = project.getLayout().getBuildDirectory().dir("mycelium/verify");
         Provider<Directory> evidenceDir = project.getLayout().getBuildDirectory().dir("mycelium/evidence");
         Provider<Directory> usageDir = project.getLayout().getBuildDirectory().dir("mycelium/usage");
@@ -101,7 +113,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.setGroup("mycelium");
             t.setDescription("Imports selected Mycelium contract models under the artifact-owned namespace.");
             t.getRoot().set(ext.getRoot());
-            t.getContracts().set(ext.getContracts());
+            t.getContracts().set(contracts);
             t.getNamespace().set(ext.getNamespace());
             t.getSourceFingerprint().set(fingerprint);
             t.getOutputDir().set(generated);
@@ -111,17 +123,25 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.setGroup("mycelium");
             t.setDescription("Compiles and runs each selected Mycelium contract harness (reference + rejection matrix).");
             t.getRoot().set(ext.getRoot());
-            t.getContracts().set(ext.getContracts());
+            t.getContracts().set(contracts);
             t.getSourceFingerprint().set(fingerprint);
             t.getReportDir().set(reportDir);
-            t.onlyIf(spec -> ext.getVerify().get());
+            // Mycelium's own check already ran each harness (contracts/proofs.json): a mod re-runs one only when its imported
+            // sources differ from what was proved, or when asked (-Pmycelium.verify=always). The verification project runs all.
+            t.getProofMode().set(isMod.zip(verifyProperty, (mod, verify) -> !mod ? "off" : "always".equals(verify) ? "always" : "auto"));
+            t.getProofsFile().set(ext.getRoot().file("contracts/proofs.json").map(file -> file.getAsFile().isFile() ? file : null));
+            t.getNeededEras().set(project.provider(() -> neededEras(ext)));
+            // a mod that imports nothing has nothing to verify (an empty selection verifies everything only in the verification project)
+            t.onlyIf(spec -> ext.getVerify().get() && (!contracts.get().isEmpty() || !isMod.get()));
         });
 
         TaskProvider<EvidenceTask> evidenceTask = project.getTasks().register("myceliumEvidence", EvidenceTask.class, t -> {
             t.setGroup("mycelium");
             t.setDescription("Writes the Mycelium evidence manifest for this artifact.");
             t.getRoot().set(ext.getRoot());
-            t.getContracts().set(ext.getContracts());
+            t.getContracts().set(contracts);
+            t.getContractSelection().set(contractMode);
+            t.getChecks().set(checks);
             t.getNamespace().set(ext.getNamespace());
             t.getTargetProfile().set(ext.getTargetProfile());
             t.getArtifactId().set(ext.getArtifactId());
@@ -133,6 +153,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getPureShipReportDir().set(pureShipReport);
             t.getMinecraft().set(ext.getMinecraft());
             t.getErasReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/eras"));
+            t.getPurityReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/purity"));
+            t.getIsolationReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/isolation"));
+            t.getSurfaceReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
             t.getOutputDir().set(evidenceDir);
             t.dependsOn(verifyTask);
         });
@@ -177,6 +200,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getRoot().set(ext.getRoot());
             t.getMinecraft().set(ext.getMinecraft());
             t.getSourceFingerprint().set(presentationFingerprint);
+            t.getChecks().set(checks);
             t.getSources().set(presentation.getSources());
             t.getComponents().set(presentation.getComponents());
             t.getLock().set(presentation.getLock());
@@ -203,6 +227,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.setDescription("Checks the pure layer mentions no platform (P1) and reads no clock or unseeded chance (P3).");
             t.getPureSources().from(ext.getPure().getSources());
             t.getPlatformPackages().set(ext.getRoot().map(dir -> Loaders.load(dir.getAsFile()).platformPackages()));
+            t.getChecks().set(checks);
             t.getForbidden().addAll(ext.getPure().getForbidden());
             t.getForbidden().addAll(ext.getIntegrations().map(list -> {
                 List<String> apis = new ArrayList<>();
@@ -227,7 +252,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getStrict().set(ext.getPure().getStrict());
             t.getBundleName().set(ext.getArtifactId().map(a -> a + " pure layer"));
             t.getBundleDir().set(pureBundle);
-            t.dependsOn(purityTask, importTask);
+            // the text checks explain; compiling alone is the proof, so a purity finding never keeps it from running
+            t.dependsOn(importTask);
+            t.mustRunAfter(purityTask);
             // Suites are not required: compiling alone proves purity in fact, and each era gate still checks the
             // bundle's stubs and linkage (P2). Requiring suites left a pure layer without them silently unchecked.
             t.onlyIf(spec -> !ext.getPure().getSources().isEmpty());
@@ -299,7 +326,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.setGroup("mycelium");
                     t.setDescription("Runs the contracts and the pure layer on Java " + java + " (stubs, linkage, suites).");
                     t.getJava().set(java);
-                    t.getBundles().from(verifyBundles(p, ext, reportDir));
+                    t.getBundles().from(verifyBundles(p.files(), ext, reportDir, contracts, isMod, verifyProperty));
                     t.getBundles().from(pureBundle);
                     t.getSuites().set(suites);
                     t.getShadePrefix().set(ext.getShadePrefix());
@@ -319,13 +346,14 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 });
             }
         });
-        evidenceTask.configure(t -> t.mustRunAfter(erasTask));
+        evidenceTask.configure(t -> t.mustRunAfter(erasTask, purityTask));
 
         project.getPlugins().withType(JavaPlugin.class, javaPlugin -> {
             project.getConfigurations().named("implementation", configuration -> configuration.extendsFrom(privateLibraries));
             project.afterEvaluate(p -> p.getTasks().withType(JavaCompile.class).configureEach(compile ->
                     compile.setClasspath(privateLibraries.plus(compile.getClasspath()))));
             SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
+            derivationRoots.from(sourceSets.getByName("main").getJava().getSourceDirectories());
             sourceSets.getByName("main").getJava().srcDir(importTask.flatMap(ImportContractsTask::getOutputDir));
             // the compiled presentation joins the resources, and the build fails before packaging if the programs break a law
             sourceSets.getByName("main").getResources().srcDir(presentationTask.flatMap(PresentationTask::getOutputDir));
@@ -337,9 +365,10 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.setGroup("mycelium");
                 t.setDescription("Reports imported Mycelium contracts that this artifact's own sources never reference.");
                 t.getRoot().set(ext.getRoot());
-                t.getContracts().set(ext.getContracts());
+                t.getContracts().set(contracts);
                 t.getNamespace().set(ext.getNamespace());
                 t.getFailOnUnused().set(ext.getFailOnUnused());
+                t.getChecks().set(checks);
                 t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories());
                 t.getImportedDir().set(generated);
                 t.getReportDir().set(usageDir);
@@ -349,8 +378,18 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.setGroup("mycelium");
                 t.setDescription("Checks that optional integrations never leak another mod's classes into the rest of the artifact.");
                 t.getIntegrations().set(ext.getIntegrations());
+                t.getChecks().set(checks);
                 t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories());
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/isolation"));
+            });
+            TaskProvider<PackMetaTask> packMetaTask = project.getTasks().register("myceliumPackMeta", PackMetaTask.class, t -> {
+                t.setGroup("mycelium");
+                t.setDescription("Writes this target's pack.mcmeta from the era table's pack formats (docs/decisions/0017).");
+                t.getRoot().set(ext.getRoot());
+                t.getMinecraft().set(ext.getMinecraft());
+                t.getPackDescription().set(ext.getPackMeta().getDescription().orElse(ext.getArtifactId().map(id -> id + " resources")));
+                t.getTableFingerprint().set(ext.getRoot().map(dir -> Fingerprint.ofDirectory(dir.getAsFile().toPath().resolve("eras/minecraft.json"))));
+                t.getOutputDir().set(project.getLayout().getBuildDirectory().dir("generated/resources/mycelium/pack"));
             });
             // The portability surface (docs/eras.md, "Not yet built" 2): never the generated imports, which are
             // proven pure already and would only report as zero-reference noise.
@@ -362,6 +401,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getPlatformPackages().set(ext.getRoot().map(dir -> Loaders.load(dir.getAsFile()).platformPackages()));
                 t.getPorts().set(ext.getPorts());
                 t.getFailOnGrowth().set(ext.getSurfaceFailOnGrowth());
+                t.getChecks().set(checks);
+                t.onlyIf(spec -> Checks.decode(checks.get()).level("S1") != Checks.Level.OFF);
                 t.getBaselineFile().set(ext.getSurfaceBaseline());
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
             });
@@ -379,6 +420,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.getRoot().set(ext.getRoot());
                     t.getDeclaration().set(claim.toJson().toString());
                     t.getSourceFingerprint().set(fingerprint);
+                    t.getChecks().set(checks);
                     t.getLinkageDeclared().set(ext.getRange().isLinkageDeclared());
                     t.getResources().from(sourceSets.getByName("main").getOutput().getResourcesDir());
                     t.getResourcesDir().set(sourceSets.getByName("main").getOutput().getResourcesDir());
@@ -410,6 +452,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                         t.getDeclaration().set(claim.toJson().toString());
                         t.getSourceFingerprint().set(fingerprint);
                         t.getRangeReport().set(rangeTask.flatMap(RangeTask::getReportFile));
+                        t.getChecks().set(checks);
                         t.getArchive().set(spec.getArchive());
                         t.getServerRuntimeArchive().set(spec.getServerRuntimeArchive());
                         t.getServerRuntimeNamespace().set(spec.getServerRuntimeNamespace());
@@ -434,7 +477,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     p.getTasks().named("check", check -> check.dependsOn(linkageTask));
                 }
             });
-            project.getTasks().named("compileJava", c -> c.dependsOn(isolationTask, purityTask));
+            // Nothing here blocks compilation (docs/decisions/0017): the text checks run in `check`; compiling, compiling the pure
+            // layer alone and the linkage gate are the proofs, and the text explains them.
+            evidenceTask.configure(t -> t.mustRunAfter(isolationTask, surfaceTask));
             project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
                     pureShip, surfaceTask, capsuleTask));
             evidenceTask.configure(t -> t.dependsOn(usageTask, pureShip));
@@ -468,6 +513,17 @@ public final class MyceliumPlugin implements Plugin<Project> {
             project.afterEvaluate(p -> {
                 List<String> artifactJars = ext.getArtifactJars().get();
                 validateArtifactJars(artifactJars, p.getTasks().withType(Jar.class).getNames());
+                if (ext.getPackMeta().isOn()) {
+                    // Forge serves a mod's data only with a pack.mcmeta (Fabric and NeoForge make their own)
+                    sourceSets.getByName("main").getResources().srcDir(packMetaTask.flatMap(PackMetaTask::getOutputDir));
+                    p.getTasks().named("processResources", t -> t.dependsOn(packMetaTask));
+                }
+                if (ext.getMinecraft().isPresent() && !ext.getOverlays().getEntries().getOrElse(List.of()).isEmpty()) {
+                    java.io.File overlay = OverlaySpec.choose(ext.getOverlays().getEntries().get(), ext.getMinecraft().get());
+                    if (overlay != null) {
+                        sourceSets.getByName("main").getResources().srcDir(overlay);
+                    }
+                }
                 p.getTasks().withType(Jar.class).configureEach(jar -> {
                     if (!isArtifactJar(artifactJars, jar.getName())) {
                         return;
@@ -511,13 +567,17 @@ public final class MyceliumPlugin implements Plugin<Project> {
         return new java.io.File(project.getGradle().getGradleUserHomeDir(), "mycelium/names");
     }
 
+    /** Whether a Jar task receives the artifact's code and evidence: by default only `jar`, the jar that ships; `"*"` is every Jar. */
     static boolean isArtifactJar(List<String> taskNames, String name) {
-        return taskNames.isEmpty() || taskNames.contains(name);
+        return taskNames.isEmpty() ? name.equals("jar") : taskNames.contains("*") || taskNames.contains(name);
     }
 
     static void validateArtifactJars(List<String> taskNames, java.util.Set<String> available) {
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (String name : taskNames) {
+            if (name.equals("*") && seen.add(name)) {
+                continue;
+            }
             if (name.isBlank() || !seen.add(name) || !available.contains(name)) {
                 throw new org.gradle.api.GradleException("Mycelium: artifactJars must name distinct Jar tasks in this project; '"
                         + name + "' is invalid (available: " + available + ")");
@@ -525,18 +585,148 @@ public final class MyceliumPlugin implements Plugin<Project> {
         }
     }
 
-    /** The bundle directory of every contract this project verifies. */
-    private static ConfigurableFileCollection verifyBundles(Project p, MyceliumExtension ext, Provider<Directory> reportDir) {
-        return p.files(p.provider(() -> {
+    /** The bundle directory of every contract this project verifies and ran (not one Mycelium's own check proved). */
+    private static ConfigurableFileCollection verifyBundles(ConfigurableFileCollection into, MyceliumExtension ext, Provider<Directory> reportDir,
+                                                            Provider<List<String>> contracts, Provider<Boolean> isMod, Provider<String> verifyProperty) {
+        into.from((java.util.concurrent.Callable<Object>) () -> {
             List<Object> dirs = new ArrayList<>();
             if (!ext.getVerify().get()) {
                 return dirs;
             }
-            for (ContractRegistry.Entry e : ContractRegistry.load(ext.getRoot().get().getAsFile()).resolve(ext.getContracts().get())) {
-                dirs.add(reportDir.get().dir(e.slug()));
+            List<String> ids = contracts.get();
+            if (ids.isEmpty() && isMod.get()) {
+                return dirs;
+            }
+            java.nio.file.Path root = ext.getRoot().get().getAsFile().toPath();
+            ContractRegistry registry = ContractRegistry.load(root.toFile());
+            boolean proofs = isMod.get() && !"always".equals(verifyProperty.get());
+            Proofs.Recorded recorded;
+            try {
+                recorded = proofs ? Proofs.load(root) : Proofs.Recorded.NONE;
+                for (ContractRegistry.Entry e : registry.resolve(ids)) {
+                    if (proofs && Proofs.provenUpstream(root, registry, e, recorded, neededEras(ext))) {
+                        continue;
+                    }
+                    dirs.add(reportDir.get().dir(e.slug()));
+                }
+            } catch (java.io.IOException x) {
+                throw new org.gradle.api.GradleException("Mycelium: cannot read the recorded proofs: " + x.getMessage(), x);
             }
             return dirs;
-        }));
+        });
+        return into;
+    }
+
+    /** The Javas this build's era gates run on, which a recorded proof must cover. */
+    static List<Integer> neededEras(MyceliumExtension ext) {
+        java.util.TreeSet<Integer> out = new java.util.TreeSet<>(ext.resolvedEras());
+        if (ext.getMinecraft().isPresent() && ext.getRoot().isPresent()) {
+            out.add(ext.javaFor(ext.getMinecraft().get()));
+        }
+        return new ArrayList<>(out);
+    }
+
+    /**
+     * The contracts a mod's own sources reference under its namespace ({@code <namespace>.<package>}), by id; their
+     * requirements come with them on import. Reads the main sources (never the generated imports) and the pure layer, as written:
+     * a reference in a comment counts, so a source Stonecutter swaps in or out is still seen.
+     */
+    static List<String> deriveContracts(java.io.File myceliumRoot, java.util.Collection<java.io.File> mainRoots,
+                                        java.util.Collection<java.io.File> pureRoots, String namespace, java.io.File generated) {
+        ContractRegistry registry = ContractRegistry.load(myceliumRoot);
+        List<java.io.File> roots = new ArrayList<>();
+        mainRoots.stream().filter(d -> !d.getAbsoluteFile().equals(generated.getAbsoluteFile())).forEach(roots::add);
+        roots.addAll(pureRoots);
+        StringBuilder all = new StringBuilder();
+        for (java.io.File root : roots) {
+            if (!root.exists()) {
+                continue;
+            }
+            try (var walk = java.nio.file.Files.walk(root.toPath())) {
+                for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) walk::iterator) {
+                    if (java.nio.file.Files.isRegularFile(p) && p.toString().endsWith(".java")
+                            && !p.toAbsolutePath().startsWith(generated.toPath().toAbsolutePath())) {
+                        all.append(java.nio.file.Files.readString(p, StandardCharsets.UTF_8)).append('\n');
+                    }
+                }
+            } catch (java.io.IOException x) {
+                throw new org.gradle.api.GradleException("Mycelium: cannot read " + root + " to find the contracts it uses: " + x.getMessage(), x);
+            }
+        }
+        String text = all.toString();
+        List<String> ids = new ArrayList<>();
+        for (ContractRegistry.Entry e : registry.all()) {
+            if (e.status().equals("retired")) {
+                continue;
+            }
+            String needle = namespace + "." + e.relativePackage();
+            if (java.util.regex.Pattern.compile("(?<![\\w.])" + java.util.regex.Pattern.quote(needle) + "(?![\\w])").matcher(text).find()) {
+                ids.add(e.id());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * The conventions of one project's extension: neutral defaults, then (when the root declares `myceliumDefaults`) the
+     * root's values, then what only this project knows (its name, group, version).
+     */
+    static void conventions(Project project, MyceliumExtension ext, MyceliumExtension defaults) {
+        neutral(ext);
+        Provider<String> namespace = project.provider(() -> {
+            String group = String.valueOf(project.getGroup());
+            return group.isBlank() ? "mycelium.imported" : group + ".mycelium";
+        });
+        if (defaults != null) {
+            neutral(defaults);
+            ext.getRoot().convention(defaults.getRoot());
+            ext.getContracts().convention(defaults.getContracts());
+            ext.getVerify().convention(defaults.getVerify());
+            ext.getFailOnUnused().convention(defaults.getFailOnUnused());
+            ext.getArtifactJars().convention(defaults.getArtifactJars());
+            ext.getEras().convention(defaults.getEras());
+            ext.getDowngraderVersion().convention(defaults.getDowngraderVersion());
+            ext.getMinecraft().convention(defaults.getMinecraft());
+            ext.getLibraryRelocations().convention(defaults.getLibraryRelocations());
+            ext.getIntegrations().convention(defaults.getIntegrations());
+            ext.getPorts().convention(defaults.getPorts());
+            ext.getSurfaceFailOnGrowth().convention(defaults.getSurfaceFailOnGrowth());
+            ext.getSurfaceBaseline().convention(defaults.getSurfaceBaseline());
+            ext.getPure().getRelease().convention(defaults.getPure().getRelease());
+            ext.getPure().getSuiteMain().convention(defaults.getPure().getSuiteMain());
+            ext.getPure().getStrict().convention(defaults.getPure().getStrict());
+            ext.getPure().getForbidden().convention(defaults.getPure().getForbidden());
+            ext.getPure().getSources().from(defaults.getPure().getSources());
+            ext.getPure().getTests().from(defaults.getPure().getTests());
+            ext.getPackMeta().getDescription().convention(defaults.getPackMeta().getDescription());
+            ext.getPackMeta().getEnabled().convention(defaults.getPackMeta().getEnabled());
+            ext.getOverlays().getEntries().convention(defaults.getOverlays().getEntries());
+        }
+        ext.getNamespace().convention(defaults == null ? namespace : defaults.getNamespace().orElse(namespace));
+        ext.getTargetProfile().convention(defaults == null ? project.provider(project::getName)
+                : defaults.getTargetProfile().orElse(project.provider(project::getName)));
+        ext.getArtifactId().convention(defaults == null ? project.provider(project::getName)
+                : defaults.getArtifactId().orElse(project.provider(project::getName)));
+        ext.getArtifactVersion().convention(defaults == null ? project.provider(() -> String.valueOf(project.getVersion()))
+                : defaults.getArtifactVersion().orElse(project.provider(() -> String.valueOf(project.getVersion()))));
+        Provider<String> shade = ext.getNamespace().map(n -> n.replace('.', '_') + "_jvmdg");
+        ext.getShadePrefix().convention(defaults == null ? shade : defaults.getShadePrefix().orElse(shade));
+    }
+
+    /** The conventions that do not depend on a project. */
+    static void neutral(MyceliumExtension ext) {
+        ext.getVerify().convention(true);
+        ext.getFailOnUnused().convention(false);
+        ext.getArtifactJars().convention(List.of());
+        ext.getLibraryRelocations().convention(List.of());
+        ext.getDowngraderVersion().convention("2.0.1");
+        ext.getPure().getRelease().convention(VerifyContractsTask.RELEASE);
+        ext.getPure().getSuiteMain().convention("Run");
+        ext.getPure().getStrict().convention(false);
+        ext.getSurfaceFailOnGrowth().convention(false);
+        ext.getCapsule().getOuterJava().convention(8);
+        ext.getCapsule().getNestedJars().convention(List.of());
+        ext.getCapsule().getMappedPrefixes().convention(List.of());
     }
 
     private static List<String> listProperty(Project project, String name) {

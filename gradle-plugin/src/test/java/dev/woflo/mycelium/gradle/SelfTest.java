@@ -54,6 +54,7 @@ public final class SelfTest {
         runtimeBootCapture();
         capsuleLinkage();
         surface();
+        FlexibleSelfTest.run(root);
         repository(root);
         System.out.println();
         System.out.println("Mycelium plugin self-test: " + (FAILURES.isEmpty() ? "PASS" : "FAIL") + " (" + assertions
@@ -70,7 +71,9 @@ public final class SelfTest {
     }
 
     static void artifactJars() {
-        that(MyceliumPlugin.isArtifactJar(List.of(), "probeJar"), "artifact jars: default preserves existing attachment");
+        that(MyceliumPlugin.isArtifactJar(List.of(), "jar") && !MyceliumPlugin.isArtifactJar(List.of(), "probeJar")
+                && !MyceliumPlugin.isArtifactJar(List.of(), "sourcesJar"), "artifact jars: the default is the jar that ships, not every Jar task");
+        that(MyceliumPlugin.isArtifactJar(List.of("*"), "probeJar"), "artifact jars: \"*\" keeps the old attach-to-every-Jar behaviour");
         that(MyceliumPlugin.isArtifactJar(List.of("jar"), "jar"), "artifact jars: selected production jar receives code");
         that(!MyceliumPlugin.isArtifactJar(List.of("jar"), "probeJar"), "artifact jars: independent probe receives no artifact code");
         for (List<String> names : List.of(List.of("jar", "jar"), List.of(""), List.of("missing"))) {
@@ -2258,6 +2261,20 @@ public final class SelfTest {
             }
         }
         return to;
+    }
+
+    static void copyTree(Path from, Path to) throws IOException {
+        try (Stream<Path> walk = Files.walk(from)) {
+            for (Path p : (Iterable<Path>) walk::iterator) {
+                Path target = to.resolve(from.relativize(p).toString());
+                if (Files.isDirectory(p)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.createDirectories(target.getParent());
+                    Files.copy(p, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
     }
 
     static void delete(Path dir) throws IOException {

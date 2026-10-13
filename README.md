@@ -38,12 +38,21 @@ worked examples of earlier crossings, not a shelf to choose from (`contracts/REA
 // settings.gradle.kts
 pluginManagement { includeBuild("../mycelium/gradle-plugin") }   // wherever your checkout is
 
+// build.gradle.kts
+plugins { id("dev.woflo.mycelium") }
+mycelium {
+    root = rootProject.file("../mycelium")
+    namespace = "com.example.mymod.mycelium"      // artifact-owned prefix
+    minecraft = "1.21.1"                          // the era: its Java, its gate, its evidence
+    // contracts, integration gates and the jar that ships are derived from your sources; checks { } sets a check's level
+}
+```
 
 Everything the plugin does, and every option, is `docs/plugin.md`. Its tasks are `myceliumImport`, `myceliumVerify`,
 `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>` (and `myceliumEras`),
 `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumCapsule`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`,
-`myceliumPresentation`, `myceliumPresentationLock` and `myceliumEvidence`. For this repository alone: `myceliumRepository`, `myceliumRefreshVersions` and
-`myceliumRefreshNames`.
+`myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta` and `myceliumEvidence`. For this repository alone: `myceliumRepository`,
+`myceliumRecordProofs`, `myceliumRefreshVersions` and `myceliumRefreshNames`.
 
 To run this repository's own checks:
 

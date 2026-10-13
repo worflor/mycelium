@@ -67,6 +67,10 @@ public abstract class SurfaceTask extends DefaultTask {
     @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getBaselineFile();
 
+    /** The mod's check levels and allowances ({@link Checks#decode}); {@code failOnGrowth} raises S1 to fail. */
+    @Input
+    public abstract ListProperty<String> getChecks();
+
     @OutputDirectory
     public abstract DirectoryProperty getReportDir();
 
@@ -180,14 +184,16 @@ public abstract class SurfaceTask extends DefaultTask {
                     grown.add(e.getKey() + ": " + e.getValue() + " > baseline " + base);
                 }
             }
-            if (!grown.isEmpty() && getFailOnGrowth().get()) {
-                throw new GradleException("Mycelium: the portability surface grew past " + getBaselineFile().get().getAsFile()
-                        + ":\n  " + String.join("\n  ", grown));
+            List<String> lines = new ArrayList<>(getChecks().get());
+            if (getFailOnGrowth().get()) {
+                lines.add(Checks.encodeLevel("S1", Checks.Level.FAIL));
             }
-            if (!grown.isEmpty()) {
-                getLogger().warn("Mycelium: the portability surface grew past its baseline (mycelium.surfaceFailOnGrowth is"
-                        + " off, so this only warns):\n  " + String.join("\n  ", grown));
+            Checks.Findings found = new Checks.Findings(Checks.decode(lines));
+            for (String g : grown) {
+                found.add("S1", g.contains(":") ? g.substring(0, g.indexOf(':')) : "*", "the portability surface grew past "
+                        + getBaselineFile().get().getAsFile() + ": " + g);
             }
+            found.conclude(getLogger(), "the portability surface grew");
         }
 
         getLogger().lifecycle("Mycelium: portability surface — {} reference(s) to platform packages outside {} declared"

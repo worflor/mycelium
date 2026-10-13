@@ -43,6 +43,24 @@ public abstract class EvidenceTask extends DefaultTask {
     @Input
     public abstract Property<String> getNamespace();
 
+    /** How the contract list was chosen: {@code declared}, {@code derived} from the mod's own sources, or {@code all-verified}. */
+    @Input
+    public abstract Property<String> getContractSelection();
+
+    /** The mod's check levels and allowances ({@link Checks#decode}), recorded as written (docs/decisions/0017). */
+    @Input
+    public abstract ListProperty<String> getChecks();
+
+    /** Where the text checks left their reports; read if present, as of the last time each task ran. */
+    @Internal
+    public abstract DirectoryProperty getPurityReportDir();
+
+    @Internal
+    public abstract DirectoryProperty getIsolationReportDir();
+
+    @Internal
+    public abstract DirectoryProperty getSurfaceReportDir();
+
     @Input
     public abstract Property<String> getTargetProfile();
 
@@ -250,6 +268,38 @@ public abstract class EvidenceTask extends DefaultTask {
             contracts.add(c);
         }
         evidence.add("contracts", contracts);
+
+        JsonObject selection = new JsonObject();
+        selection.addProperty("mode", getContractSelection().get());
+        selection.addProperty("why", switch (getContractSelection().get()) {
+            case "declared" -> "mycelium { contracts(...) } named them";
+            case "derived" -> "the contracts the mod's own sources reference under its namespace, with their requirements";
+            default -> "a verification project: every contract is verified and none imported";
+        });
+        evidence.add("contractSelection", selection);
+
+        // The checks: every level as configured (and the default it replaced), every allowance with its reason, and what the
+        // text checks last found. A finding is shown with what the configuration made of it, an allowed one with its reason.
+        JsonObject checks = Checks.decode(getChecks().get()).toJson();
+        JsonObject reports = new JsonObject();
+        for (var dir : List.of(java.util.Map.entry("purity", getPurityReportDir()), java.util.Map.entry("isolation", getIsolationReportDir()),
+                java.util.Map.entry("surface", getSurfaceReportDir()))) {
+            Path file = dir.getValue().isPresent() ? dir.getValue().get().getAsFile().toPath().resolve(dir.getKey() + ".json") : null;
+            if (file != null && Files.isRegularFile(file)) {
+                JsonObject r = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject one = new JsonObject();
+                one.addProperty("checked", true);
+                one.add("findings", r.has("findings") ? r.get("findings") : new JsonArray());
+                if (dir.getKey().equals("isolation") && r.has("integrations")) {
+                    one.add("integrations", r.get("integrations"));
+                }
+                reports.add(dir.getKey(), one);
+            } else {
+                reports.add(dir.getKey(), notChecked("myceliumPurity/Isolation/Surface did not run in this build"));
+            }
+        }
+        checks.add("reports", reports);
+        evidence.add("checks", checks);
 
         JsonObject claims = new JsonObject();
         claims.addProperty("designTimeOnly", true);
