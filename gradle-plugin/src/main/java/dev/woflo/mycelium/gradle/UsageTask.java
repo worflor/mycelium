@@ -45,6 +45,10 @@ public abstract class UsageTask extends DefaultTask {
     @Input
     public abstract Property<Boolean> getFailOnUnused();
 
+    /** The mod's check levels and allowances ({@link Checks#decode}); {@code failOnUnused} raises U1 to fail. */
+    @Input
+    public abstract ListProperty<String> getChecks();
+
     /** The consumer's source files. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -121,12 +125,16 @@ public abstract class UsageTask extends DefaultTask {
         Files.createDirectories(out);
         Files.writeString(out.resolve("usage.json"), new GsonBuilder().setPrettyPrinting().create().toJson(report), StandardCharsets.UTF_8);
         if (!unused.isEmpty()) {
-            String msg = "Mycelium: imported but never referenced by this artifact's sources: " + unused
-                    + " (drop them from mycelium.contracts, or use them; the evidence manifest records this)";
+            List<String> lines = new ArrayList<>(getChecks().get());
             if (getFailOnUnused().get()) {
-                throw new GradleException(msg);
+                lines.add(Checks.encodeLevel("U1", Checks.Level.FAIL));
             }
-            getLogger().warn(msg);
+            Checks.Findings found = new Checks.Findings(Checks.decode(lines));
+            for (String id : unused) {
+                found.add("U1", id, id + " is imported but never referenced by this artifact's sources"
+                        + " (drop it from mycelium.contracts, or use it; the evidence manifest records this)");
+            }
+            found.conclude(getLogger(), "contracts imported and not used");
         } else {
             getLogger().lifecycle("Mycelium: every imported contract is referenced ({} source files scanned)", texts.size());
         }

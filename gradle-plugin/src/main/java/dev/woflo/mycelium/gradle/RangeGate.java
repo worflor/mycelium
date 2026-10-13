@@ -38,7 +38,25 @@ public final class RangeGate {
     }
 
     /** What the gate found ({@code findings} empty: the claim holds as far as the gate looks) and the report to record. */
-    public record Result(List<String> findings, JsonObject report) {
+    public record Result(List<String> findings, JsonObject report, Map<String, String> ids) {
+        public Result(List<String> findings, JsonObject report) {
+            this(findings, report, Map.of());
+        }
+
+        /** The check ({@link Checks}) a finding belongs to: R0 the claim is real, R1 a keystone, R2 each side of a wall, R3 the metadata. */
+        public String checkOf(String finding) {
+            return ids.getOrDefault(finding, "R0");
+        }
+    }
+
+    /** Findings, each tagged with the check it belongs to ({@code R0} when untagged). */
+    static final class Found extends ArrayList<String> {
+        final Map<String, String> ids = new LinkedHashMap<>();
+
+        boolean add(String id, String message) {
+            ids.put(message, id);
+            return super.add(message);
+        }
     }
 
     /**
@@ -52,7 +70,7 @@ public final class RangeGate {
     /** As above; {@code linkageDeclared} says the artifact also runs {@code myceliumLinkage}, which the report points to. */
     public static Result check(ArtifactLedger.Artifact a, Eras eras, Loaders loaders, List<String> real, CompatMetadata.Found found,
                                boolean linkageDeclared) {
-        List<String> findings = new ArrayList<>();
+        Found findings = new Found();
         JsonObject report = new JsonObject();
         report.addProperty("schema", 1);
         report.addProperty("id", a.id());
@@ -183,18 +201,18 @@ public final class RangeGate {
         return done(report, findings, true);
     }
 
-    private static Result done(JsonObject report, List<String> findings, boolean enumerated) {
+    private static Result done(JsonObject report, Found findings, boolean enumerated) {
         report.addProperty("checked", enumerated);
         JsonArray f = new JsonArray();
         findings.forEach(f::add);
         report.add("findings", f);
-        return new Result(findings, report);
+        return new Result(findings, report, findings.ids);
     }
 
     // --- availability ----------------------------------------------------------------------------------------------
 
     private static void availability(ArtifactLedger.Artifact a, List<String> platforms, Eras eras, List<String> versions,
-                                     List<String> findings) {
+                                     Found findings) {
         Map<String, List<String>> byReason = new LinkedHashMap<>();
         for (String v : versions) {
             Eras.Era era;
@@ -224,10 +242,10 @@ public final class RangeGate {
 
     /** The proofs by version, each checked; a proof that is not usable is a finding and is left out. */
     private static Map<String, List<ArtifactLedger.Proof>> proofs(ArtifactLedger.Artifact a, Loaders.Loader loader, Loaders loaders,
-                                                                  Eras eras, Set<String> real, List<String> findings) {
+                                                                  Eras eras, Set<String> real, Found findings) {
         Map<String, List<ArtifactLedger.Proof>> out = new LinkedHashMap<>();
         if (a.keystones().isEmpty()) {
-            findings.add("the artifact declares no keystone: a range is claimed from a version servers really run");
+            findings.add("R1", "the artifact declares no keystone: a range is claimed from a version servers really run (its versions stay interpolated)");
         }
         Set<String> claimed = new HashSet<>(a.platforms().isEmpty() ? List.of(a.loader()) : a.platforms());
         Set<String> seen = new HashSet<>();
@@ -300,7 +318,7 @@ public final class RangeGate {
     }
 
     private static void segments(ArtifactLedger.Artifact a, List<String> versions, List<String[]> walls,
-                                 Map<String, List<ArtifactLedger.Proof>> proofs, List<String> findings) {
+                                 Map<String, List<ArtifactLedger.Proof>> proofs, Found findings) {
         if (walls.isEmpty()) {
             return; // one segment: the keystone requirement already asks it for a proof
         }
@@ -329,14 +347,14 @@ public final class RangeGate {
             } else {
                 where = "the near side of the wall at " + end + " (" + walls.get(i)[1] + ")";
             }
-            findings.add("no keystone or flex lies in " + span + ", " + where + ": a wall inside a range needs a proof on each side");
+            findings.add("R2", "no keystone or flex lies in " + span + ", " + where + ": a wall inside a range needs a proof on each side");
         }
     }
 
     // --- the loader's metadata -------------------------------------------------------------------------------------
 
     private static JsonObject metadata(ArtifactLedger.Artifact a, Loaders.Loader loader, List<String> versions, List<String> real,
-                                       CompatMetadata.Found found, List<String> findings) {
+                                       CompatMetadata.Found found, Found findings) {
         JsonObject m = new JsonObject();
         Loaders.Compat c = loader.compat();
         if (c == null) {
@@ -346,7 +364,7 @@ public final class RangeGate {
             return unchecked(m, c.before());
         }
         if (c.from() != null && Eras.compare(versions.get(0), c.from()) < 0) {
-            findings.add("the range reaches back past " + c.from() + ", where the loader declares compatibility in a file, into versions where "
+            findings.add("R3", "the range reaches back past " + c.from() + ", where the loader declares compatibility in a file, into versions where "
                     + "it does not (" + c.before() + "): one artifact is on one side of it");
             return unchecked(m, "the range straddles " + c.from());
         }
@@ -356,7 +374,7 @@ public final class RangeGate {
         m.addProperty("checked", true);
         m.addProperty("syntax", c.syntax());
         if (found.file() == null) {
-            findings.add("the artifact carries none of " + c.files() + ", where the loader reads the Minecraft versions it accepts");
+            findings.add("R3", "the artifact carries none of " + c.files() + ", where the loader reads the Minecraft versions it accepts");
             return m;
         }
         m.addProperty("file", found.file());
@@ -366,12 +384,12 @@ public final class RangeGate {
                 List<String> modern = new ArrayList<>();
                 versions.stream().filter(v -> Eras.compare(v, "1.13") >= 0).forEach(modern::add);
                 if (!modern.isEmpty()) {
-                    findings.add(found.file() + " declares no " + c.key() + ", which servers read as a legacy plugin; the range includes "
+                    findings.add("R3", found.file() + " declares no " + c.key() + ", which servers read as a legacy plugin; the range includes "
                             + list(modern) + ", where a plugin that does not declare its API version is treated as one written before it");
                 }
                 m.addProperty("value", "legacy (none declared)");
             } else {
-                findings.add(found.file() + " declares no Minecraft version, so the loader would accept the artifact on any: the range is not what it enforces");
+                findings.add("R3", found.file() + " declares no Minecraft version, so the loader would accept the artifact on any: the range is not what it enforces");
             }
             return m;
         }
@@ -380,13 +398,13 @@ public final class RangeGate {
         try {
             accepts = CompatExpr.parse(c.syntax(), found.value());
         } catch (IllegalArgumentException e) {
-            findings.add(found.file() + " declares '" + found.value() + "', which is not a " + c.syntax() + " range: " + e.getMessage());
+            findings.add("R3", found.file() + " declares '" + found.value() + "', which is not a " + c.syntax() + " range: " + e.getMessage());
             return m;
         }
         List<String> refused = new ArrayList<>();
         versions.stream().filter(accepts.negate()).forEach(refused::add);
         if (!refused.isEmpty()) {
-            findings.add(found.file() + " accepts '" + found.value() + "', which refuses " + list(refused)
+            findings.add("R3", found.file() + " accepts '" + found.value() + "', which refuses " + list(refused)
                     + " in the range: the loader would not run the artifact where it claims to");
         }
         Set<String> inRange = new HashSet<>(versions);

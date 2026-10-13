@@ -29,18 +29,21 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The pure layer's source laws (docs/eras.md), checked on the source so they hold on every target at once:
+ * The pure layer's source laws (docs/eras.md), checked on the source so they hold on every target at once. These are
+ * explanations, not the proof: {@code myceliumPureCompile} (the layer compiles alone) and the era gates are the proof
+ * (docs/decisions/0017), so nothing here is a dependency of {@code compileJava}; it runs in {@code check}.
  * <ul>
- *   <li><b>P1 pure:</b> it mentions no Minecraft, loader or integration package, and none of the artifact's own platform
- *   packages (its other source packages); no package is split between the layers.</li>
- *   <li><b>P3 deterministic:</b> it reads no clock and draws no unseeded randomness, and does not use
- *   {@code java.util.SplittableRandom} (no Java 8 form; random.seeded@1 is the pure layer's randomness).</li>
+ *   <li><b>P1 pure</b> (warn): it mentions no Minecraft, loader or integration package. <b>P1.split</b> (fail): no package
+ *   is split between the pure layer and the platform sources.</li>
+ *   <li><b>P3 deterministic</b> (warn): it reads no clock, environment or unseeded randomness. A policy: a mod that
+ *   declares a law this breaks sets it to {@code fail}. {@code SplittableRandom} is not matched: an era with no such class
+ *   is caught by the era gate's stub check (P2), which is the real reason.</li>
  * </ul>
  * Comments and string literals are ignored. P2 (linkage) is checked per era on the bytecode ({@link EraTask}).
  */
 public abstract class PurityTask extends DefaultTask {
     /**
-     * Always forbidden: the game, the tools, every loader some era names ({@code eras/loaders.json}, read by
+     * Always reported: the game, the tools, every loader some era names ({@code eras/loaders.json}, read by
      * {@link Loaders#platformPackages()}). Declared here as data, not a list in code: a list in code drifted from the era
      * table once (Quilt was named by an era and guarded by nothing).
      */
@@ -53,7 +56,6 @@ public abstract class PurityTask extends DefaultTask {
     static {
         NONDETERMINISM.put("the wall clock", Pattern.compile("\\bSystem\\s*\\.\\s*(currentTimeMillis|nanoTime)\\b|\\b(Instant|LocalDateTime|LocalDate|LocalTime|ZonedDateTime|OffsetDateTime)\\s*\\.\\s*now\\b|\\bClock\\s*\\.\\s*system"));
         NONDETERMINISM.put("unseeded randomness", Pattern.compile("\\bMath\\s*\\.\\s*random\\b|\\bThreadLocalRandom\\b|\\bnew\\s+(java\\.util\\.)?Random\\s*\\(\\s*\\)|\\bUUID\\s*\\.\\s*randomUUID\\b|\\bSecureRandom\\b"));
-        NONDETERMINISM.put("SplittableRandom (no Java 8 form; use random.seeded@1)", Pattern.compile("\\bSplittableRandom\\b"));
         NONDETERMINISM.put("the environment", Pattern.compile("\\bSystem\\s*\\.\\s*(getenv|getProperty)\\b"));
     }
 
@@ -61,14 +63,18 @@ public abstract class PurityTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getPureSources();
 
-    /** The artifact's other sources: whatever package they declare is platform, and off limits to the pure layer. */
+    /** The artifact's other sources: whatever package they declare is platform, and may not be split with the pure layer. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getPlatformSources();
 
-    /** Packages forbidden by prefix, beyond {@link #getPlatformPackages()} (integration APIs, the consumer's own list). */
+    /** Packages reported by prefix, beyond {@link #getPlatformPackages()} (integration APIs, the consumer's own list). */
     @Input
     public abstract ListProperty<String> getForbidden();
+
+    /** The mod's check levels and allowances ({@link Checks#decode}). */
+    @Input
+    public abstract ListProperty<String> getChecks();
 
     @OutputDirectory
     public abstract DirectoryProperty getReportDir();
@@ -96,10 +102,10 @@ public abstract class PurityTask extends DefaultTask {
             platformPackages.add(packageOf(Files.readString(p, StandardCharsets.UTF_8)));
         }
 
-        List<String> violations = new ArrayList<>();
+        Checks.Findings found = new Checks.Findings(Checks.decode(getChecks().get()));
         for (String split : platformPackages) {
             if (purePackages.contains(split)) {
-                violations.add("P1 package " + split + " is split between the pure layer and the platform");
+                found.add("P1.split", split.replace('.', '/'), "package " + split + " is split between the pure layer and the platform");
             }
         }
         if (getPlatformPackages().get().isEmpty()) {
@@ -108,45 +114,37 @@ public abstract class PurityTask extends DefaultTask {
         List<String> forbidden = new ArrayList<>(getPlatformPackages().get());
         forbidden.addAll(getForbidden().get());
         for (Map.Entry<Path, String> e : code.entrySet()) {
+            String site = e.getKey().toString().replace('\\', '/');
             String where = e.getKey().getFileName().toString() + " (" + packageOf(Files.readString(e.getKey(), StandardCharsets.UTF_8)) + ")";
             for (String f : forbidden) {
                 if (IsolationTask.mentions(e.getValue(), f)) {
-                    violations.add("P1 " + where + " mentions " + f);
-                }
-            }
-            for (String own : platformPackages) {
-                // a class directly in a platform package, or all of it: `own.Type` or `own.*`
-                if (!own.isEmpty() && !purePackages.contains(own)
-                        && Pattern.compile("(?<![\\w.])" + Pattern.quote(own) + "\\.(?:[A-Z_$]|\\*)").matcher(e.getValue()).find()) {
-                    violations.add("P1 " + where + " reaches the platform package " + own);
+                    found.add("P1", site, where + " mentions " + f + " (the pure layer is the part that needs no platform;"
+                            + " myceliumPureCompile is the proof)");
                 }
             }
             for (Map.Entry<String, Pattern> n : NONDETERMINISM.entrySet()) {
                 Matcher m = n.getValue().matcher(e.getValue());
                 if (m.find()) {
-                    violations.add("P3 " + where + " uses " + n.getKey() + ": " + m.group().strip());
+                    found.add("P3", site, where + " uses " + n.getKey() + ": " + m.group().strip()
+                            + " (a pure layer's time and chance come from its inputs and seed; random.seeded@1 is its randomness)");
                 }
             }
         }
 
         JsonObject report = new JsonObject();
-        report.addProperty("schema", 1);
+        report.addProperty("schema", 2);
         report.addProperty("pureFiles", pure.size());
         JsonArray pk = new JsonArray();
         purePackages.forEach(pk::add);
         report.add("purePackages", pk);
         report.addProperty("platformPackages", platformPackages.size());
-        JsonArray v = new JsonArray();
-        violations.forEach(v::add);
-        report.add("violations", v);
+        report.add("findings", found.toJson());
         Path out = getReportDir().get().getAsFile().toPath();
         Files.createDirectories(out);
         Files.writeString(out.resolve("purity.json"), new GsonBuilder().setPrettyPrinting().create().toJson(report), StandardCharsets.UTF_8);
-        if (!violations.isEmpty()) {
-            throw new GradleException("Mycelium: the pure layer is not pure (docs/eras.md):\n  " + String.join("\n  ", violations));
-        }
-        getLogger().lifecycle("Mycelium: pure layer holds P1 and P3 ({} files in {} packages; {} platform packages kept out)",
-                pure.size(), purePackages.size(), platformPackages.size());
+        found.conclude(getLogger(), "the pure layer breaks a source law (docs/eras.md)");
+        getLogger().lifecycle("Mycelium: pure layer checked for P1 and P3 ({} files in {} packages; {} platform packages kept out; {} finding(s))",
+                pure.size(), purePackages.size(), platformPackages.size(), found.all().size());
     }
 
     static String packageOf(String text) {

@@ -6,6 +6,7 @@ import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Optional;
@@ -41,6 +42,10 @@ public abstract class PresentationTask extends DefaultTask {
     /** The era table, the registry and the compiler's models, so a change to any re-runs the task. */
     @Input
     public abstract Property<String> getSourceFingerprint();
+
+    /** The mod's check levels and allowances ({@link Checks#decode}): PR1, a problem compiling the programs. */
+    @Input
+    public abstract ListProperty<String> getChecks();
 
     @Internal
     public abstract DirectoryProperty getSources();
@@ -84,8 +89,14 @@ public abstract class PresentationTask extends DefaultTask {
         Files.writeString(reportDir.resolve("presentation.json"), new GsonBuilder().setPrettyPrinting().create()
                 .toJson(Presentation.summary(outcome, minecraft)), StandardCharsets.UTF_8);
         if (!outcome.ok()) {
-            throw new GradleException("Mycelium presentation: " + outcome.diagnostics().size() + " problem(s) compiling for Minecraft "
-                    + minecraft + " (" + outcome.realization() + "):\n  " + String.join("\n  ", outcome.diagnostics()));
+            // a problem leaves the item with no model on this version: PR1 fails by default; a warn writes no files and says so
+            Checks.Findings found = new Checks.Findings(Checks.decode(getChecks().get()));
+            for (String d : outcome.diagnostics()) {
+                found.add("PR1", minecraft, d);
+            }
+            found.conclude(getLogger(), "presentation: " + outcome.diagnostics().size() + " problem(s) compiling for Minecraft "
+                    + minecraft + " (" + outcome.realization() + ")");
+            return;
         }
         for (Map.Entry<String, String> file : outcome.files().entrySet()) {
             Path to = out.resolve(file.getKey());

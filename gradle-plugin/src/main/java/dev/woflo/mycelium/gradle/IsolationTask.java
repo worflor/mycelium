@@ -30,10 +30,14 @@ import java.util.regex.Pattern;
  * without it when it is not, keeps that promise only if the other mod's classes are never loaded when it is absent.
  * That is a property of the source's shape, so it is checked, not hoped:
  * <ul>
- *   <li><b>I1 confined</b>: only sources inside an integration's home package mention the other mod's API packages.</li>
- *   <li><b>I2 unreferenced</b>: nothing outside the home package mentions it, except the integration's declared gates
- *   (the one place that checks the mod is loaded, then calls in).</li>
+ *   <li><b>I1 confined</b> (fail): only sources inside an integration's home package mention the other mod's API
+ *   packages. This is the NoClassDefFoundError law.</li>
+ *   <li><b>I2 unreferenced</b> (warn): nothing outside the home package mentions it, except the integration's gates (the
+ *   places that check the mod is loaded, then call in). Gates are <em>derived</em> unless the mod declares them: every
+ *   source outside the home that references the home is a gate, reported in {@code isolation.json}; declare gates (the
+ *   fourth argument of {@code integration}) to close the list, and I2 then reports a reference from anywhere else.</li>
  * </ul>
+ * Runs in {@code check}, never before {@code compileJava} (docs/decisions/0017).
  * Comments are ignored (a javadoc may name anything). Found in Somnium (2026-09-24), where one source tree integrates
  * Simple Voice Chat on four targets and Cobblemon on two.
  *
@@ -52,6 +56,10 @@ public abstract class IsolationTask extends DefaultTask {
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getSources();
+
+    /** The mod's check levels and allowances ({@link Checks#decode}). */
+    @Input
+    public abstract ListProperty<String> getChecks();
 
     @OutputDirectory
     public abstract DirectoryProperty getReportDir();
@@ -184,44 +192,48 @@ public abstract class IsolationTask extends DefaultTask {
             }
         }
         JsonArray results = new JsonArray();
-        List<String> leaks = new ArrayList<>();
+        Checks.Findings found = new Checks.Findings(Checks.decode(getChecks().get()));
         for (String encoded : getIntegrations().get()) {
             Integration in = Integration.decode(encoded);
             int homeFiles = 0;
-            List<String> mine = new ArrayList<>();
+            boolean derive = in.gates().isEmpty();
+            List<String> derived = new ArrayList<>();
             for (Source s : sources) {
                 boolean home = inside(s.pkg(), in.home());
                 homeFiles += home ? 1 : 0;
                 for (String api : in.apis()) {
                     if (!home && mentions(s.code(), api)) {
-                        mine.add("I1 " + s.path() + " mentions " + api + " outside " + in.home());
+                        found.add("I1", s.path(), in.name() + ": " + s.path() + " mentions " + api + " outside " + in.home()
+                                + " (it would load the other mod's class without it installed)");
                     }
                 }
-                if (!home && mentions(s.code(), in.home()) && !in.gates().contains(s.path())) {
-                    mine.add("I2 " + s.path() + " reaches into " + in.home() + " (not a declared gate)");
+                if (!home && mentions(s.code(), in.home())) {
+                    if (derive) {
+                        derived.add(s.path());
+                    } else if (!in.gates().contains(s.path())) {
+                        found.add("I2", s.path(), in.name() + ": " + s.path() + " reaches into " + in.home() + " (not a declared gate)");
+                    }
                 }
             }
             JsonObject r = new JsonObject();
             r.addProperty("integration", in.name());
             r.addProperty("home", in.home());
             r.addProperty("homeFiles", homeFiles);
-            JsonArray v = new JsonArray();
-            mine.forEach(v::add);
-            r.add("violations", v);
+            r.addProperty("gates", derive ? "derived" : "declared");
+            JsonArray g = new JsonArray();
+            (derive ? derived : in.gates()).forEach(g::add);
+            r.add("gateFiles", g);
             results.add(r);
-            leaks.addAll(mine.stream().map(x -> in.name() + ": " + x).toList());
         }
         JsonObject report = new JsonObject();
-        report.addProperty("schema", 1);
+        report.addProperty("schema", 2);
         report.addProperty("sourcesScanned", sources.size());
         report.add("integrations", results);
+        report.add("findings", found.toJson());
         Path out = getReportDir().get().getAsFile().toPath();
         Files.createDirectories(out);
         Files.writeString(out.resolve("isolation.json"), new GsonBuilder().setPrettyPrinting().create().toJson(report), StandardCharsets.UTF_8);
-        if (!leaks.isEmpty()) {
-            throw new GradleException("Mycelium: optional integrations are not isolated (the artifact would load another mod's classes"
-                    + " without it installed):\n  " + String.join("\n  ", leaks));
-        }
-        getLogger().lifecycle("Mycelium: {} integration(s) isolated ({} source files scanned)", getIntegrations().get().size(), sources.size());
+        found.conclude(getLogger(), "optional integrations are not isolated (the artifact would load another mod's classes without it installed)");
+        getLogger().lifecycle("Mycelium: {} integration(s) checked ({} source files scanned, {} finding(s))", getIntegrations().get().size(), sources.size(), found.all().size());
     }
 }

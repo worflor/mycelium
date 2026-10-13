@@ -27,7 +27,24 @@ public final class LinkageGate {
     }
 
     /** What the gate found ({@code findings} empty: every version that has name data links) and the report to record. */
-    public record Result(List<String> findings, JsonObject report) {
+    public record Result(List<String> findings, JsonObject report, Map<String, String> ids) {
+        public Result(List<String> findings, JsonObject report) {
+            this(findings, report, Map.of());
+        }
+
+        /** The check a finding belongs to: L1 an unresolved reference, L2 name data that could not be had or read. */
+        public String checkOf(String finding) {
+            return ids.getOrDefault(finding, "L1");
+        }
+    }
+
+    private static final class Tagged extends ArrayList<String> {
+        final Map<String, String> ids = new java.util.LinkedHashMap<>();
+
+        void add(String id, String message) {
+            ids.put(message, id);
+            add(message);
+        }
     }
 
     /** A reference that does not resolve, and where the artifact first makes it. */
@@ -138,7 +155,7 @@ public final class LinkageGate {
     static Result evaluate(JsonObject range, ArtifactLedger.Artifact artifact, String namespace, Eras eras, NameData data, References.Found found,
                            Loader loadNames, Map<String, String> runtimeLinked, Map<String, Names> serverRuntime,
                            Map<String, List<String>> serverOwns, boolean offline) {
-        List<String> findings = new ArrayList<>();
+        Tagged findings = new Tagged();
         JsonObject report = new JsonObject();
         report.addProperty("schema", 1);
         report.addProperty("id", artifact.id());
@@ -238,14 +255,14 @@ public final class LinkageGate {
                     link.addProperty("status", "unavailable");
                     link.addProperty("why", u.getMessage());
                     if (!offline) {
-                        findings.add(version + ": its " + names + " name data is pinned (eras/names.json) and could not be had: "
+                        findings.add("L2", version + ": its " + names + " name data is pinned (eras/names.json) and could not be had: "
                                 + u.getMessage() + ". Build online once to cache it, or build offline (the version then stays "
                                 + (run.equals("interpolated") ? "interpolated" : run) + ").");
                     }
                 } catch (IOException | RuntimeException x) {
                     link.addProperty("status", "unavailable");
                     link.addProperty("why", String.valueOf(x.getMessage()));
-                    findings.add(version + ": its " + names + " name data could not be read: " + x.getMessage());
+                    findings.add("L2", version + ": its " + names + " name data could not be read: " + x.getMessage());
                 }
             }
             JsonObject out = new JsonObject();
@@ -275,7 +292,7 @@ public final class LinkageGate {
         JsonArray f = new JsonArray();
         findings.forEach(f::add);
         report.add("findings", f);
-        return new Result(findings, report);
+        return new Result(findings, report, findings.ids);
     }
 
     /** The versions of a range report with their {@code run} status, for a caller that wants to know what ran where. */

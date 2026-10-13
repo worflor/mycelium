@@ -1,9 +1,11 @@
 package dev.woflo.mycelium.gradle;
 
 import org.gradle.api.Action;
+import org.gradle.api.Project;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Nested;
 
@@ -22,6 +24,91 @@ import java.util.List;
  * </pre>
  */
 public abstract class MyceliumExtension {
+    /** The project this extension configures; set by the plugin ({@code null} on a defaults holder before it is bound). */
+    transient Project project;
+
+    /**
+     * Levels and allowances for every check the plugin makes (docs/decisions/0017): off, warn or fail per check, and
+     * {@code allow(check, site, reason)} for one site, recorded in the evidence manifest. The table of checks and their
+     * defaults is in docs/plugin.md.
+     */
+    @Nested
+    public abstract ChecksSpec getChecks();
+
+    public void checks(Action<? super ChecksSpec> action) {
+        action.execute(getChecks());
+    }
+
+    /** Have the plugin write this target's {@code pack.mcmeta} from the era table (docs/decisions/0017). */
+    @Nested
+    public abstract PackMetaSpec getPackMeta();
+
+    public void packMeta(Action<? super PackMetaSpec> action) {
+        action.execute(getPackMeta());
+        getPackMeta().getEnabled().set(true);
+    }
+
+    /** A resource directory per schema era, chosen by the target version (docs/decisions/0017). */
+    @Nested
+    public abstract OverlaySpec getOverlays();
+
+    public void overlays(Action<? super OverlaySpec> action) {
+        action.execute(getOverlays());
+    }
+
+    /**
+     * The mixin compatibility level for this target's Java, from the era table: {@code JAVA_8}, {@code JAVA_17},
+     * {@code JAVA_21}, {@code JAVA_25}. Needs {@code root} and {@code minecraft}. Use as the value of a
+     * {@code compatibilityLevel} in a mixin config (`expand("java" to mycelium.mixinJava)`).
+     */
+    public String getMixinJava() {
+        return mixinJava(Integer.MAX_VALUE);
+    }
+
+    /** As {@link #getMixinJava()}, capped at {@code newest} for a Mixin that stops at a lower level (Forge's 0.8.7 stops at 21). */
+    public String mixinJava(int newest) {
+        return "JAVA_" + Math.min(javaFor(getMinecraft().get()), newest);
+    }
+
+    /**
+     * The Minecraft versions this build targets, as {@code loader}'s metadata writes a range (a Fabric {@code depends},
+     * a Forge {@code versionRange}): the declared {@code range} if there is one, else from the oldest to the newest
+     * {@code minecraft} of every Mycelium project in the build. A provider: sibling projects are configured when it is read.
+     */
+    public Provider<String> minecraftRange(String loader) {
+        return project.provider(() -> {
+            Loaders.Loader l = Loaders.load(getRoot().get().getAsFile()).loaders().get(loader);
+            if (l == null || l.compat() == null) {
+                throw new IllegalStateException("the loader '" + loader + "' declares no compatibility the build can write (eras/loaders.json)");
+            }
+            String from;
+            String to;
+            if (getRange().isDeclared()) {
+                from = getRange().artifact().from();
+                to = getRange().artifact().to();
+            } else {
+                from = null;
+                to = null;
+                for (Project p : project.getRootProject().getAllprojects()) {
+                    MyceliumExtension e = p.getExtensions().findByType(MyceliumExtension.class);
+                    if (e == null || e == this && !getMinecraft().isPresent() || !e.getMinecraft().isPresent()) {
+                        continue;
+                    }
+                    String v = e.getMinecraft().get();
+                    if (from == null || Eras.compare(v, from) < 0) {
+                        from = v;
+                    }
+                    if (to == null || Eras.compare(v, to) > 0) {
+                        to = v;
+                    }
+                }
+                if (from == null) {
+                    throw new IllegalStateException("no project in this build sets mycelium { minecraft = ... }, so there is no range to write");
+                }
+            }
+            return CompatExpr.render(l.compat().syntax(), from, to);
+        });
+    }
     /** The Mycelium checkout (contains {@code contracts/registry.json} and {@code harness/src}). */
     public abstract DirectoryProperty getRoot();
 
@@ -43,7 +130,10 @@ public abstract class MyceliumExtension {
     /** Artifact version recorded in the evidence manifest (defaults to the project version). */
     public abstract Property<String> getArtifactVersion();
 
-    /** Jar task names receiving this artifact's private code and evidence. Empty preserves attachment to every Jar. */
+    /**
+     * Jar task names receiving this artifact's private code and evidence. Empty means the jar that ships, the project's
+     * {@code jar} task (a loader's remap or repackaging step consumes it); `"*"` means every Jar task.
+     */
     public abstract ListProperty<String> getArtifactJars();
 
     public void artifactJars(String... taskNames) {

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "note": "What Mycelium's own check proved: a fingerprint of the sources each contract's harness ran over (the shared harness, the models it requires, its own package; docs/decisions/0017) and the Javas the era gates ran on. Written by ./gradlew myceliumRecordProofs (part of check), read by a mod's myceliumVerify. Do not edit.",
+  "eras": [
+    8,
+    16,
+    17,
+    21,
+    25
+  ],
+  "contracts": {
+    "agent.link@1": "b66b5f8770fe90e9ad6c53f6a95c844f47e5bb4ff9cdc2428babf2b360ce0382",
+    "chat.coverage@1": "47406a76f658c28bfd53e238f539f6bccfcf45ee4f63e139f304b914b602f99f",
+    "chat.invocation@1": "408b92e09ca5a897800e6995078d731689c3edd68eae9e901882bf05ffddd899",
+    "chunk.hold@1": "b7123b89ab73b11a76a41d139210e1389492dd7f8673277fb75db5bff2271054",
+    "data.catalog@1": "35236cfdf12a0a0a88f63be51c4c5b2c18d24afaf51f3cb3dbcb76d860d2a580",
+    "dimension.travel@1": "4c1cb222165c2fa1d61ccea250cb83119cc6a90e1de8e2a28e94cb87ecd7c3f6",
+    "dimension.travel@2": "7cca8a2b9bd59a137844a316d3adc8d9393e3abf895bf800f28551251d383072",
+    "inventory.transfer@1": "faf5ef81ba3d3cbee6835a5c11db84c6ae7eec37bc9bd895568a4f0f0d1f8d10",
+    "item.component@1": "f203ffe923c4d8ac07c9e8829d8892aaa2dadc88e2532175a158cd321f9d2939",
+    "item.presentation@1": "58a7a6f047c054ed6317e375ab37516de4a218c659563b64ecf4c6e8b6d7007c",
+    "persistence.player-state@1": "0a8b04005e4516e3e6a553d8ade35d43d46e0e9030d0928efdefc6ae18e3e410",
+    "presentation.particle-cue@1": "4f41f54f3ca774bafdc131758d747bb1ccb58275e0baff4217ddc36c8556fe23",
+    "random.seeded@1": "df3bb6c60fd8bf0b54325ba29b7a79f8662a17fc55e0337071cbcfb88c90692f",
+    "rule.effects@1": "72c9fd46eac01550366600182dc6e3bf52c2b88a7f87d72cac1366fb8a418630",
+    "state.lifecycle@1": "749fbcaab8b83f66657badfbe240b4fbb4cf95c8f2e852090a5a2c16b94d59e8",
+    "world.clock@1": "e5bb4e673d667eabbccade47e68901046b85bafbd2604060eb027bb60b3cb287",
+    "world.copy@1": "91019f3a3cd0d83366c871cc2050f4483952605de87bf4c5495e644278837012"
+  }
+}

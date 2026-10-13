@@ -377,9 +377,55 @@ public final class RepositoryCheck {
             }
         }
         presentation(eras, real, versions, report);
+        packFormat(eras, real, versions, report);
         report.result("eras", covered, all.size() + " eras cover " + covered + " real versions exactly once ("
                 + outside + " before Classic are not targets); " + loaders.loaders().size() + " loaders, "
                 + loaders.platformPackages().size() + " platform package roots");
+    }
+
+    /**
+     * The packFormat table (docs/decisions/0017): bounds are real and in order, every real version from 1.6.1 (the first with
+     * resource packs) falls in exactly one row, and a data format exists exactly from 1.13 (the first with data packs).
+     */
+    private static void packFormat(Eras eras, Set<String> real, List<String> versions, Report report) {
+        List<Eras.PackFormat> rows = eras.packFormats();
+        if (rows.isEmpty()) {
+            report.find("eras", "eras/minecraft.json has no \"packFormat\" table: the plugin cannot write a pack.mcmeta for any version");
+            return;
+        }
+        for (Eras.PackFormat p : rows) {
+            for (String bound : List.of(p.from(), p.to())) {
+                if (!Eras.isLine(bound) && !real.contains(bound)) {
+                    report.find("eras", "packFormat " + p.from() + ".." + p.to() + ": bound '" + bound + "' is not a version the launcher names");
+                }
+            }
+            if (Eras.readable(Eras.lineStart(p.from())) && Eras.readable(Eras.lineStart(p.to())) && !Eras.atMost(Eras.lineStart(p.from()), p.to())) {
+                report.find("eras", "packFormat " + p.from() + ".." + p.to() + " runs backwards");
+            }
+            if (!(p.source().equals("wiki") || p.source().startsWith("jar "))) {
+                report.find("eras", "packFormat " + p.from() + ".." + p.to() + ": source '" + p.source() + "' is neither 'wiki' nor 'jar <version>'");
+            }
+            boolean hasData = Eras.atLeast(p.from(), "1.13");
+            if (hasData != (p.data() != null)) {
+                report.find("eras", "packFormat " + p.from() + ".." + p.to() + (hasData ? " has no data format, and data packs exist from 1.13"
+                        : " has a data format, and data packs begin at 1.13"));
+            }
+        }
+        for (String v : versions) {
+            if (!Eras.readable(v) || Eras.compare(v, "1.6.1") < 0) {
+                continue;
+            }
+            List<String> in = new ArrayList<>();
+            for (Eras.PackFormat p : rows) {
+                if (p.covers(v)) {
+                    in.add(p.from() + ".." + p.to());
+                }
+            }
+            if (in.size() != 1) {
+                report.find("eras", "Minecraft " + v + " falls in " + (in.isEmpty() ? "no packFormat row" : "several packFormat rows " + in)
+                        + ": every real version from 1.6.1 must fall in exactly one");
+            }
+        }
     }
 
     /**

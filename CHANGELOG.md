@@ -26,6 +26,32 @@ or required method changed). `contracts/item-component/SPEC.md` has the model, l
   `DroppingMigrationCarrier`, `OverreachingMigrationCarrier`), each caught for its label; the matrix is now 23. README count 161 to 174.
 
 Ran: `bash run-contracts.sh item-component` (reference clean, 23 of 23 caught), `./gradlew check`.
+## 2026-10-12 - Offer, don't police: the plugin treats a mod as the author of its code
+
+Decision 0017 (`docs/decisions/0017-offer-dont-police.md`) built into the plugin.
+
+- **One enforcement model.** Every check has a level (`off`, `warn`, `fail`) set in `mycelium { checks { } }`, with a documented
+  default table (`docs/plugin.md`): fail only for silent breakage (`P1.split`, `I1`, `R0`, `R3`, `L1`, `PR1`), warn for the rest.
+  `allow(check, site, reason)` lets one site through; the levels, their defaults and every allowance are in the evidence manifest.
+  P3 (clock, environment, unseeded chance) is a warning, the "own platform package" text rule and the `SplittableRandom` ban are gone
+  (compiling alone and the era gate's stub check are the proof), a missing keystone or wall proof warns (versions stay interpolated),
+  and unavailable pinned name data warns.
+- **Nothing blocks compilation.** `myceliumPurity` and `myceliumIsolation` are no longer dependencies of `compileJava` (nor of
+  `myceliumPureCompile` and so the jar); they run in `check`.
+- **Derived.** The contract list follows the mod's own imports under its namespace (an explicit `contracts(...)` overrides); an
+  integration's gates are the sources that reference its home; the shipping jar is `jar` (`artifactJars("*")` for every Jar).
+- **Declared once.** `dev.woflo.mycelium.defaults` gives a root project `myceliumDefaults { }`, inherited by every project.
+- **The era table generates version data.** `eras/minecraft.json` gains `packFormat` rows (checked against real game jars where
+  available, otherwise minecraft.wiki; `myceliumRepository` proves every version from 1.6.1 has one). `myceliumPackMeta` writes a
+  target's `pack.mcmeta` in the schema its version reads; `mycelium.mixinJava` gives the `JAVA_NN` level; `mycelium.minecraftRange(loader)`
+  the metadata range; `overlays { }` a resource directory per schema era.
+- **Mycelium's own result is not re-run in every mod.** `myceliumRecordProofs` (in this repository's `check`) records
+  `contracts/proofs.json`; `myceliumVerify` in a mod takes a contract whose sources are unchanged as proven (`proven-upstream`) and
+  runs a harness only on a difference or `-Pmycelium.verify=always`.
+
+Ran: `./gradlew check`, the `flexible-consumer` and `defaults-consumer` fixtures, and Somnium (a scratch copy) built against this plugin.
+
+
 ## 2026-10-12 - item.presentation@1: the Sigil, item presentation compiled from component state
 
 New contract `item.presentation@1` (`contracts/item-presentation`, `docs/decisions/0012-sigil-item-presentation.md`), written for Somnium,

@@ -36,6 +36,12 @@ gradlePlugin {
             displayName = "Mycelium"
             description = "Imports Mycelium contract models under an artifact-owned namespace, runs contract harnesses as a build gate, and writes an evidence manifest."
         }
+        create("myceliumDefaults") {
+            id = "dev.woflo.mycelium.defaults"
+            implementationClass = "dev.woflo.mycelium.gradle.MyceliumDefaultsPlugin"
+            displayName = "Mycelium defaults"
+            description = "Declares a mod mycelium block once on the root project of a multi-project build; every project inherits it."
+        }
         // The Mycelium repository's own gate; only the Mycelium root applies it, never a consumer.
         create("myceliumRepository") {
             id = "dev.woflo.mycelium.repository"
@@ -53,6 +59,9 @@ val selfTest = tasks.register<JavaExec>("selfTest") {
     description = "Runs the plugin's self-tests: era semantics, registry strictness, and every repository check shown to fire."
     classpath = sourceSets["test"].runtimeClasspath
     mainClass = "dev.woflo.mycelium.gradle.SelfTest"
+    // ProjectBuilder (the wiring tests: defaults, derivation, task graph) reflects into the JDK as Gradle's own tests do
+    jvmArgs(listOf("java.lang", "java.lang.invoke", "java.util", "java.util.concurrent.atomic", "java.net", "java.nio.charset", "java.io")
+        .map { "--add-opens=java.base/$it=ALL-UNNAMED" } + "--add-opens=java.prefs/java.util.prefs=ALL-UNNAMED")
     args(layout.projectDirectory.dir("..").asFile.absolutePath)
 }
 tasks.named("check") { dependsOn(selfTest) }
