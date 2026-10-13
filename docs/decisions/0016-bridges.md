@@ -102,3 +102,24 @@ for versions the mod claims in `range { }`.
   overlays at 1.21.5 and 26.1) and `root-tag` (1.14 to 1.20.4; a null tag when empty, since a null and an empty tag do not
   stack there). Conformance: round trip on a real `ItemStack`, a cleared stack equal to a plain one and stacking with it,
   other keys kept, quarantine refused not lost, sync to a client copy, save and reload.
+
+## Evidence and what the build decided where this was silent (2026-10-13)
+
+- Built as specified: `bridges/item-carrier/`, the realization tables, the import, `override`, `conformance()`, the repository
+  check and the linkage gate; `item.component@1` gained the `StackCarrier` port (additive, SPEC section 5.7).
+- Overlay layout is `overlays/<name>/{src,conformance}/`, and an overlay may add files as well as replace them. Overlays may not
+  overlap each other; each lies inside its variant.
+- A variant may carry its own `conformance/` rig (how to build, copy, save a stack there); the cases stay written against the port.
+- `bridge.json` has `writtenIn`, the name namespaces the source is written in; the names check counts a pin as read for it.
+- Selection: a source referencing `<namespace>.bridges.<slug>` or `bridges { use(...) }` brings a bridge and its contract.
+  `override` imports nothing and requires the class to implement the port (B1); no realization on the target is B2 (warn).
+- Conformance goes to the `gametest` source set when present, else `main`, or the one `conformance("name")` names.
+- Linkage compiles first, then checks references: each variant with the overlays covering a group of versions is compiled
+  against the newest version with data, then its references are linked on every version with data. The compile needs a javac as
+  new as the newest era's Java.
+- `custom-data`'s 1.21.5 overlay covers 26.x: nothing in this code changed at 26.1, so the 26.1 overlay expected above was not needed.
+- Correction: root-tag's 1.14 needs an overlay of its own (1.14's tags have constructors, not `valueOf`); and
+  `ItemStack.isSameItemSameTags` is absent before 1.17, so its rig uses `ItemStack.matches`.
+- Linkage results: custom-data base 1.20.5 to 1.21.4 (1.21.2 has no data); custom-data with the 1.21.5 overlay on 1.21.5 to 26.3
+  (no data for 1.21.6, 1.21.7, 1.21.9); root-tag 1.15 to 1.20.4 on the eight pinned versions; root-tag with the 1.14 overlay on
+  1.14.4. Mojang names start at 1.14.4, so 1.14 to 1.14.3 are reported, not failed.

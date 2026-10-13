@@ -35,6 +35,7 @@ The tower (`DESIGN.md` §5) keeps platform access in one layer, so everything el
 | L0 Intent | the mod | Authored behaviour, feel criteria, feature identifiers | no |
 | L1 Kernels | the mod's pure layer | Pure algorithms over explicit inputs | **never** |
 | L2 Contracts | **`contracts/`** | Typed, versioned declarations and their laws | **never** |
+| L2b Bridges | **`bridges/`** | The native half of a divide: one adapter per realization, imported as source for the target | yes, Mojang names, linked against every version it covers |
 | L3 Seams | the mod | Planning and composition, reaching the platform only through L2 | only through contracts |
 | L4 Providers | the mod, per loader and era | Native implementations and lifecycle binding: the platform-access layer | yes, with full power |
 | L5 Machine | **`gradle-plugin/`**, plus the mod's buildscripts | Import, verify, eras, isolation, evidence | n/a |
@@ -89,6 +90,8 @@ These are the invariants every change keeps. Each says what keeps it.
 | `myceliumVerify` | every harness: the reference clean, every matrix entry caught for its label, a `NoOp*` among them. In a mod, only for a contract whose sources differ from what `contracts/proofs.json` (written by `myceliumRecordProofs`) says Mycelium proved |
 | `myceliumPurity`, `myceliumPureCompile` | the contract models are a pure layer (P1, P3), and compile alone |
 | `myceliumEras` | every harness on every Java an era runs on: stubs, linkage (P2), behaviour |
+| `myceliumBridgeLinkage` | every bridge variant, with each overlay, compiles against the game and resolves in the published names of each version it covers that has name data |
+| `myceliumBridges` | a mod's bridge override exists and implements the port (B1); a bridge with no realization on the target is reported (B2) |
 | `myceliumRange` | an artifact's claimed Minecraft range against the era table, its proofs and its loader metadata |
 | `myceliumLinkage` | every reference the finished artifact makes resolves in the game's published names on each version of its range that has name data |
 | `myceliumRepository` | registry against disk, package shapes, model ownership, copied patterns, era coverage, loader packages, document counts, paths and maps, and the harness's own checks |

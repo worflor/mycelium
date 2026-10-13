@@ -86,6 +86,9 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 | Task | Effect |
 |---|---|
 | `myceliumImport` | Copies each selected contract's `model` (and its requirements') into `build/generated/sources/mycelium/java` under the mod's namespace, and adds it to `main`. A model that reaches the harness is refused. |
+| `myceliumBridgeImport` | Copies the bridges the imported contracts bring (a contract's registry row lists them) into `build/generated/sources/mycelium/bridges/java`, as the realization table's variant and overlays for the target Minecraft version, rewritten under the mod's namespace, and adds them to `main`. With `bridges { conformance() }` the bridge's conformance cases go to `build/generated/sources/mycelium/conformance/java`, added to the `gametest` source set (else `main`; `conformance("name")` picks one). A bridge with no realization on the target is not imported (B2). Skipped in a verification project. |
+| `myceliumBridges` | Checks the mod's bridge choices (B1, B2) and writes `build/mycelium/bridges/bridges.json`, which the evidence manifest records. In `check`. |
+| `myceliumBridgeLinkage` | This repository only: every bridge variant, with each overlay, compiled against the game and linked against every version it covers that has name data (`eras/names.json`); versions without data are reported, not failed. In `check`; it needs a JDK as new as the newest era's Java (a toolchain). |
 | `myceliumVerify` | Compiles and runs each selected harness whose sources are not the ones Mycelium's own check proved (`contracts/proofs.json`); collects each harness's report. In `check`. `-Pmycelium.contracts=a@1,b@1` overrides the selection for one run; `-Pmycelium.verify=always` runs every harness. |
 | `myceliumUsage` | Reports imported contracts the mod's own sources never use (U1). Warns; `failOnUnused = true` fails. In `check`. |
 | `myceliumIsolation` | An optional integration's API is mentioned only in its home package (I1), and its home only from its gates (I2). In `check`; never before `compileJava`. |
@@ -121,6 +124,8 @@ in the table: it holds or the artifact is not what it says. The table is the che
 | `P3` | warn | the pure layer reads no clock, environment or unseeded chance (`SecureRandom`, `UUID.randomUUID`, `getenv`, `getProperty`, `Math.random`, `new Random()`) | a pure layer that differs run to run. A policy: a mod that declares a law this breaks sets `fail` |
 | `I1` | **fail** | an optional integration's API is mentioned only in its home package | `NoClassDefFoundError` when the other mod is not installed |
 | `I2` | warn | the integration's home is referenced only from its gates (derived unless declared) | the home loaded without its guard |
+| `B1` | fail | a bridge the mod overrides (`bridges { override(slug, className) }`) has a class that exists and implements the bridge's port | an override the contract's laws cannot be held to |
+| `B2` | warn | an imported bridge has a realization on the target version | a bridge the build silently left out, so its port has no native half there |
 | `U1` | warn | an explicitly imported contract is referenced by the mod's own sources (`failOnUnused = true` sets `fail`) | a manifest that says the mod carries a contract it never uses |
 | `S1` | warn | the portability surface has not grown past `surfaceBaseline` (`surfaceFailOnGrowth = true` sets `fail`; `off` skips `myceliumSurface`) | the next port growing unseen |
 | `R0` | **fail** | the claimed range is real: both ends are versions, the loader exists on each, proofs name real versions the artifact claims | a claim about versions that do not exist |
@@ -149,6 +154,24 @@ written. The levels, with each default they replaced, and every allowance with i
 (`checks`), beside what the text checks last found (a finding an allowance covered is shown as `allowed`, with its reason):
 nothing is hidden by being allowed. A text check runs in `check` and never before `compileJava`, so a mod in the middle of a
 refactor can always compile.
+
+## Bridges
+
+A bridge is the native half of a divide: source that touches Minecraft, kept in `bridges/<slug>/` here and imported as source
+under the mod's namespace (`BRIDGE-PACKAGE.md`, `docs/decisions/0016-bridges.md`). Nothing runs at runtime; the mod gets the
+source for its target.
+
+- **Selection.** A mod gets a bridge when its sources reference `<namespace>.bridges.<slug>` (or `bridges { use("slug") }`),
+  which also brings the bridge's contract. The realization table (`eras/minecraft.json`, one table per divide) says which
+  variant covers the target version; the variant's overlays for that version replace or add same-named files. A `none` row,
+  or no row, means the bridge is not imported and B2 says so.
+- **Override.** `bridges { override("item-carrier", "com.me.MyCarrier") }` imports nothing for that bridge and checks only that
+  the class implements the port (B1). `skip("slug")` leaves a bridge out. Overrides are always possible; the evidence records
+  them.
+- **Conformance.** `bridges { conformance() }` also imports the bridge's conformance cases, plain Java the mod registers as
+  game tests (`ItemCarrierConformance.cases(...)` for `item-carrier`). They run on the target's real game objects, which is what
+  the laws about stacks, packets and saves need.
+- **Evidence.** The manifest's `bridges` section records the variant and overlays chosen for the target, or the override.
 
 ## Declaring once (`myceliumDefaults`)
 

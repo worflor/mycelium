@@ -35,15 +35,19 @@ getting it wrong is silent.
    a law yet.
 4. **Put version knowledge in data.** What changes at which version goes in `eras/` as a row the compiler reads, never as
    numbers in code (`docs/eras.md`).
-5. **Compile, don't branch.** Where the mod needs per-target artefacts (assets, generated tables, plans), a Gradle task
+5. **Write the bridge.** Where the divide is Minecraft itself (how a stack keeps data, how an event is delivered), add the
+   contract's port and write the native half in `bridges/<slug>/`: a variant per realization, an overlay where an API shifts
+   inside one, conformance cases for the port's laws on the real game (`BRIDGE-PACKAGE.md`). The realization table in
+   `eras/minecraft.json` says which variant covers which version; `myceliumBridgeLinkage` proves each against the game.
+6. **Compile, don't branch.** Where the mod needs per-target artefacts (assets, generated tables, plans), a Gradle task
    in the plugin generates them from the declaration for the target's version. The mod's platform layer reads the
    generated plan; it does not re-derive it. Keep the task loader-blind (`docs/plugin.md`).
-6. **Build on what exists.** If another contract already models part of the divide, require it (`docs/decisions/0014-contracts-compose-by-declared-requirement.md`) instead of restating it. If one nearly fits, extend it: additively within `@N` (a new
+7. **Build on what exists.** If another contract already models part of the divide, require it (`docs/decisions/0014-contracts-compose-by-declared-requirement.md`) instead of restating it. If one nearly fits, extend it: additively within `@N` (a new
    law, a new optional field, a new fixture), or as a new major when the meaning changes.
-7. **Use it in the mod in the same piece of work.** Import it, replace the hand-written split, delete the duplicate, and
+8. **Use it in the mod in the same piece of work.** Import it, replace the hand-written split, delete the duplicate, and
    prove it on every target with the mod's gametests. That mod evidence is what turns design-time laws into a claim
    about the game.
-8. **Gate and record.** `./gradlew check` green here, the mod's own gates green there, a `CHANGELOG.md` entry, and a
+9. **Gate and record.** `./gradlew check` green here, the mod's own gates green there, a `CHANGELOG.md` entry, and a
    decision record if you chose between real alternatives (`docs/decisions/`).
 
 The work happens here, in this repository, and the mod consumes it through `includeBuild` (`docs/plugin.md`). Keep the two

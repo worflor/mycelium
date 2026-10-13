@@ -36,6 +36,7 @@ Each fact has one home. Everything else links to it.
 | What to do when a mod meets a divide | `docs/building-with-mycelium.md` |
 | What makes a good addition; rules for documents | `docs/admission.md` |
 | What a contract package is made of | `CONTRACT-PACKAGE.md` |
+| What a bridge package is made of | `BRIDGE-PACKAGE.md` |
 | One contract's meaning and laws | its `SPEC.md` in `contracts/<slug>/` |
 | Worked examples of crossings | `contracts/README.md` |
 | Every contract's id, path, package | `contracts/registry.json` (checked; the only such mapping) |
@@ -59,6 +60,7 @@ mycelium/
 ├── README.md, AGENTS.md    the front door, and this file
 ├── DESIGN.md               founding design, v0.4, frozen (archive/ holds earlier versions)
 ├── CONTRACT-PACKAGE.md     what a contract package is made of, and what keeps each rule
+├── BRIDGE-PACKAGE.md       what a bridge package is made of (the native half of a divide), and what keeps each rule
 ├── CHANGELOG.md            history: what changed, what ran, what was found
 ├── docs/                   architecture, building-with-mycelium, admission, eras, plugin, integrations, STATUS,
 │   │                       decisions/ (why), reference/ (lookup)
@@ -76,6 +78,7 @@ mycelium/
 │   ├── registry.json       id, path, package, status, supersedes, provenance
 │   ├── patterns.json       code copied between packages on purpose, kept identical
 │   └── <slug>/             one package per contract (CONTRACT-PACKAGE.md)
+├── bridges/<slug>/         one package per bridge: bridge.json, a src/ per variant, overlays/, conformance/
 ├── gradle-plugin/          the plugins, an included build (map below)
 ├── run-contracts.sh, .ps1  the harness without Gradle: identical behaviour
 └── build.gradle.kts        applies both plugins to this repository; `./gradlew check` runs everything
@@ -101,6 +104,14 @@ the tasks do is `docs/plugin.md`.
   `supersedes`), `DeriveContractsTask.java` (`myceliumDeriveContracts`), `ImportContractsTask.java` (`myceliumImport`), `VerifyContractsTask.java` (`myceliumVerify`),
   `Harness.java` (what every runner shares: the harness's sources, and the bundle an era gate runs),
   `UsageTask.java` (`myceliumUsage`).
+- **Bridges** (decision 0016). `Bridges.java` (reads `bridges/<slug>/bridge.json` strictly; selects a variant and its overlays
+  for a version, rewrites packages under the mod's namespace, lays the files out), `BridgesSpec.java`
+  (`bridges { use skip override conformance }`), `ImportBridgesTask.java` (`myceliumBridgeImport`), `BridgeCheckTask.java`
+  (`myceliumBridges`: an override implements the port (B1), a bridge has a realization on the target (B2)), `BridgeCheck.java`
+  (this repository's check of every bridge: rows cover each version once, overlays lie inside their variant),
+  `BridgeLinkage.java` and `BridgeLinkageTask.java` (`myceliumBridgeLinkage`: every variant with each overlay compiled against
+  the game and linked against every version it covers that has name data), `GameClasspath.java` (a pinned game archive
+  renamed to Mojang names, shape only, as the compile classpath).
 - **The pure layer and integrations.** `PurityTask.java` (P1 and P3), `PureCompileTask.java` (the pure layer compiled
   alone, into a bundle), `IsolationTask.java` (`myceliumIsolation`; `docs/integrations.md`).
 - **Era data.** `Eras.java` (the era table: bounds, lookup, coverage, walls, names, scanner Java), `Versions.java`

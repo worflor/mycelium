@@ -49,9 +49,9 @@ mycelium {
 ```
 
 Everything the plugin does, and every option, is `docs/plugin.md`. Its tasks are `myceliumDeriveContracts`, `myceliumImport`, `myceliumVerify`,
-`myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>` (and `myceliumEras`),
+`myceliumBridgeImport`, `myceliumBridges`, `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>` (and `myceliumEras`),
 `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumCapsule`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`,
-`myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta` and `myceliumEvidence`. For this repository alone: `myceliumRepository`,
+`myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta` and `myceliumEvidence`. For this repository alone: `myceliumBridgeLinkage` (every bridge variant against the game), `myceliumRepository`,
 `myceliumRecordProofs`, `myceliumRefreshVersions` and `myceliumRefreshNames`.
 
 To run this repository's own checks:
