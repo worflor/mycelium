@@ -130,7 +130,8 @@ final class BridgeCheck {
                     report.find("bridges", where + ": the bridge has conformance cases, and variant " + v.name()
                             + " has none of its own to run them with (" + RepositoryCheck.rel(root, vdir.resolve("conformance")) + ")");
                 }
-                files += sources(root, b, vdir.resolve("src"), report) + sources(root, b, vdir.resolve("conformance"), report);
+                files += sources(root, b, vdir.resolve("src"), report, false) + sources(root, b, vdir.resolve("conformance"), report, true)
+                        + sources(root, b, vdir.resolve("conformance-bound"), report, false);
                 // overlays: directories, with ranges inside the variant's that do not meet
                 Set<String> named = new TreeSet<>();
                 for (Bridges.Overlay o : v.overlays()) {
@@ -143,7 +144,8 @@ final class BridgeCheck {
                     if (Bridges.javaFiles(odir).isEmpty()) {
                         report.find("bridges", at + " has no files (" + RepositoryCheck.rel(root, odir) + ")");
                     }
-                    files += sources(root, b, odir.resolve("src"), report) + sources(root, b, odir.resolve("conformance"), report);
+                    files += sources(root, b, odir.resolve("src"), report, false) + sources(root, b, odir.resolve("conformance"), report, true)
+                            + sources(root, b, odir.resolve("conformance-bound"), report, false);
                     for (String bound : List.of(o.from(), o.to())) {
                         if (!Eras.isLine(bound) && !versions.contains(bound)) {
                             report.find("bridges", at + ": bound '" + bound + "' is not a version the launcher names");
@@ -185,7 +187,7 @@ final class BridgeCheck {
                     }
                 }
             }
-            files += sources(root, b, sharedConformance, report);
+            files += sources(root, b, sharedConformance, report, true);
         }
         // the registry's side: every bridge a row lists exists, and names that contract
         for (ContractRegistry.Entry e : registry.all()) {
@@ -202,15 +204,27 @@ final class BridgeCheck {
                 + files + " sources laid out in their packages, each variant drawn by the realization table, each overlay inside its variant");
     }
 
-    /** Each source under {@code dir} sits in the bridge's package, declares it, and does not reach the harness. Returns how many. */
-    private static int sources(Path root, Bridges.Bridge b, Path dir, RepositoryCheck.Report report) throws IOException {
+    /**
+     * Each source under {@code dir} sits in the bridge's package, declares it, and does not reach the harness. Returns how many.
+     *
+     * @param rig whether these are the conformance cases and a variant's rig of the game, which a mod that overrides the bridge imports
+     *            without any of the bridge's own source: such a file names no class of the bridge's package (only its own {@code conformance}
+     *            package), or the override's build would not compile
+     */
+    private static int sources(Path root, Bridges.Bridge b, Path dir, RepositoryCheck.Report report, boolean rig) throws IOException {
         int n = 0;
         String expected = b.pkg();
+        Pattern own = Pattern.compile("(?<![\\w.])" + Pattern.quote(expected) + "\\.(?!conformance\\b)[A-Z]");
         for (Map.Entry<String, Path> f : Bridges.javaFiles(dir).entrySet()) {
             n++;
             String text = Files.readString(f.getValue(), StandardCharsets.UTF_8);
             if (text.contains("mycelium.harness")) {
                 report.find("bridges", RepositoryCheck.rel(root, f.getValue()) + " mentions mycelium.harness: a bridge never depends on the harness");
+            }
+            if (rig && own.matcher(text).find()) {
+                report.find("bridges", RepositoryCheck.rel(root, f.getValue()) + " is part of the conformance rig an override imports, and it names a class of the bridge's own package ("
+                        + expected + "): the cases and the rig need none of the bridge's source, so a mod that overrides the bridge can import them;"
+                        + " what needs it belongs in conformance-bound/");
             }
             Matcher m = PACKAGE.matcher(text);
             String declared = m.find() ? m.group(1) : "";

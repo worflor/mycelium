@@ -49,6 +49,11 @@ final class Presentation {
                    String realization) {
     }
 
+    /** How many programs {@code sources} holds: the {@code *.json} files below it but the catalog and the lock. */
+    static int programs(Path sources, Path components, Path lock) throws IOException {
+        return read(sources, components, lock).programs.size();
+    }
+
     /** Compiles every program under {@code sources} for {@code minecraft}. */
     static Outcome compile(Path root, Path work, String minecraft, Path sources, Path components, Path lock) throws IOException {
         String realization = Eras.load(root.toFile()).presentationFor(minecraft);
@@ -99,11 +104,15 @@ final class Presentation {
         List<String> problems = new ArrayList<>();
         Map<String, String> programs = new TreeMap<>();
         if (Files.isDirectory(sources)) {
-            try (Stream<Path> list = Files.list(sources)) {
-                for (Path p : (Iterable<Path>) list.sorted()::iterator) {
-                    String name = p.getFileName().toString();
-                    if (Files.isRegularFile(p) && name.endsWith(".json") && !p.equals(components) && !p.equals(lock)) {
-                        programs.put(name, Files.readString(p, StandardCharsets.UTF_8));
+            // every *.json below the sources, however deep (a mod groups its programs in folders), but the catalog and the lock; they are
+            // told apart from a program by the file, not by how the path to it was written
+            Path catalog = components.toAbsolutePath().normalize();
+            Path locked = lock.toAbsolutePath().normalize();
+            Path base = sources.toAbsolutePath().normalize();
+            try (Stream<Path> walk = Files.walk(base)) {
+                for (Path p : (Iterable<Path>) walk.sorted()::iterator) {
+                    if (Files.isRegularFile(p) && p.getFileName().toString().endsWith(".json") && !p.equals(catalog) && !p.equals(locked)) {
+                        programs.put(base.relativize(p).toString().replace('\\', '/'), Files.readString(p, StandardCharsets.UTF_8));
                     }
                 }
             }

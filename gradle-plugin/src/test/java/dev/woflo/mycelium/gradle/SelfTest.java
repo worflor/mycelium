@@ -34,7 +34,20 @@ public final class SelfTest {
     private static final List<String> FAILURES = new ArrayList<>();
     private static int assertions;
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        try {
+            run(args);
+        } catch (Throwable e) {
+            // an exception that ends main would leave Gradle's own non-daemon threads (ProjectBuilder's) running, and the build waiting on a
+            // JVM that never exits: say what happened, and exit
+            e.printStackTrace();
+            System.out.println();
+            System.out.println("Mycelium plugin self-test: ABORTED by " + e);
+            System.exit(2);
+        }
+    }
+
+    private static void run(String[] args) throws Exception {
         Path root = Path.of(args.length > 0 ? args[0] : "..").toAbsolutePath().normalize();
         eras(root);
         registry();
@@ -1226,6 +1239,19 @@ public final class SelfTest {
                     "presentation:1.20.1 gets an item model with overrides: " + legacy.diagnostics());
             that(modern.files().equals(Presentation.compile(root, work, "1.21.4", sources, components, lock).files()),
                     "presentation:the same inputs give the same files");
+            // programs may be grouped in folders, and the catalog and the lock are told apart by the file, not by how its path was written
+            Path nested = scratch.resolve("nested/src/main/presentation");
+            mkdirs(nested.resolve("bands/gold"));
+            Files.copy(components, nested.resolve("components.json"));
+            Files.copy(lock, nested.resolve("presentation.lock.json"));
+            Files.copy(sources.resolve("status_tool.json"), nested.resolve("bands/gold/status_tool.json"));
+            Presentation.Outcome deep = Presentation.compile(root, work, "1.21.4", nested, nested.resolve("./components.json"), nested.resolve("bands/../presentation.lock.json"));
+            that(deep.ok() && deep.files().equals(modern.files()),
+                    "presentation:a program in a folder is compiled, and a catalog or lock named by an unnormalized path is not taken for a program: "
+                            + deep.diagnostics() + deep.files().keySet());
+            Presentation.Outcome flat = Presentation.compile(root, work, "1.21.4", sources, sources.resolve("./components.json"), sources.resolve("bands/../presentation.lock.json"));
+            that(flat.ok() && Presentation.programs(sources, sources.resolve("./components.json"), sources.resolve("./presentation.lock.json")) == 1,
+                    "presentation:the program count leaves out the catalog and the lock: " + flat.diagnostics());
             Presentation.Outcome none = Presentation.compile(root, work, "1.12.2", sources, components, lock);
             that(!none.ok() && none.diagnostics().stream().anyMatch(d -> d.contains("NO_REALIZATION") && d.contains("1.12.2")),
                     "presentation:a version with no mechanism fails, naming it: " + none.diagnostics());
@@ -2184,7 +2210,54 @@ public final class SelfTest {
                 f -> f.contains("sha256 must be 64 lowercase hex"), baseline);
         expect(root, "a lock that is gone", r -> Files.delete(r.resolve("eras/names.json")),
                 f -> f.contains("eras/names.json is missing"), baseline);
+        laws(root, baseline);
         delete(base);
+    }
+
+    /**
+     * The laws rule (CONTRACT-PACKAGE.md, rule 5): every label a harness asserts has a rejection-matrix entry or a reasoned allowance.
+     * chat.coverage@1 has every label targeted and no ledger entry, so a break there is the rule's own; presentation.particle-cue@1 is
+     * on the ledger of packages that predate the rule.
+     */
+    static void laws(Path root, Set<String> baseline) throws IOException {
+        String harness = "contracts/chat-coverage/src/mycelium/chat_coverage/v1/harness/ChatCoverageContractTests.java";
+        String allowances = "contracts/chat-coverage/unmutated.json";
+        expect(root, "a law label no matrix entry targets", r -> append(r.resolve(harness), "\n// c.that(false, \"Z9:brand-new-law\");\n"),
+                f -> f.contains("[laws]") && f.contains("chat.coverage@1") && f.contains("Z9:brand-new-law") && f.contains("no rejection-matrix entry targets"),
+                baseline);
+        expect(root, "a label no matrix entry targets, allowed with a reason", r -> {
+                    append(r.resolve(harness), "\n// c.that(false, \"Z9:brand-new-law\");\n");
+                    write(r.resolve(allowances), "{\"schema\": 1, \"unmutated\": {\"Z9:brand-new-law\": \"restates C1:something-else: the same assertion, one line below it\"}}");
+                },
+                f -> f.contains("[laws]") && f.contains("chat.coverage@1"), baseline, false);
+        expect(root, "an allowance with no reason", r -> {
+                    append(r.resolve(harness), "\n// c.that(false, \"Z9:brand-new-law\");\n");
+                    write(r.resolve(allowances), "{\"schema\": 1, \"unmutated\": {\"Z9:brand-new-law\": \"not needed\"}}");
+                },
+                f -> f.contains("[laws]") && f.contains("Z9:brand-new-law") && f.contains("no reason worth the name"), baseline);
+        expect(root, "an allowance for a label no harness asserts", r -> write(r.resolve(allowances),
+                        "{\"schema\": 1, \"unmutated\": {\"Z9:nothing-asserts-this\": \"a label the harness once asserted, long since removed\"}}"),
+                f -> f.contains("[laws]") && f.contains("Z9:nothing-asserts-this") && f.contains("which no harness asserts"), baseline);
+        expect(root, "an allowance for a label a matrix entry now targets", r -> {
+                    String targeted = LawCoverage.read(r, ContractRegistry.load(r.toFile()), null).get("chat.coverage@1").asserted().iterator().next();
+                    write(r.resolve(allowances), "{\"schema\": 1, \"unmutated\": {\"" + targeted + "\": \"it was unmutated once, before a broken implementation targeted it\"}}");
+                },
+                f -> f.contains("[laws]") && f.contains("which a matrix entry now targets"), baseline);
+        expect(root, "an allowances file with a field nothing reads", r -> write(r.resolve(allowances),
+                        "{\"schema\": 1, \"unmutated\": {}, \"because\": \"it was hard\"}"),
+                f -> f.contains("[laws]") && f.contains("unknown field 'because'"), baseline);
+        expect(root, "a package on the ledger with nothing left unmutated", r -> replace(r.resolve("contracts/unaudited.json"), "\"contracts\": [",
+                        "\"contracts\": [\n    \"chat.coverage@1\","),
+                f -> f.contains("[laws]") && f.contains("chat.coverage@1") && f.contains("no unmutated label left"), baseline);
+        expect(root, "a package that is audited and still on the ledger", r -> write(r.resolve("contracts/cue/unmutated.json"),
+                        "{\"schema\": 1, \"unmutated\": {}}"),
+                f -> f.contains("[laws]") && f.contains("presentation.particle-cue@1") && f.contains("it is audited, so take it off the ledger"), baseline);
+        expect(root, "an audited package with a label it neither mutates nor allows", r -> write(r.resolve("contracts/cue/unmutated.json"),
+                        "{\"schema\": 1, \"unmutated\": {}}"),
+                f -> f.contains("[laws]") && f.contains("presentation.particle-cue@1 asserts") && f.contains("does not allow it"), baseline);
+        expect(root, "a ledger entry for a contract that does not exist", r -> replace(r.resolve("contracts/unaudited.json"), "\"contracts\": [",
+                        "\"contracts\": [\n    \"nowhere.at.all@1\","),
+                f -> f.contains("[laws]") && f.contains("nowhere.at.all@1") && f.contains("not a contract in the registry"), baseline);
     }
 
     interface Break {

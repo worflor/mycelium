@@ -32,6 +32,14 @@ import java.util.stream.Stream;
  *
  * <p>Compiling, rather than reading references out of the source text, is the one way to know which method a call names: the
  * receiver's type, the overload and the inherited owner are all the compiler's to resolve.
+ *
+ * <p>So what is <em>compiled</em> is one version of each group, the newest with name data; what is checked on the others is that
+ * every reference the compiled bytecode makes exists there (a reference check, not a compile: an overload the newest version lacks
+ * compiles against it and is found only if the older version's table shows the member absent). A version the proof could not reach
+ * (no name data, a game archive that could not be had, no compiler new enough) is counted as <em>not linked</em> with its reason,
+ * and {@link #summary} says how many linked of how many: a green run that linked nothing must not read as a run that linked everything.
+ * A bridge's conformance cases without any of the bridge's own source (what a mod that overrides the bridge imports) are compiled
+ * alongside, so the claim that an override can import them is held to the game as well.
  */
 final class BridgeLinkage {
     private BridgeLinkage() {
@@ -130,6 +138,7 @@ final class BridgeLinkage {
         selection.overlays().forEach(o -> overlays.add(o.name()));
         out.add("overlays", overlays);
         out.addProperty("versions", versions.size() + " (" + versions.get(versions.size() - 1) + " to " + versions.get(0) + ")");
+        out.addProperty("versionCount", versions.size());
 
         // the versions of the group that have name data in the names the bridge is written in, newest first
         Map<String, NameData.Entry> withData = new LinkedHashMap<>();
@@ -149,6 +158,7 @@ final class BridgeLinkage {
             }
         }
         out.add("noNameData", array(withoutData));
+        counts(out, 0, withoutData.size(), 0, 0);
         if (withData.isEmpty()) {
             out.addProperty("status", "unlinked");
             out.addProperty("why", "no name data is pinned in " + bridge.writtenIn() + " for any of its versions (eras/names.json)");
@@ -167,16 +177,21 @@ final class BridgeLinkage {
         } catch (NameCache.Unavailable u) {
             out.addProperty("status", "unavailable");
             out.addProperty("why", u.getMessage());
-            notes.add(label + ": not compiled, the game of " + representative + " could not be had: " + u.getMessage());
+            counts(out, 0, withoutData.size(), withData.size(), 0);
+            notes.add(label + ": not compiled, the game of " + representative + " could not be had: " + u.getMessage()
+                    + " (its " + withData.size() + " version(s) with name data are not linked)");
             return out;
         }
         if (compiled.unavailable() != null) {
             out.addProperty("status", "unavailable");
             out.addProperty("why", compiled.unavailable());
-            notes.add(label + ": not compiled against " + representative + ": " + compiled.unavailable());
+            counts(out, 0, withoutData.size(), withData.size(), 0);
+            notes.add(label + ": not compiled against " + representative + ": " + compiled.unavailable()
+                    + " (its " + withData.size() + " version(s) with name data are not linked)");
             return out;
         }
         if (compiled.classes() == null) {
+            counts(out, 0, withoutData.size(), 0, withData.size());
             out.addProperty("status", "broken");
             out.addProperty("compile", compiled.diagnostics());
             findings.add(label + " does not compile against Minecraft " + representative + " (the newest of its versions with name data):\n      "
@@ -185,6 +200,24 @@ final class BridgeLinkage {
         }
         out.addProperty("compile", "ok: " + compiled.classes().size() + " classes against Minecraft " + representative);
         References.Found found = References.scan(compiled.classes(), Set.of());
+
+        // what a mod that overrides the bridge imports: the cases and the game's rig, none of the bridge's own source
+        if (!Bridges.portConformanceFiles(selection).isEmpty()) {
+            try {
+                Compiled port = compile(selection, models, GameClasspath.of(withData.get(representative), cache, cache.dir().resolve("classpath")),
+                        work.resolve(selection.describe().replace(' ', '_').replace('+', '_') + "-for-an-override"), javac, true);
+                if (port.classes() == null && port.unavailable() == null) {
+                    findings.add(label + ": the conformance cases an override imports do not compile against Minecraft " + representative
+                            + " without the bridge's own source (a case or the game's rig reaches a class of the bridge; move that part to conformance-bound/):\n      "
+                            + port.diagnostics().replace("\n", "\n      "));
+                    out.addProperty("overrideConformance", "broken");
+                } else {
+                    out.addProperty("overrideConformance", port.classes() == null ? "unavailable" : "ok: " + port.classes().size() + " classes");
+                }
+            } catch (NameCache.Unavailable u) {
+                out.addProperty("overrideConformance", "unavailable");
+            }
+        }
 
         JsonArray linked = new JsonArray();
         JsonArray broken = new JsonArray();
@@ -218,12 +251,71 @@ final class BridgeLinkage {
         out.add("linked", linked);
         out.add("broken", broken);
         out.add("unavailable", unavailable);
+        counts(out, linked.size(), withoutData.size(), unavailable.size(), broken.size());
         out.addProperty("status", broken.isEmpty() ? (unavailable.isEmpty() ? "linked" : "unavailable") : "broken");
         if (!withoutData.isEmpty()) {
             notes.add(label + ": " + withoutData.size() + " of its " + versions.size() + " versions have no name data and are not linked ("
                     + String.join(", ", withoutData.subList(0, Math.min(6, withoutData.size()))) + (withoutData.size() > 6 ? ", ..." : "") + ")");
         }
         return out;
+    }
+
+    /** How a group's versions came out: linked, or not linked for want of name data, of the game, or because they do not link. */
+    private static void counts(JsonObject group, int linked, int noData, int unavailable, int broken) {
+        group.addProperty("linkedCount", linked);
+        group.addProperty("noNameDataCount", noData);
+        group.addProperty("unavailableCount", unavailable);
+        group.addProperty("brokenCount", broken);
+    }
+
+    /** {@code linked 41 of 158 version(s), 117 not linked (no name data: 110; the game could not be had: 7; do not link: 0)} for a run's report. */
+    static String summary(JsonObject report) {
+        int total = 0;
+        int linked = 0;
+        int noData = 0;
+        int unavailable = 0;
+        int broken = 0;
+        for (JsonObject b : bridgesOf(report)) {
+            for (var v : b.getAsJsonArray("variants")) {
+                for (var g : v.getAsJsonObject().getAsJsonArray("groups")) {
+                    JsonObject group = g.getAsJsonObject();
+                    total += group.get("versionCount").getAsInt();
+                    linked += group.get("linkedCount").getAsInt();
+                    noData += group.get("noNameDataCount").getAsInt();
+                    unavailable += group.get("unavailableCount").getAsInt();
+                    broken += group.get("brokenCount").getAsInt();
+                }
+            }
+        }
+        int not = total - linked;
+        return "linked " + linked + " of " + total + " version(s)" + (not == 0 ? "" : ", " + not + " not linked (no name data: " + noData
+                + "; the game or a compiler for it could not be had: " + unavailable + "; do not link: " + broken + ")");
+    }
+
+    /** The bridges of a run's report, or the one bridge when handed a single bridge's report. */
+    private static List<JsonObject> bridgesOf(JsonObject report) {
+        List<JsonObject> out = new ArrayList<>();
+        if (report.has("bridges")) {
+            report.getAsJsonArray("bridges").forEach(b -> out.add(b.getAsJsonObject()));
+        } else {
+            out.add(report);
+        }
+        return out;
+    }
+
+    /** How many versions linked, and how many were asked for: the numbers behind {@link #summary}. */
+    static int[] totals(JsonObject report) {
+        int total = 0;
+        int linked = 0;
+        for (JsonObject b : bridgesOf(report)) {
+            for (var v : b.getAsJsonArray("variants")) {
+                for (var g : v.getAsJsonObject().getAsJsonArray("groups")) {
+                    total += g.getAsJsonObject().get("versionCount").getAsInt();
+                    linked += g.getAsJsonObject().get("linkedCount").getAsInt();
+                }
+            }
+        }
+        return new int[] {linked, total};
     }
 
     private static JsonArray array(List<String> items) {
@@ -250,6 +342,14 @@ final class BridgeLinkage {
      * JVM running the build, so the build hands it a toolchain's.
      */
     static Compiled compile(Bridges.Selection selection, List<Path> models, List<Path> jars, Path work, Path javac) throws IOException {
+        return compile(selection, models, jars, work, javac, false);
+    }
+
+    /**
+     * As above; with {@code forAnOverride} only what a mod that overrides the bridge imports: the conformance cases and the game's rig,
+     * none of the bridge's own source (the same files {@link Bridges#portConformanceFiles} lays out for it).
+     */
+    static Compiled compile(Bridges.Selection selection, List<Path> models, List<Path> jars, Path work, Path javac, boolean forAnOverride) throws IOException {
         if (javac == null || !Files.isRegularFile(javac)) {
             return new Compiled(null, null, "no Java compiler to compile the bridge with" + (javac == null ? "" : " (" + javac + ")") + "; run Gradle on a JDK");
         }
@@ -263,8 +363,13 @@ final class BridgeLinkage {
         Files.createDirectories(stubSources);
         Files.createDirectories(stubClasses);
         List<Path> sources = new ArrayList<>();
-        Map<String, Path> files = new java.util.TreeMap<>(Bridges.sourceFiles(selection));
-        files.putAll(Bridges.conformanceFiles(selection));
+        Map<String, Path> files = new java.util.TreeMap<>();
+        if (forAnOverride) {
+            files.putAll(Bridges.portConformanceFiles(selection));
+        } else {
+            files.putAll(Bridges.sourceFiles(selection));
+            files.putAll(Bridges.conformanceFiles(selection));
+        }
         for (Map.Entry<String, Path> f : files.entrySet()) {
             Path dest = src.resolve(f.getKey());
             Files.createDirectories(dest.getParent());

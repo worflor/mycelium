@@ -35,7 +35,10 @@ public abstract class DeriveContractsTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getExplicit();
 
-    /** The bridges the mod asks for by name (`bridges { use(...) }`): the contracts they implement are imported with them. */
+    /**
+     * The bridges the mod asks for by name ({@code bridges { use(...) }}): exactly these are imported, whatever its sources reference.
+     * The contracts they implement are imported with them.
+     */
     @Input
     public abstract ListProperty<String> getUse();
 
@@ -62,18 +65,26 @@ public abstract class DeriveContractsTask extends DefaultTask {
     @OutputFile
     public abstract RegularFileProperty getContractList();
 
+    /**
+     * The bridges to import, one slug per line: {@link #getUse()} when the mod names them, else the ones its own sources reference
+     * ({@code <namespace>.bridges.<package>}). A contract's bridge is an offer the mod takes by using it, never one it gets for
+     * importing the contract's model. An override and a skip are applied by {@code myceliumBridgeImport}.
+     */
+    @OutputFile
+    public abstract RegularFileProperty getBridgeList();
+
     public DeriveContractsTask() {
         doNotTrackState("reads sources a generator writes without declaring them; a text scan is cheap, and the tasks that use the list compare its content");
     }
 
-    /** The contracts of the bridges the mod asked for, added to {@code ids} when they are not there (a bridge needs its contract's model). */
-    static List<String> withBridgeContracts(java.io.File root, List<String> ids, List<String> use) {
-        if (use.isEmpty()) {
+    /** The contracts of the bridges the mod takes, added to {@code ids} when they are not there (a bridge needs its contract's model). */
+    static List<String> withBridgeContracts(java.io.File root, List<String> ids, List<String> bridges) {
+        if (bridges.isEmpty()) {
             return ids;
         }
         List<String> out = new java.util.ArrayList<>(ids);
         try {
-            for (String slug : use) {
+            for (String slug : bridges) {
                 String contract = Bridges.require(root.toPath(), slug).contract();
                 if (!out.contains(contract)) {
                     out.add(contract);
@@ -88,13 +99,18 @@ public abstract class DeriveContractsTask extends DefaultTask {
     @TaskAction
     public void run() throws IOException {
         List<String> explicit = getExplicit().get();
-        List<String> ids = !explicit.isEmpty() || !getMod().get() ? explicit
-                : MyceliumPlugin.deriveContracts(getRoot().get().getAsFile(), getMainSources().getFiles(), getPureSources().getFiles(),
-                        getNamespace().get(), getGeneratedDir().get().getAsFile());
-        ids = withBridgeContracts(getRoot().get().getAsFile(), ids, getUse().get());
+        MyceliumPlugin.Derived derived = getMod().get()
+                ? MyceliumPlugin.derive(getRoot().get().getAsFile(), getMainSources().getFiles(), getPureSources().getFiles(),
+                        getNamespace().get(), getGeneratedDir().get().getAsFile())
+                : new MyceliumPlugin.Derived(List.of(), List.of());
+        List<String> ids = !explicit.isEmpty() || !getMod().get() ? explicit : derived.contracts();
+        List<String> bridges = getUse().get().isEmpty() ? derived.bridges() : getUse().get();
+        ids = withBridgeContracts(getRoot().get().getAsFile(), ids, bridges);
         java.nio.file.Path out = getContractList().get().getAsFile().toPath();
         Files.createDirectories(out.getParent());
         Files.writeString(out, String.join("\n", ids), StandardCharsets.UTF_8);
-        getLogger().info("Mycelium: contracts {} ({})", ids, !explicit.isEmpty() ? "declared" : getMod().get() ? "derived" : "all verified");
+        Files.writeString(getBridgeList().get().getAsFile().toPath(), String.join("\n", bridges), StandardCharsets.UTF_8);
+        getLogger().info("Mycelium: contracts {} ({}); bridges {} ({})", ids, !explicit.isEmpty() ? "declared" : getMod().get() ? "derived" : "all verified",
+                bridges, getUse().get().isEmpty() ? "referenced" : "named");
     }
 }

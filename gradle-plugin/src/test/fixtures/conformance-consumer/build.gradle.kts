@@ -26,6 +26,7 @@ mycelium {
     minecraft = "26.3"
     contracts("world.clock@1")
     bridges {
+        use("world-clock")      // a bridge is taken by naming it (or by referencing its package in the sources), never for importing its contract
         conformance()
         if (shipConformance) shipConformanceResources()
         if (classesOut) conformanceClassesOutOfJar()
@@ -52,6 +53,9 @@ val verifyConformance = tasks.register("verifyConformance") {
             check(data.all { it == shipConformance } && data.none { it != shipConformance }) {
                 "the jar " + (if (shipConformance) "lacks" else "carries") + " the conformance datapack (ship = $shipConformance): $data"
             }
+            // leaving the data out must not leave the (now empty) directories it sat in: no entry should say there was something here
+            val strays = jar.entries().asSequence().map { it.name }.filter { it.startsWith("data/mycelium_conformance") }.toList()
+            check(shipConformance || strays.isEmpty()) { "the jar carries entries for the conformance data it left out: $strays" }
             val probe = jar.getEntry("fixture/conformance/mycelium/bridges/demo/conformance/Probe.class") != null
             check(probe == !classesOut) { "the jar " + (if (probe) "carries" else "lacks") + " the conformance class (classesOut = $classesOut)" }
             check(jar.getEntry("META-INF/mycelium/evidence.json") != null) { "the jar lacks the evidence manifest" }

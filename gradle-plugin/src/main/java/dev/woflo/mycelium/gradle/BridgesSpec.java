@@ -5,9 +5,10 @@ import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 
 /**
- * {@code mycelium { bridges { ... } }} (docs/decisions/0016): what a mod does with the bridges its contracts bring. A bridge
- * is an offer. By default the mod gets every bridge of every contract it imports, the variant its target version draws; here
- * it takes fewer, replaces one with a class of its own, or turns on the conformance cases.
+ * {@code mycelium { bridges { ... } }} (docs/decisions/0016): what a mod does with the bridges Mycelium offers. A bridge is an
+ * offer, taken by using it: the mod gets a bridge when its own sources reference {@code <namespace>.bridges.<package>} (its
+ * contract comes with it), and the variant its target version draws. Importing a contract's model brings no bridge. Here the mod
+ * names the bridges it takes, leaves one out, replaces one with a class of its own, or turns on the conformance cases.
  *
  * <pre>
  * mycelium {
@@ -26,10 +27,10 @@ import org.gradle.api.provider.Property;
  * compiled into the same jar, call them.
  */
 public abstract class BridgesSpec {
-    /** Bridges to take, by slug. Empty means every bridge the imported contracts bring; a list replaces that. */
+    /** Bridges to take, by slug, whether or not the sources reference them. Empty means the ones the mod's sources reference; a list replaces that. */
     public abstract ListProperty<String> getUse();
 
-    /** Bridges not to take, by slug: the mod writes that half itself, natively. */
+    /** Bridges not to take, by slug: the mod writes that half itself, natively. A slug that names no bridge is refused. */
     public abstract ListProperty<String> getSkip();
 
     /** Bridges whose variant is replaced by the mod's own class (slug to fully qualified class name). */
@@ -75,8 +76,10 @@ public abstract class BridgesSpec {
     }
 
     /**
-     * Replace the bridge's variant with {@code className}, a class in the mod's own sources. It must implement the bridge's
-     * port; the contract's laws apply to it and nothing else does (the check B1 holds the class to the port).
+     * Replace the bridge's variant with {@code className}, a class in the mod's own sources (the bridge's slug, as in
+     * {@code "item-carrier"}, not its id). It must implement the bridge's port; the contract's laws apply to it and nothing else does
+     * (the check B1 holds the class to the port, and with {@link #conformance()} the cases that need none of the bridge's source are
+     * imported for it: they run the contract's laws on the real game against the mod's class).
      */
     public void override(String slug, String className) {
         if (slug == null || slug.isBlank() || className == null || className.isBlank() || className.contains("/")) {

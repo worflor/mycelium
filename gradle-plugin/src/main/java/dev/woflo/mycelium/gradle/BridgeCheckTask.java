@@ -50,10 +50,19 @@ public abstract class BridgeCheckTask extends DefaultTask {
     @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getImportReport();
 
-    /** The compiled classes of the mod (an override is one of them). */
+    /** The compiled classes of the mod's main source set (an override is usually one of them; the check waits for their compile). */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getClasses();
+
+    /**
+     * The classes of the project's other source sets (a Loom {@code client} source set, a game-test one). Read when they have been built,
+     * never built for this check: an override that lives in one is found there, and when it is found nowhere while some of them were
+     * not compiled, it is unseen and not missing.
+     */
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract ConfigurableFileCollection getOtherClasses();
 
     @Input
     public abstract Property<String> getNamespace();
@@ -76,25 +85,40 @@ public abstract class BridgeCheckTask extends DefaultTask {
             JsonObject bridge = e.getAsJsonObject().deepCopy();
             String slug = bridge.get("slug").getAsString();
             switch (bridge.get("status").getAsString()) {
-                case "none" -> found.add("B2", slug, "bridge " + slug + " has no realization on Minecraft " + imported.get("minecraft").getAsString()
+                case "none" -> found.add("B2", slug, "bridge " + slug + " has no realization on "
+                        + (imported.has("minecraft") ? "Minecraft " + imported.get("minecraft").getAsString() : "this build (no target version)")
                         + " and was not imported: " + bridge.get("why").getAsString()
                         + " (the mod writes that half natively there, or does not claim the version)");
                 case "override" -> {
                     if (classes == null) {
-                        classes = hierarchy(getClasses().getFiles());
+                        Set<File> all = new java.util.LinkedHashSet<>(getClasses().getFiles());
+                        all.addAll(getOtherClasses().getFiles());
+                        classes = hierarchy(all);
+                    }
+                    List<String> unsearched = new ArrayList<>();
+                    for (File dir : getOtherClasses().getFiles()) {
+                        if (!hasClasses(dir)) {
+                            unsearched.add(dir.getPath());
+                        }
                     }
                     ContractRegistry.Entry contract = registry.require(bridge.get("contract").getAsString());
                     String port = (getNamespace().get() + "." + contract.relativePackage() + ".model." + bridge.get("port").getAsString())
                             .replace('.', '/');
                     String name = bridge.get("class").getAsString().replace('.', '/');
-                    switch (implementsPort(classes, name, port)) {
+                    Verdict verdict = implementsPort(classes, name, port);
+                    if (verdict == Verdict.MISSING && !unsearched.isEmpty()) {
+                        verdict = Verdict.UNSEEN;
+                    }
+                    switch (verdict) {
                         case MISSING -> found.add("B1", slug, "bridge " + slug + " is overridden by " + bridge.get("class").getAsString()
-                                + ", which is not a class this project compiles (a typo, or a class in another project)");
+                                + ", which is not a class in any source set this project compiled (a typo, or a class in another project)");
                         case NO -> found.add("B1", slug, "bridge " + slug + " is overridden by " + bridge.get("class").getAsString()
                                 + ", which does not implement the port " + port.replace('/', '.')
                                 + ": the contract's laws are held to the port, so an override must implement it");
-                        case UNSEEN -> bridge.addProperty("unverified", "the class extends something outside the project's own classes, so the port"
-                                + " could not be seen in its hierarchy");
+                        case UNSEEN -> bridge.addProperty("unverified", classes.containsKey(name)
+                                ? "the class extends something outside the project's own classes, so the port could not be seen in its hierarchy"
+                                : "the class is in no source set that was compiled in this build, and the output of " + unsearched
+                                        + " was not there to look in (it may live there)");
                         default -> bridge.addProperty("verified", "implements " + port.replace('/', '.'));
                     }
                 }
@@ -124,6 +148,16 @@ public abstract class BridgeCheckTask extends DefaultTask {
     }
 
     enum Verdict { YES, NO, MISSING, UNSEEN }
+
+    /** Whether a class output directory holds any class: one that was never built is not a place the class is known to be absent from. */
+    static boolean hasClasses(File dir) throws IOException {
+        if (!dir.isDirectory()) {
+            return false;
+        }
+        try (Stream<Path> walk = Files.walk(dir.toPath())) {
+            return walk.anyMatch(f -> f.toString().endsWith(".class"));
+        }
+    }
 
     /** Every class under the given class directories (or jars are not read: a project's own classes are directories). */
     static Map<String, Hierarchy> hierarchy(Set<File> roots) throws IOException {

@@ -26,7 +26,7 @@ public final class Fingerprint {
                 // registry never re-ran a task
                 md.update(dir.getFileName().toString().getBytes(StandardCharsets.UTF_8));
                 md.update((byte) 0);
-                md.update(Files.readAllBytes(dir));
+                md.update(normalized(dir));
             } else if (Files.isDirectory(dir)) {
                 List<Path> files = new ArrayList<>();
                 try (Stream<Path> walk = Files.walk(dir)) {
@@ -36,7 +36,7 @@ public final class Fingerprint {
                 for (Path file : files) {
                     md.update(dir.relativize(file).toString().replace('\\', '/').getBytes(StandardCharsets.UTF_8));
                     md.update((byte) 0);
-                    md.update(Files.readAllBytes(file));
+                    md.update(normalized(file));
                     md.update((byte) 0);
                 }
             } else {
@@ -51,6 +51,22 @@ public final class Fingerprint {
             throw new IllegalStateException("cannot fingerprint " + dir, e);
         }
     }
+
+    /**
+     * A file's bytes, with the line endings of a text file made one: a Windows checkout and a Linux one are the same sources
+     * ({@code Proofs} does the same for a contract's fingerprint). Only a file whose extension names text is touched; a binary file's
+     * bytes are its own.
+     */
+    static byte[] normalized(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        String name = file.getFileName().toString();
+        if (!TEXT.stream().anyMatch(name::endsWith)) {
+            return bytes;
+        }
+        return new String(bytes, StandardCharsets.UTF_8).replace("\r\n", "\n").getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static final List<String> TEXT = List.of(".java", ".kt", ".scala", ".json", ".txt", ".md", ".toml", ".properties", ".mcmeta", ".kts", ".gradle");
 
     public static String ofDirectories(List<Path> dirs) {
         StringBuilder sb = new StringBuilder();

@@ -10,9 +10,13 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipEntry;
@@ -26,31 +30,65 @@ import java.util.zip.ZipOutputStream;
  * the linkage inventory does ({@link Inventory}). Only the shape of each class is kept (its members and signatures, never its
  * code), because a compiler reads nothing else, and that makes the rename cheap.
  *
- * <p>Everything lands under the name cache beside the pinned files, keyed by the hashes of the inputs, so a version is opened
- * once. The libraries are keyed by their own hash and shared between versions.
+ * <p>Everything lands under the name cache beside the pinned files, keyed by the hashes of the inputs <em>and the version of this
+ * logic</em> ({@link #LOGIC}: a change to what is written must not be served from a directory the old code filled), so a version is
+ * opened once. The libraries are keyed by their own hash and shared between versions.
+ *
+ * <p>The cache is shared by every Gradle process on a machine (a game server's box has several), so it is written the one way that is
+ * safe to read while it is written: every file is written beside its place and moved into it, and the whole fill happens under a
+ * file lock, the marker that says a version is done going last. A process that finds the lock taken waits and then finds the version
+ * done.
  */
 final class GameClasspath {
     private GameClasspath() {
     }
 
+    /** Bump when what {@link #of} writes for the same inputs changes (the rename, what is kept): old directories are then never read. */
+    static final int LOGIC = 1;
+
+    private static final Object IN_THIS_PROCESS = new Object();
+
     /** The jars to compile against for {@code entry}: the game's, then the libraries it ships with. */
     static List<Path> of(NameData.Entry entry, NameCache cache, Path dir) throws IOException {
         NameData.Input game = entry.input("game");
-        Path archive = cache.get(game);
         boolean renamed = entry.reads().equals("proguard-jar");
-        String key = game.sha256() + (renamed ? "-" + entry.input("mappings").sha256() : "");
+        String key = "v" + LOGIC + "-" + game.sha256() + (renamed ? "-" + entry.input("mappings").sha256() : "");
         Path done = dir.resolve("games").resolve(key + ".list");
-        if (Files.isRegularFile(done)) {
-            List<Path> jars = new ArrayList<>();
-            for (String line : Files.readAllLines(done, StandardCharsets.UTF_8)) {
-                if (!line.isBlank()) {
-                    jars.add(dir.resolve(line));
+        List<Path> ready = ready(dir, done);
+        if (ready != null) {
+            return ready;
+        }
+        Path archive = cache.get(game);
+        Files.createDirectories(dir.resolve("games"));
+        Files.createDirectories(dir.resolve("libs"));
+        synchronized (IN_THIS_PROCESS) {
+            try (FileChannel channel = FileChannel.open(dir.resolve("games").resolve(key + ".lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                 FileLock ignored = channel.lock()) {
+                // another process may have filled it while this one waited for the lock
+                ready = ready(dir, done);
+                if (ready != null) {
+                    return ready;
                 }
-            }
-            if (jars.stream().allMatch(Files::isRegularFile)) {
-                return jars;
+                return fill(entry, cache, dir, archive, key, renamed, done);
             }
         }
+    }
+
+    /** The jars of a version that is done, or null: the marker is there and so is every jar it lists. */
+    private static List<Path> ready(Path dir, Path done) throws IOException {
+        if (!Files.isRegularFile(done)) {
+            return null;
+        }
+        List<Path> jars = new ArrayList<>();
+        for (String line : Files.readAllLines(done, StandardCharsets.UTF_8)) {
+            if (!line.isBlank()) {
+                jars.add(dir.resolve(line));
+            }
+        }
+        return jars.stream().allMatch(Files::isRegularFile) ? jars : null;
+    }
+
+    private static List<Path> fill(NameData.Entry entry, NameCache cache, Path dir, Path archive, String key, boolean renamed, Path done) throws IOException {
         Inventory.ProGuard map = null;
         if (renamed) {
             NameData.Input mappings = entry.input("mappings");
@@ -59,16 +97,17 @@ final class GameClasspath {
             }
         }
         List<String> rel = new ArrayList<>();
-        Files.createDirectories(dir.resolve("games"));
-        Files.createDirectories(dir.resolve("libs"));
         try (ZipFile zip = new ZipFile(archive.toFile())) {
             ZipEntry versions = zip.getEntry("META-INF/versions.list");
             if (versions == null) {
                 Path jar = dir.resolve("games").resolve(key + "-0.jar");
                 if (map == null) {
-                    Files.copy(archive, jar, StandardCopyOption.REPLACE_EXISTING);
+                    Path from = archive;
+                    placed(jar, part -> Files.copy(from, part, StandardCopyOption.REPLACE_EXISTING));
                 } else {
-                    rename(zip, map, jar);
+                    ZipFile source = zip;
+                    Inventory.ProGuard m = map;
+                    placed(jar, part -> rename(source, m, part));
                 }
                 rel.add("games/" + jar.getFileName());
             } else {
@@ -77,13 +116,17 @@ final class GameClasspath {
                     String[] p = line.split("\t");
                     if (p.length == 3) {
                         Path jar = dir.resolve("games").resolve(key + "-" + n++ + ".jar");
-                        try (InputStream in = nested(zip, "META-INF/versions/" + p[2])) {
-                            if (map == null) {
-                                Files.copy(in, jar, StandardCopyOption.REPLACE_EXISTING);
-                            } else {
-                                renameStream(in, map, jar);
+                        Inventory.ProGuard m = map;
+                        String inside = "META-INF/versions/" + p[2];
+                        placed(jar, part -> {
+                            try (InputStream in = nested(zip, inside)) {
+                                if (m == null) {
+                                    Files.copy(in, part, StandardCopyOption.REPLACE_EXISTING);
+                                } else {
+                                    renameStream(in, m, part);
+                                }
                             }
-                        }
+                        });
                         rel.add("games/" + jar.getFileName());
                     }
                 }
@@ -94,11 +137,12 @@ final class GameClasspath {
                         if (p.length == 3) {
                             Path jar = dir.resolve("libs").resolve(p[0] + ".jar");
                             if (!Files.isRegularFile(jar)) {
-                                try (InputStream in = nested(zip, "META-INF/libraries/" + p[2])) {
-                                    Path part = Files.createTempFile(dir.resolve("libs"), "lib-", ".part");
-                                    Files.copy(in, part, StandardCopyOption.REPLACE_EXISTING);
-                                    Files.move(part, jar, StandardCopyOption.REPLACE_EXISTING);
-                                }
+                                String inside = "META-INF/libraries/" + p[2];
+                                placed(jar, part -> {
+                                    try (InputStream in = nested(zip, inside)) {
+                                        Files.copy(in, part, StandardCopyOption.REPLACE_EXISTING);
+                                    }
+                                });
                             }
                             rel.add("libs/" + jar.getFileName());
                         }
@@ -106,10 +150,35 @@ final class GameClasspath {
                 }
             }
         }
-        Files.write(done, rel, StandardCharsets.UTF_8);
+        // the marker goes last, and goes in whole: a version is done when this file is there
+        placed(done, part -> Files.write(part, rel, StandardCharsets.UTF_8));
         List<Path> jars = new ArrayList<>();
         rel.forEach(r -> jars.add(dir.resolve(r)));
         return jars;
+    }
+
+    /** What writes a file at the path it is given. */
+    @FunctionalInterface
+    interface Writer {
+        void write(Path to) throws IOException;
+    }
+
+    /**
+     * Writes {@code target} by writing a file beside it and moving that into place, so no reader and no crashed writer ever sees half a
+     * file under the name. The move is atomic where the file system can (and replaces what a dead process left).
+     */
+    static void placed(Path target, Writer writer) throws IOException {
+        Path part = Files.createTempFile(target.getParent(), target.getFileName().toString() + "-", ".part");
+        try {
+            writer.write(part);
+            try {
+                Files.move(part, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(part, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(part);
+        }
     }
 
     private static InputStream nested(ZipFile zip, String entry) throws IOException {

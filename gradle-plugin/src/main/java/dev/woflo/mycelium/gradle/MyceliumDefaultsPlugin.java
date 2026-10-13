@@ -21,8 +21,9 @@ import org.gradle.api.Project;
  * // each project: mycelium { minecraft = sc.current.version }
  * </pre>
  *
- * A list a project writes (its own {@code contracts(...)}, {@code integration(...)}) replaces the default list; the check
- * levels and allowances merge (the project's after the default's).
+ * A project's own scalar setting wins over the default. A list a project writes (its own {@code contracts(...)},
+ * {@code integration(...)}, {@code ports(...)}) replaces the default list, except the pure layer's {@code sources} and {@code tests},
+ * which add up; the check levels and allowances merge (the project's after the default's).
  */
 public final class MyceliumDefaultsPlugin implements Plugin<Project> {
     /** The type of the root's block, distinct from the {@code mycelium} block a project's own plugin creates. */

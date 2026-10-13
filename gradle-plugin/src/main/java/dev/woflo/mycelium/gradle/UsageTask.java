@@ -73,7 +73,7 @@ public abstract class UsageTask extends DefaultTask {
             try (var walk = Files.walk(root.toPath())) {
                 for (Path p : (Iterable<Path>) walk::iterator) {
                     Path abs = p.toAbsolutePath();
-                    if (Files.isRegularFile(abs) && abs.toString().endsWith(".java") && (imported == null || !abs.startsWith(imported))) {
+                    if (Files.isRegularFile(abs) && MyceliumPlugin.isSource(abs) && (imported == null || !abs.startsWith(imported))) {
                         texts.add(Files.readString(abs, StandardCharsets.UTF_8));
                     }
                 }

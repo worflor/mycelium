@@ -39,9 +39,13 @@ public abstract class PresentationTask extends DefaultTask {
     @Optional
     public abstract Property<String> getMinecraft();
 
-    /** The era table, the registry and the compiler's models, so a change to any re-runs the task. */
-    @Input
-    public abstract Property<String> getSourceFingerprint();
+    /**
+     * The era table, the registry and the compiler's models, so a change to any re-runs the task: files Gradle tracks when the build
+     * runs, never a value computed while it is configured.
+     */
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract ConfigurableFileCollection getCompilerSources();
 
     /** The mod's check levels and allowances ({@link Checks#decode}): PR1, a problem compiling the programs. */
     @Input
@@ -50,18 +54,31 @@ public abstract class PresentationTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getSources();
 
+    /** Where the catalog is (it may be outside {@link #getSources()}); tracked through {@link #getCatalogFiles()}. */
     @Internal
     public abstract RegularFileProperty getComponents();
 
+    /** Where the lock is; tracked through {@link #getCatalogFiles()}. */
     @Internal
     public abstract RegularFileProperty getLock();
+
+    /**
+     * The catalog and the lock as inputs: files that may be absent (a missing catalog is the build's own diagnostic, not a Gradle
+     * validation failure), and that may sit outside the sources directory.
+     */
+    @InputFiles
+    @PathSensitive(PathSensitivity.NONE)
+    public abstract ConfigurableFileCollection getCatalogFiles();
 
     /** Every file of the consumer's presentation sources. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getSourceFiles();
 
-    /** Where the compiled model is kept between runs. */
+    /**
+     * Where the compiled model is kept between runs. Not inside {@link #getReportDir()} or {@link #getOutputDir()}, which this task owns
+     * and rewrites, and not shared with {@code myceliumPresentationLock}, which keeps its own.
+     */
     @Internal
     public abstract DirectoryProperty getWorkDir();
 
@@ -96,6 +113,11 @@ public abstract class PresentationTask extends DefaultTask {
             }
             found.conclude(getLogger(), "presentation: " + outcome.diagnostics().size() + " problem(s) compiling for Minecraft "
                     + minecraft + " (" + outcome.realization() + ")");
+            // whatever level PR1 is at, the build says what it did not do: at warn or off the finding is quiet or absent, and an item
+            // that is drawn with no model should never be a surprise at the end of a green build
+            int programs = Presentation.programs(getSources().get().getAsFile().toPath(), getComponents().get().getAsFile().toPath(),
+                    getLock().get().getAsFile().toPath());
+            getLogger().lifecycle("Mycelium: {} item(s) have no selection on Minecraft {}; no presentation files written", programs, minecraft);
             return;
         }
         for (Map.Entry<String, String> file : outcome.files().entrySet()) {

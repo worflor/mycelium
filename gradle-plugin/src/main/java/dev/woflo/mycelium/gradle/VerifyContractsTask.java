@@ -6,12 +6,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
+import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
-import org.gradle.api.tasks.InputFile;
+import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.PathSensitive;
@@ -62,11 +63,13 @@ public abstract class VerifyContractsTask extends DefaultTask {
     @Input
     public abstract Property<String> getProofMode();
 
-    /** Mycelium's recorded proofs ({@link Proofs}), when there are any. */
-    @InputFile
-    @Optional
+    /**
+     * Mycelium's recorded proofs ({@link Proofs}), when there are any. A file collection, so that a record that appears or goes
+     * after the build was configured still counts: whether the file exists is not decided at configuration time.
+     */
+    @InputFiles
     @PathSensitive(PathSensitivity.NONE)
-    public abstract RegularFileProperty getProofsFile();
+    public abstract ConfigurableFileCollection getProofsFile();
 
     /** The Javas this build's era gates run on: a recorded proof must cover them. */
     @Input

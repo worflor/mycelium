@@ -43,6 +43,8 @@ final class FlexibleSelfTest {
             compileIsNeverBlocked(root, tmp);
             derivedContracts(root, tmp);
             defaultsInherited(root, tmp);
+            namespaces(root, tmp);
+            fingerprints(tmp);
         } finally {
             SelfTest.delete(tmp);
         }
@@ -484,6 +486,50 @@ final class FlexibleSelfTest {
         com.google.gson.JsonArray a = new com.google.gson.JsonArray();
         a.add("x");
         return a;
+    }
+
+    // --- the namespace a mod defaults to, and the fingerprints its tasks compare -----------------------------------------------------
+
+    /** Two mods in one group must not share the package everything they import is private to. */
+    static void namespaces(Path root, Path tmp) throws IOException {
+        Project a = ProjectBuilder.builder().withProjectDir(Files.createDirectories(tmp.resolve("ns-a")).toFile()).withName("dream-mod").build();
+        a.setGroup("com.acme");
+        a.getPluginManager().apply(JavaPlugin.class);
+        a.getPluginManager().apply(MyceliumPlugin.class);
+        Project b = ProjectBuilder.builder().withProjectDir(Files.createDirectories(tmp.resolve("ns-b")).toFile()).withName("other-mod-2").build();
+        b.setGroup("com.acme");
+        b.getPluginManager().apply(JavaPlugin.class);
+        b.getPluginManager().apply(MyceliumPlugin.class);
+        String na = a.getExtensions().getByType(MyceliumExtension.class).getNamespace().get();
+        String nb = b.getExtensions().getByType(MyceliumExtension.class).getNamespace().get();
+        that(na.equals("com.acme.dream_mod.mycelium") && nb.equals("com.acme.other_mod_2.mycelium") && !na.equals(nb),
+                "namespace:two mods in one group default to two namespaces, from the group and the artifact: " + na + " and " + nb);
+        MyceliumExtension explicit = b.getExtensions().getByType(MyceliumExtension.class);
+        explicit.getNamespace().set("com.acme.mine");
+        that(explicit.getNamespace().get().equals("com.acme.mine"), "namespace:a namespace the mod writes wins over the default");
+        Project none = ProjectBuilder.builder().withProjectDir(Files.createDirectories(tmp.resolve("ns-c")).toFile()).withName("3d-thing").build();
+        none.getPluginManager().apply(JavaPlugin.class);
+        none.getPluginManager().apply(MyceliumPlugin.class);
+        that(none.getExtensions().getByType(MyceliumExtension.class).getNamespace().get().equals("mycelium.imported._3d_thing"),
+                "namespace:with no group the default is still the artifact's own (a package segment never starts with a digit): "
+                        + none.getExtensions().getByType(MyceliumExtension.class).getNamespace().get());
+        that(MyceliumPlugin.packageSegment("Some-Mod.id").equals("some_mod_id") && MyceliumPlugin.packageSegment("---").equals("mod"),
+                "namespace:an artifact id becomes a package segment");
+    }
+
+    static void fingerprints(Path tmp) throws IOException {
+        Path lf = Files.createDirectories(tmp.resolve("fp-lf"));
+        Path crlf = Files.createDirectories(tmp.resolve("fp-crlf"));
+        Files.writeString(lf.resolve("a.json"), "{\n  \"x\": 1\n}\n", StandardCharsets.UTF_8);
+        Files.writeString(crlf.resolve("a.json"), "{\r\n  \"x\": 1\r\n}\r\n", StandardCharsets.UTF_8);
+        that(Fingerprint.ofDirectory(lf).equals(Fingerprint.ofDirectory(crlf)),
+                "fingerprint:a Windows checkout and a Linux one of the same text are the same sources");
+        Files.writeString(crlf.resolve("a.json"), "{\r\n  \"x\": 2\r\n}\r\n", StandardCharsets.UTF_8);
+        that(!Fingerprint.ofDirectory(lf).equals(Fingerprint.ofDirectory(crlf)), "fingerprint:an edit still changes it");
+        Files.write(lf.resolve("b.bin"), new byte[] {13, 10, 1});
+        Files.write(crlf.resolve("a.json"), "{\n  \"x\": 1\n}\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(crlf.resolve("b.bin"), new byte[] {10, 1});
+        that(!Fingerprint.ofDirectory(lf).equals(Fingerprint.ofDirectory(crlf)), "fingerprint:a binary file's bytes are its own");
     }
 
     // --- the plugin's wiring, on a throwaway project -------------------------------------------------------------------

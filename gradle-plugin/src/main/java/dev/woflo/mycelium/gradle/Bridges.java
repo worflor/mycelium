@@ -261,8 +261,24 @@ public final class Bridges {
         return files(s, "src");
     }
 
-    /** The conformance cases (the bridge's), with the variant's (and its overlays') files beside them. */
+    /**
+     * The conformance cases a mod imports with the bridge: the cases (written against the port), the variant's rig of the real game
+     * (and its overlays'), and what needs the bridge's own source ({@code conformance-bound/}: the entry points that build the bridge's
+     * own port, the cases of its internals).
+     */
     public static Map<String, Path> conformanceFiles(Selection s) throws IOException {
+        Map<String, Path> out = portConformanceFiles(s);
+        out.putAll(files(s, "conformance-bound"));
+        return out;
+    }
+
+    /**
+     * The conformance cases that need none of the bridge's source, so a mod that overrides the bridge can import them and hold
+     * its own class to the contract's laws on the real game (decision 0016): the cases, which are written against the port, and the
+     * variant's rig of the game (copy, save, send, read the raw state), with its overlays'. A file here never mentions a class of the
+     * bridge's own package ({@code myceliumRepository} proves it).
+     */
+    public static Map<String, Path> portConformanceFiles(Selection s) throws IOException {
         if (!s.maps()) {
             return new TreeMap<>();
         }
@@ -364,16 +380,32 @@ public final class Bridges {
         write(sourceFiles(s), namespace, srcOut, written, "");
         if (conformanceOut != null) {
             write(conformanceFiles(s), namespace, conformanceOut, written, "conformance: ");
-            if (resourcesOut != null) {
-                for (Map.Entry<String, Path> f : conformanceResourceFiles(s).entrySet()) {
-                    Path dest = resourcesOut.resolve(f.getKey());
-                    Files.createDirectories(dest.getParent());
-                    Files.copy(f.getValue(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    written.add("conformance resource: " + f.getKey());
-                }
-            }
+            resources(s, resourcesOut, written);
         }
         return written;
+    }
+
+    /**
+     * For a bridge the mod overrides: no source of the bridge's, only the conformance cases that need none of it
+     * ({@link #portConformanceFiles}) and the data files they use, so the mod's own class is held to the contract's laws.
+     */
+    public static List<String> materializeForOverride(Selection s, String namespace, Path conformanceOut, Path resourcesOut) throws IOException {
+        List<String> written = new ArrayList<>();
+        write(portConformanceFiles(s), namespace, conformanceOut, written, "conformance: ");
+        resources(s, resourcesOut, written);
+        return written;
+    }
+
+    private static void resources(Selection s, Path resourcesOut, List<String> written) throws IOException {
+        if (resourcesOut == null) {
+            return;
+        }
+        for (Map.Entry<String, Path> f : conformanceResourceFiles(s).entrySet()) {
+            Path dest = resourcesOut.resolve(f.getKey());
+            Files.createDirectories(dest.getParent());
+            Files.copy(f.getValue(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            written.add("conformance resource: " + f.getKey());
+        }
     }
 
     private static void write(Map<String, Path> files, String namespace, Path out, List<String> written, String label) throws IOException {
@@ -387,21 +419,5 @@ public final class Bridges {
             Files.writeString(dest, rewrite(text, namespace), StandardCharsets.UTF_8);
             written.add(label + placed(f.getKey(), namespace));
         }
-    }
-
-    /** The bridges the given contracts bring (their registry rows' {@code bridges}), each once, in the order met. */
-    public static List<String> broughtBy(ContractRegistry registry, List<String> contractIds) {
-        List<String> slugs = new ArrayList<>();
-        if (contractIds.isEmpty()) {
-            return slugs; // an empty selection means every contract to the registry, and a project that imports none brings no bridge
-        }
-        for (ContractRegistry.Entry e : registry.withRequirements(registry.resolve(contractIds))) {
-            for (String slug : e.bridges()) {
-                if (!slugs.contains(slug)) {
-                    slugs.add(slug);
-                }
-            }
-        }
-        return slugs;
     }
 }

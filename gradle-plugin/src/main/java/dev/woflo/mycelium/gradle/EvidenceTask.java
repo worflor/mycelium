@@ -225,7 +225,7 @@ public abstract class EvidenceTask extends DefaultTask {
             bridges.addProperty("checked", true);
             evidence.add("bridges", bridges);
         } else {
-            evidence.add("bridges", notChecked("myceliumBridges did not run in this build (the project imports no bridge)"));
+            evidence.add("bridges", notChecked("myceliumBridges did not run in this build (it is not in the tasks this build ran), so no bridge was checked and none is recorded here"));
         }
 
         JsonObject harness = null;

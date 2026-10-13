@@ -40,8 +40,8 @@ public abstract class MyceliumExtension {
     }
 
     /**
-     * What the mod does with the bridges its contracts bring (docs/decisions/0016): take fewer, replace one with a class of
-     * its own, or add the conformance cases to its game tests. By default it gets every bridge of every contract it imports.
+     * What the mod does with the bridges (docs/decisions/0016): name the ones it takes, leave one out, replace one with a class of
+     * its own, or add the conformance cases to its game tests. By default it gets the bridges its own sources reference.
      */
     @Nested
     public abstract BridgesSpec getBridges();

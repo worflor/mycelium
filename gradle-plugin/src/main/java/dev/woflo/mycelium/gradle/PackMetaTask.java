@@ -3,9 +3,14 @@ package dev.woflo.mycelium.gradle;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.InputFile;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
 
@@ -25,14 +30,16 @@ public abstract class PackMetaTask extends DefaultTask {
     public abstract DirectoryProperty getRoot();
 
     @Input
+    @Optional
     public abstract Property<String> getMinecraft();
 
     @Input
     public abstract Property<String> getPackDescription();
 
-    /** The era table's text, so a changed row re-runs the task. */
-    @Input
-    public abstract Property<String> getTableFingerprint();
+    /** The era table, tracked as a file when the build runs, so a changed row re-runs the task (even from the configuration cache). */
+    @InputFile
+    @PathSensitive(PathSensitivity.NONE)
+    public abstract RegularFileProperty getEraTable();
 
     @OutputDirectory
     public abstract DirectoryProperty getOutputDir();

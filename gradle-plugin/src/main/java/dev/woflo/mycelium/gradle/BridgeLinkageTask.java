@@ -50,20 +50,41 @@ public abstract class BridgeLinkageTask extends DefaultTask {
         Path report = getReportDir().get().getAsFile().toPath();
         Files.createDirectories(report);
         NameCache cache = new NameCache(getCache().get().getAsFile().toPath(), getOffline().get());
-        BridgeLinkage.Result result = BridgeLinkage.run(root, cache, report.resolve("work"),
-                getJavac().isPresent() ? getJavac().get().getAsFile().toPath() : BridgeLinkage.runningJavac());
+        // the compiler is a toolchain's, as new as the newest Java a game runs on. One that cannot be provisioned (offline, no matching
+        // JDK) is a proof not made, said so, and not a build that cannot be resolved: bridges are left unlinked with the reason.
+        Path javac;
+        String toolchain = null;
+        try {
+            javac = getJavac().isPresent() ? getJavac().get().getAsFile().toPath() : BridgeLinkage.runningJavac();
+        } catch (RuntimeException e) {
+            javac = null;
+            Throwable cause = e;
+            while (cause.getCause() != null) {
+                cause = cause.getCause();
+            }
+            toolchain = "no JDK to compile the bridges with could be provisioned (" + cause.getMessage() + ")";
+        }
+        BridgeLinkage.Result result = BridgeLinkage.run(root, cache, report.resolve("work"), javac);
         Files.writeString(report.resolve("linkage.json"), new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(result.report()) + "\n",
                 StandardCharsets.UTF_8);
         Checks.Findings found = new Checks.Findings(Checks.Config.DEFAULTS);
         for (String finding : result.findings()) {
             found.add("L1", "*", finding);
         }
+        if (toolchain != null) {
+            found.add("L2", "*", toolchain);
+        }
         for (String note : result.notes()) {
             found.add("L2", "*", note);
         }
         found.conclude(getLogger(), "bridge linkage: " + (result.findings().size()) + " group(s) do not link, " + result.notes().size()
-                + " version(s) left unlinked");
-        getLogger().lifecycle("Mycelium: every bridge variant links on the versions that have name data ({}); {} note(s)", report.resolve("linkage.json"),
-                result.notes().size());
+                + " note(s) on versions left unlinked");
+        // what was proved, in numbers: a run that linked nothing says so and does not read as one that linked everything
+        int[] totals = BridgeLinkage.totals(result.report());
+        getLogger().lifecycle("Mycelium: bridge linkage: {} ({}); {} note(s)", BridgeLinkage.summary(result.report()), report.resolve("linkage.json"),
+                result.notes().size() + (toolchain == null ? 0 : 1));
+        if (totals[1] > 0 && totals[0] == 0) {
+            getLogger().warn("Mycelium: bridge linkage linked 0 of {} version(s): nothing was proved this run (see the notes above)", totals[1]);
+        }
     }
 }
