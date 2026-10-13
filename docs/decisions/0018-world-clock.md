@@ -35,10 +35,10 @@ it: one clock, rate one, a 24000-tick `day` timeline and a 192000-tick `moon` ti
 | Law | Statement |
 |---|---|
 | C1 | **Advance.** Over n ticks at rate r, not paused, total ticks grow by floor of the accumulated n·r, the fraction carried; paused or rule off, nothing moves. |
-| C2 | **Markers move forward.** `moveTo` lands on the marker's next occurrence at or after now, never earlier; a marker the clock does not have is `NO_SUCH_MARKER` and changes nothing. |
+| C2 | **Markers move forward.** `moveTo` a periodic marker lands on its next occurrence strictly after now, never earlier, and a clock exactly at it is `NOT_MOVED`; a marker with no period moves the clock to its own tick (earlier, if passed: the game's behaviour); a marker the clock does not have is `NO_SUCH_MARKER` and changes nothing. |
 | C3 | **Periods agree.** For a periodic timeline, ticks-in-period and period count recompose total ticks exactly; edges between two states are exactly the marker occurrences between them, each once. |
 | C4 | **The old game is a clock.** The model with one clock at rate one, a 24000 day and a 192000 moon reproduces pre-26.1 day time, moon phase (`totalTicks / 24000 % 8`), day count and sleep skip (next multiple of 24000) exactly. |
-| C5 | **Sync agrees.** A client extrapolating from a synced (totalTicks, partialTick, rate) at the same game time reads the server's ticks. |
+| C5 | **Sync agrees.** A client extrapolating from a synced (totalTicks, partialTick, rate) at the same game time reads the server's ticks: exactly where float arithmetic is exact, within one tick otherwise (the server adds floats tick by tick, the client multiplies in double, as in the game). |
 | C6 | **Determinism.** The same states and commands give the same results, with no wall clock. |
 
 Rejection matrix: a clock that drops the fractional carry (C1), one that moves backwards to a marker (C2), off-by-one period
@@ -63,4 +63,13 @@ mobs and beds keep following `dayTime` unless the takeover variant is taken. Env
 sky colours, light, mob burning) are not emulated by this contract.
 
 ## First proofs
+
+
+## Evidence (pure half, 2026-10-12)
+
+`contracts/world-clock` is built: model, reference, `ClockPort` with an in-memory reference, a rejection matrix with a `NoOp`
+entry, laws C1 to C6 with seeded property tests (`bash run-contracts.sh world-clock` clean, every entry caught;
+`./gradlew check` green). Its SPEC quotes the 26.3 and 1.21.1 methods it follows. The reference was also run once against the
+real 26.3 classes from the game jar (7,376,997 server tick steps, 900,000 client tick steps, 20,000 marker cases) and agreed
+bit for bit; that run is not repeatable from this repository and is design-time evidence, not game evidence.
 
