@@ -1,56 +1,40 @@
 package mycelium.bridges.world_clock.conformance;
 
-import com.mojang.serialization.DataResult;
 import io.netty.buffer.Unpooled;
-import mycelium.bridges.world_clock.ClockDatapack;
-import mycelium.bridges.world_clock.WorldClocks;
 import mycelium.world_clock.v1.model.ClockCommand;
 import mycelium.world_clock.v1.model.ClockId;
 import mycelium.world_clock.v1.model.ClockPort;
-import mycelium.world_clock.v1.model.ClockState;
 import mycelium.world_clock.v1.model.ClockSync;
 import mycelium.world_clock.v1.model.NetworkState;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.nbt.NbtOps;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
 import net.minecraft.resources.Identifier;
-import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.clock.ClockNetworkState;
 import net.minecraft.world.clock.ClockTimeMarkers;
-import net.minecraft.world.clock.PackedClockStates;
 import net.minecraft.world.clock.WorldClock;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.timeline.Timeline;
 
-import java.io.InputStream;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * What the conformance cases need of the game that differs by variant (decision 0016): the bridge's own port, the game's
+ * What the conformance cases need of the game that differs by variant (decision 0016): the game's
  * rule and its own reading of the overworld clock, the time packet as the game sends it, the game's period and marker code,
  * and the real client's formula where the client classes are present. This is the {@code native-clock} variant's
  * (Minecraft 26.1 on): the game keeps its own clocks, so a case that steps one steps the game's manager, and the other clocks
  * are paused around it so the world's day does not move.
  */
 final class Wire {
-    private static final ClockConformance.Ports PORTS = (level, world) -> WorldClocks.of(level.getServer(), world);
-
     private Wire() {
-    }
-
-    static ClockConformance.Ports ports() {
-        return PORTS;
     }
 
     // ---------------------------------------------------------------------------------------------------- the game's own
@@ -110,7 +94,7 @@ final class Wire {
         return new long[] {timeline.getPeriodCount(server.clockManager()), timeline.getCurrentTicks(server.clockManager())};
     }
 
-    private static Holder<WorldClock> holder(MinecraftServer server, ClockId clock) {
+    static Holder<WorldClock> holder(MinecraftServer server, ClockId clock) {
         return server.registryAccess().lookupOrThrow(Registries.WORLD_CLOCK)
                 .getOrThrow(ResourceKey.create(Registries.WORLD_CLOCK, Identifier.parse(clock.id())));
     }
@@ -173,84 +157,6 @@ final class Wire {
         } catch (ReflectiveOperationException | LinkageError | RuntimeException absent) {
             // a dedicated server has no client classes: the class is missing, or the loader refuses it for the environment
             return null;
-        }
-    }
-
-    // ---------------------------------------------------------------------------------------------------- this variant's own cases
-
-    static List<ClockConformance.Case> extraCases() {
-        List<ClockConformance.Case> cases = new ArrayList<>();
-        cases.add(new ClockConformance.Case("declaration_agrees_with_the_game", level -> declarationAgrees((ServerLevel) level)));
-        cases.add(new ClockConformance.Case("datapack_text_is_generated", level -> datapackText()));
-        cases.add(new ClockConformance.Case("save_and_reload", level -> saveAndReload((ServerLevel) level)));
-        return cases;
-    }
-
-    /** The game's registered clocks and timelines are the declaration's: the conformance data is in this mod's resources. */
-    private static void declarationAgrees(ServerLevel level) {
-        List<String> problems = WorldClocks.of(level.getServer(), ClockConformance.WORLD).problems();
-        ClockConformance.expect("the game's data agrees with the declaration (the conformance data is data/" + ClockConformance.NAMESPACE
-                + "/world_clock/calendar.json and timeline/calendar.json in this mod's resources): " + problems, problems.isEmpty());
-    }
-
-    /** {@link ClockDatapack} writes exactly the files the game was given. */
-    private static void datapackText() {
-        Map<String, String> files = ClockDatapack.files(ClockConformance.WORLD, ClockConformance.NAMESPACE);
-        ClockConformance.expect("the conformance world has a clock and a timeline to write: " + files.keySet(), files.size() == 2);
-        for (Map.Entry<String, String> f : files.entrySet()) {
-            try (InputStream in = ClockConformance.class.getResourceAsStream("/" + f.getKey())) {
-                ClockConformance.expect(f.getKey() + " is missing from this mod's resources", in != null);
-                String shipped = new String(in.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                ClockConformance.expect(f.getKey() + " differs from what ClockDatapack writes:\n" + shipped + "\nagainst\n" + f.getValue(),
-                        shipped.equals(f.getValue()));
-            } catch (java.io.IOException e) {
-                throw new AssertionError("world-clock conformance: could not read " + f.getKey() + ": " + e);
-            }
-        }
-    }
-
-    /** The game's own saved form of its clocks ({@code PackedClockStates.CODEC}) keeps every field of a clock exactly, and reading it gives them back. */
-    private static void saveAndReload(ServerLevel level) {
-        ClockPort port = WorldClocks.of(level.getServer(), ClockConformance.WORLD);
-        ClockId calendar = ClockConformance.CALENDAR;
-        ClockState was = port.state(calendar);
-        try {
-            port.apply(calendar, new ClockCommand.SetRate(0.3F));
-            port.apply(calendar, new ClockCommand.SetTicks(4321L));
-            ClockState stateOf;
-            // a fraction the codec must keep exactly: tick a few times with the rule on
-            boolean rule = ruleOn(level);
-            setRule(level, true);
-            try {
-                isolate(port, calendar, () -> {
-                    for (int i = 0; i < 7; i++) {
-                        port.tick(true);
-                    }
-                });
-            } finally {
-                setRule(level, rule);
-            }
-            port.apply(calendar, new ClockCommand.Pause());
-            stateOf = port.state(calendar);
-            ClockConformance.expect("a state with a fraction, a rate and a pause to save: " + stateOf, stateOf.partialTick() != 0.0F && stateOf.paused());
-
-            RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, level.registryAccess());
-            PackedClockStates packed = level.getServer().clockManager().packState();
-            DataResult<Tag> encoded = PackedClockStates.CODEC.encodeStart(ops, packed);
-            Tag saved = encoded.getOrThrow();
-            PackedClockStates loaded = PackedClockStates.CODEC.parse(ops, saved).getOrThrow();
-            ClockConformance.expect("the game's saved clocks read back as they were", loaded.equals(packed));
-            net.minecraft.world.clock.ClockState back = loaded.clocks().get(holder(level.getServer(), calendar));
-            ClockConformance.expect("the reloaded conformance clock is the one the port had: " + back + " and " + stateOf,
-                    back != null && back.totalTicks() == stateOf.totalTicks() && back.partialTick() == stateOf.partialTick()
-                            && back.rate() == stateOf.rate() && back.paused() == stateOf.paused());
-        } finally {
-            port.apply(calendar, new ClockCommand.Resume());
-            port.apply(calendar, new ClockCommand.SetRate(was.rate()));
-            port.apply(calendar, new ClockCommand.SetTicks(was.totalTicks()));
-            if (was.paused()) {
-                port.apply(calendar, new ClockCommand.Pause());
-            }
         }
     }
 }

@@ -1,7 +1,6 @@
 package mycelium.bridges.item_presentation.conformance;
 
 import io.netty.buffer.Unpooled;
-import mycelium.bridges.item_presentation.ItemPresenter;
 import mycelium.item_component.v1.model.CarrierSnapshot;
 import mycelium.item_presentation.v1.model.Realization;
 import mycelium.item_presentation.v1.model.Selector;
@@ -104,12 +103,37 @@ final class Wire {
         return ItemStack.STREAM_CODEC.decode(buffer);
     }
 
-    /** Whether the presenter is the bridge's, which writes raw item data. */
+    /**
+     * Whether the presenter writes raw item data: the bridge's does, with a public {@code writeRaw(CompoundTag, CarrierSnapshot)}, and a
+     * mod's own presenter that offers the same method is held to the same cases. Asked of the method and not of the bridge's class,
+     * so these cases need none of the bridge's source (a mod that overrides the bridge imports them).
+     */
     static boolean writesRaw(StackPresenter<ItemStack> presenter) {
-        return presenter instanceof ItemPresenter;
+        return rawWriter(presenter) != null;
     }
 
     static void writeRaw(StackPresenter<ItemStack> presenter, CompoundTag item, CarrierSnapshot state) {
-        ((ItemPresenter) presenter).writeRaw(item, state);
+        try {
+            rawWriter(presenter).invoke(presenter, item, state);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException failure) {
+                throw failure;
+            }
+            if (cause instanceof Error failure) {
+                throw failure;
+            }
+            throw new AssertionError("item-presentation conformance: the presenter's writeRaw failed: " + cause, cause);
+        } catch (IllegalAccessException e) {
+            throw new AssertionError("item-presentation conformance: the presenter's writeRaw is not reachable: " + e, e);
+        }
+    }
+
+    private static java.lang.reflect.Method rawWriter(StackPresenter<ItemStack> presenter) {
+        try {
+            return presenter.getClass().getMethod("writeRaw", CompoundTag.class, CarrierSnapshot.class);
+        } catch (NoSuchMethodException none) {
+            return null;
+        }
     }
 }

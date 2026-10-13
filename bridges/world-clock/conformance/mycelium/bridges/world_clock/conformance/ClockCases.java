@@ -31,13 +31,13 @@ import java.util.function.Function;
  * mod imports into its game tests. They hold the pure model to the running game: each case drives the game's clocks through
  * the bridge's port and compares every state with what {@link ReferenceClockModel} says the same commands and ticks give.
  * They are written against the port, not against a variant, so they apply to the bridge's port and to a mod's own override
- * alike ({@link #cases(Ports)}).
+ * alike ({@link #cases(Ports)}); {@link ClockConformance#cases()} is the bridge's own, with the cases of its internals.
  *
  * <p>A case is a name and a body that throws {@link AssertionError} when a law fails. Registering them is the mod's: each
  * loader registers game tests its own way, so a mod runs them from whatever test it has, handing each the level it runs in:
  *
  * <pre>
- * for (ClockConformance.Case c : ClockConformance.cases()) {
+ * for (ClockConformance.Case c : ClockConformance.cases()) {          // an override: ClockCases.cases(myPorts)
  *     register("world_clock_" + c.name(), helper -&gt; c.body().run(helper.getLevel()));
  * }
  * // and, to see the real server loop carry the clocks (each runs its start, waits its ticks, runs its end):
@@ -50,8 +50,8 @@ import java.util.function.Function;
  * {@code bridges { conformance() }} adds them to the mod's resources. Where the game reads a case by its own code (the native
  * variant's period counts and marker checks, the time packet, the real client's formula), the case says which.
  */
-public final class ClockConformance {
-    private ClockConformance() {
+public class ClockCases {
+    protected ClockCases() {
     }
 
     /** The namespace of the clock and timeline the cases declare. */
@@ -107,12 +107,10 @@ public final class ClockConformance {
         void toBed(ServerLevel level) throws Exception;
     }
 
-    /** The cases, for the bridge's own port. */
-    public static List<Case> cases() {
-        return cases(Wire.ports());
-    }
-
-    /** The cases, for the port {@code ports} gives (a mod's override). The cases that exercise the bridge's own seams are left out then. */
+    /**
+     * The cases, for the port {@code ports} gives: the bridge's own (what {@link ClockConformance#cases()} passes) or a mod's override.
+     * Nothing here mentions the bridge's source, so a mod that overrides the bridge imports these and holds its own class to the laws.
+     */
     public static List<Case> cases(Ports ports) {
         List<Case> cases = new ArrayList<>();
         cases.add(new Case("advance_with_rate", level -> advanceWithRate(new Ctx(level, ports))));
@@ -123,9 +121,6 @@ public final class ClockConformance {
         cases.add(new Case("overworld_is_the_games", level -> overworldIsTheGames(new Ctx(level, ports))));
         cases.add(new Case("sleep_moves_the_default_clock", level -> sleepMovesTheDefaultClock(new Ctx(level, ports))));
         cases.add(new Case("sync_agrees", level -> syncAgrees(new Ctx(level, ports))));
-        if (ports == Wire.ports()) {
-            cases.addAll(Wire.extraCases());
-        }
         return cases;
     }
 
