@@ -80,6 +80,33 @@ final class BridgeSelfTest {
             Bridges.Selection s = Bridges.select(clock, eras, e[0]);
             that(s.describe().equals(e[1]), "bridges:world-clock on Minecraft " + e[0] + " draws " + e[1] + ", not " + s.describe());
         }
+        // item-presentation: the item definition from 1.21.4, the model with overrides before it (the number in the root tag, then, from
+        // 1.20.5, in a component), none before the game's names
+        Bridges.Bridge presenter = Bridges.require(root, "item-presentation");
+        String[][] presenterExpect = {
+                {"26.3", "item-definition"}, {"26.1", "item-definition"}, {"1.21.11", "item-definition"}, {"1.21.4", "item-definition"},
+                {"1.21.3", "model-overrides + 1.20.5"}, {"1.21.1", "model-overrides + 1.20.5"}, {"1.20.5", "model-overrides + 1.20.5"},
+                {"1.20.4", "model-overrides"}, {"1.20.1", "model-overrides"}, {"1.14", "model-overrides"}, {"1.13.2", "none"}, {"b1.7.3", "none"}};
+        for (String[] e : presenterExpect) {
+            Bridges.Selection s = Bridges.select(presenter, eras, e[0]);
+            that(s.describe().equals(e[1]), "bridges:item-presentation on Minecraft " + e[0] + " draws " + e[1] + ", not " + s.describe());
+        }
+        that(Bridges.conformanceFiles(Bridges.select(presenter, eras, "1.21.1")).get("mycelium/bridges/item_presentation/conformance/Wire.java").toString()
+                        .replace('\\', '/').contains("overlays/1.20.5/conformance")
+                        && Bridges.conformanceFiles(Bridges.select(presenter, eras, "1.20.1")).get("mycelium/bridges/item_presentation/conformance/Wire.java").toString()
+                        .replace('\\', '/').contains("model-overrides/conformance")
+                        && Bridges.conformanceFiles(Bridges.select(presenter, eras, "1.21.4")).containsKey("mycelium/bridges/item_presentation/conformance/PresenterConformance.java"),
+                "bridges:item-presentation's cases are the bridge's, and what they need of the stack is the variant's or its overlay's");
+        that(Bridges.conformanceResourceFiles(Bridges.select(presenter, eras, "26.3")).isEmpty(), "bridges:item-presentation's cases need no data files");
+        // a jar entry of a bridge's conformance cases is recognised by where the import put it, and nothing else is
+        String prefix = "com/example/mod/mycelium/bridges/";
+        that(MyceliumPlugin.isConformanceClass(prefix + "item_carrier/conformance/Wire.class", prefix)
+                        && MyceliumPlugin.isConformanceClass(prefix + "world_clock/conformance/ClockConformance$Case.class", prefix)
+                        && !MyceliumPlugin.isConformanceClass(prefix + "item_carrier/ItemCarrier.class", prefix)
+                        && !MyceliumPlugin.isConformanceClass(prefix + "item_carrier/conformance/Wire.java", prefix)
+                        && !MyceliumPlugin.isConformanceClass("com/example/mod/Conformance.class", prefix)
+                        && !MyceliumPlugin.isConformanceClass("com/example/mod/conformance/Wire.class", prefix),
+                "bridges:a conformance class is one under <namespace>/bridges/<slug>/conformance/, and nothing else is");
         Map<String, Path> data = Bridges.conformanceResourceFiles(Bridges.select(clock, eras, "26.3"));
         that(data.keySet().equals(java.util.Set.of("data/mycelium_conformance/world_clock/calendar.json", "data/mycelium_conformance/timeline/calendar.json"))
                         && Bridges.conformanceResourceFiles(Bridges.select(clock, eras, "1.21.1")).isEmpty()
@@ -404,12 +431,22 @@ final class BridgeSelfTest {
             b.override("item-carrier", "com.example.MyCarrier");
             b.conformance();
             b.skip("other");
+            b.shipConformanceResources();
+            b.conformanceClassesOutOfJar();
         });
+        Path programs = Files.createDirectories(tmp.resolve("top/presentation"));
+        d.presentation(sp -> sp.getSources().set(programs.toFile()));
         Project a = FlexibleSelfTest.mod(Files.createDirectories(tmp.resolve("top/a")), "a", top, root);
         MyceliumExtension ea = a.getExtensions().getByType(MyceliumExtension.class);
         that(ea.getBridges().getOverrides().get().equals(Map.of("item-carrier", "com.example.MyCarrier")) && ea.getBridges().getConformance().get()
                         && ea.getBridges().getSkip().get().equals(List.of("other")),
                 "bridges:a bridges block written once at the root is every project's");
+        that(ea.getBridges().getShipConformanceResources().get() && ea.getBridges().getConformanceClassesOutOfJar().get(),
+                "bridges:what the conformance cases keep out of the jar is declared once, at the root");
+        that(ea.getPresentation().getSources().get().getAsFile().toPath().equals(programs)
+                        && ea.getPresentation().getComponents().get().getAsFile().toPath().equals(programs.resolve("components.json"))
+                        && ea.getPresentation().getLock().get().getAsFile().toPath().equals(programs.resolve("presentation.lock.json")),
+                "presentation:the programs' home written once at the root is every project's, with the catalog and the lock beside them");
         that(SelfTest.refuses(() -> ea.getBridges().override("item-carrier", ""), "takes a bridge slug and a fully qualified class name"),
                 "bridges:an override without a class is refused where it is written");
 
@@ -518,6 +555,7 @@ final class BridgeSelfTest {
         SelfTest.expect(root, "name data no loader and no bridge reads", r -> {
             SelfTest.replace(r.resolve(carrierJson), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"unobfuscated\"]");
             SelfTest.replace(r.resolve("bridges/world-clock/bridge.json"), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"unobfuscated\"]");
+            SelfTest.replace(r.resolve("bridges/item-presentation/bridge.json"), "\"writtenIn\": [\"mojang\", \"unobfuscated\"]", "\"writtenIn\": [\"unobfuscated\"]");
         },
                 f -> f.contains("[names]") && f.contains("mojang 1.14.4 is data no loader's runtime is named mojang on") && f.contains("no bridge is written in mojang"), baseline);
         SelfTest.expect(root, "a directory under bridges/ that is not a bridge", r -> SelfTest.mkdirs(r.resolve("bridges/not-a-bridge")),

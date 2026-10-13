@@ -14,9 +14,16 @@ import org.gradle.api.provider.Property;
  *     bridges {
  *         override("item-carrier", "com.example.MyCarrier")   // your class instead; it must implement the bridge's port
  *         conformance()                                        // add the bridges' game-test cases to your game-test sources
+ *         conformanceClassesOutOfJar()                         // ... and keep their classes out of the jar that ships
  *     }
  * }
  * </pre>
+ *
+ * <p>Conformance cases are test code, and a mod whose game tests live in {@code main} (Loom's and NeoForge's often do) would
+ * ship them. The cases' <em>data files</em> (a datapack clock) are therefore kept out of the artifact jars by default, and still
+ * reach every run that uses the compiled output directories (the game-test run); {@link #shipConformanceResources()} keeps them
+ * in. The cases' <em>classes</em> stay in unless {@link #conformanceClassesOutOfJar()} says otherwise, since the mod's own tests,
+ * compiled into the same jar, call them.
  */
 public abstract class BridgesSpec {
     /** Bridges to take, by slug. Empty means every bridge the imported contracts bring; a list replaces that. */
@@ -37,6 +44,25 @@ public abstract class BridgesSpec {
      * has them.
      */
     public abstract Property<String> getConformanceSourceSet();
+
+    /** Whether the conformance cases' data files stay in the jars that ship (default false: they are test data). */
+    public abstract Property<Boolean> getShipConformanceResources();
+
+    /** Whether the conformance cases' classes stay out of the jars that ship (default false: the mod's own tests may call them). */
+    public abstract Property<Boolean> getConformanceClassesOutOfJar();
+
+    /** Keep the conformance cases' data files in the jars that ship. */
+    public void shipConformanceResources() {
+        getShipConformanceResources().set(true);
+    }
+
+    /**
+     * Keep the conformance cases' classes out of the jars that ship. Only for a mod whose tests that call them are not in
+     * those jars, or never run from them: the jar's own test classes would reference classes it does not have.
+     */
+    public void conformanceClassesOutOfJar() {
+        getConformanceClassesOutOfJar().set(true);
+    }
 
     /** Take only these bridges. */
     public void use(String... slugs) {

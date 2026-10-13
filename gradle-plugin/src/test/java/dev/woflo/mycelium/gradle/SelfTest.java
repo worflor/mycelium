@@ -1219,7 +1219,7 @@ public final class SelfTest {
 
             Presentation.Outcome modern = Presentation.compile(root, work, "1.21.4", sources, components, lock);
             that(modern.ok() && "item-definition".equals(modern.realization()) && modern.files().containsKey("assets/fixture/items/status_tool.json")
-                            && modern.files().containsKey("META-INF/mycelium/presentation/fixture/status_tool.plan.json") && modern.files().size() == 2,
+                            && modern.files().containsKey("META-INF/mycelium/presentation/fixture/status_tool.plan.json") && modern.files().size() == 3 && modern.files().containsKey("META-INF/mycelium/presentation/components.json"),
                     "presentation:1.21.4 gets an item definition and the plan: " + modern.diagnostics() + modern.files().keySet());
             Presentation.Outcome legacy = Presentation.compile(root, work, "1.20.1", sources, components, lock);
             that(legacy.ok() && "model-overrides".equals(legacy.realization()) && legacy.files().containsKey("assets/fixture/models/item/status_tool.json"),

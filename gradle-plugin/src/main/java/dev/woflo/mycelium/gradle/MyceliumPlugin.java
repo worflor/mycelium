@@ -245,9 +245,13 @@ public final class MyceliumPlugin implements Plugin<Project> {
         // Item presentation (docs/decisions/0012): the consumer's programs compiled for the target's era into generated resources,
         // and the lock of legacy codes completed on request. The layout is a convention; the era table chooses the mechanism.
         PresentationSpec presentation = ext.getPresentation();
-        presentation.getSources().convention(project.getLayout().getProjectDirectory().dir("src/main/presentation"));
-        presentation.getComponents().convention(presentation.getSources().file("components.json"));
-        presentation.getLock().convention(presentation.getSources().file("presentation.lock.json"));
+        // a multi-project build (Stonecutter) keeps the programs once, beside the root: `myceliumDefaults { presentation { sources = ... } }`
+        Provider<Directory> ownSources = project.provider(() -> project.getLayout().getProjectDirectory().dir("src/main/presentation"));
+        presentation.getSources().convention(defaults == null ? ownSources : defaults.getPresentation().getSources().orElse(ownSources));
+        presentation.getComponents().convention(defaults == null ? presentation.getSources().file("components.json")
+                : defaults.getPresentation().getComponents().orElse(presentation.getSources().file("components.json")));
+        presentation.getLock().convention(defaults == null ? presentation.getSources().file("presentation.lock.json")
+                : defaults.getPresentation().getLock().orElse(presentation.getSources().file("presentation.lock.json")));
         Provider<String> presentationFingerprint = project.provider(() -> {
             Path root = ext.getRoot().get().getAsFile().toPath();
             ContractRegistry registry = ContractRegistry.load(root.toFile());
@@ -637,6 +641,33 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     // Exactly what ship put in makes way: a class from anywhere else whose entry ship also supplies, or whose
                     // outermost class it supplies, is dropped. Decided per entry from ship's own output, so it holds however
                     // the build is ordered.
+                    // Bridge conformance cases are test code. Their data files stay out of the jar that ships (they reach the game-test
+                    // run through the compiled output directories), and their classes too when the mod says so.
+                    if (ext.getBridges().getConformance().getOrElse(false)) {
+                        boolean shipData = ext.getBridges().getShipConformanceResources().getOrElse(false);
+                        boolean shipClasses = !ext.getBridges().getConformanceClassesOutOfJar().getOrElse(false);
+                        jar.getInputs().property("mycelium.conformance.shipResources", shipData);
+                        jar.getInputs().property("mycelium.conformance.shipClasses", shipClasses);
+                        Provider<java.io.File> conformanceData = bridgeImportTask.flatMap(t -> t.getConformanceResourcesDir().getAsFile());
+                        String classesInfix = ext.getNamespace().get().replace('.', '/') + "/bridges/";
+                        java.util.concurrent.atomic.AtomicReference<java.util.Set<String>> dataPaths = new java.util.concurrent.atomic.AtomicReference<>();
+                        jar.exclude(element -> {
+                            String path = element.getRelativePath().getPathString();
+                            if (!shipData) {
+                                if (dataPaths.get() == null) {
+                                    try {
+                                        dataPaths.set(Bridges.allFiles(conformanceData.get().toPath()).keySet());
+                                    } catch (java.io.IOException e) {
+                                        throw new org.gradle.api.GradleException("Mycelium bridges: the conformance data files could not be listed", e);
+                                    }
+                                }
+                                if (dataPaths.get().contains(path)) {
+                                    return true;
+                                }
+                            }
+                            return !shipClasses && isConformanceClass(path, classesInfix);
+                        });
+                    }
                     jar.exclude(element -> {
                         if (!ext.getMinecraft().isPresent() || ext.getPure().getSources().isEmpty()) {
                             return false;
@@ -654,6 +685,15 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 });
             });
         });
+    }
+
+    /** Whether a jar entry is a class of a bridge's conformance cases: {@code <namespace>/bridges/<slug>/conformance/...class}. */
+    static boolean isConformanceClass(String path, String bridgesPrefix) {
+        if (!path.startsWith(bridgesPrefix) || !path.endsWith(".class")) {
+            return false;
+        }
+        String[] parts = path.substring(bridgesPrefix.length()).split("/");
+        return parts.length >= 3 && parts[1].equals("conformance");
     }
 
     /** Whether a source directory is one Mycelium wrote (an import, a bridge, conformance cases): under the imported root. */
@@ -868,6 +908,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
             ext.getBridges().getOverrides().convention(defaults.getBridges().getOverrides());
             ext.getBridges().getConformance().convention(defaults.getBridges().getConformance());
             ext.getBridges().getConformanceSourceSet().convention(defaults.getBridges().getConformanceSourceSet());
+            ext.getBridges().getShipConformanceResources().convention(defaults.getBridges().getShipConformanceResources());
+            ext.getBridges().getConformanceClassesOutOfJar().convention(defaults.getBridges().getConformanceClassesOutOfJar());
         }
         ext.getNamespace().convention(defaults == null ? namespace : defaults.getNamespace().orElse(namespace));
         ext.getTargetProfile().convention(defaults == null ? project.provider(project::getName)
