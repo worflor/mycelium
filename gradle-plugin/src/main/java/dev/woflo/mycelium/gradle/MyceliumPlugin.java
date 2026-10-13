@@ -67,16 +67,31 @@ public final class MyceliumPlugin implements Plugin<Project> {
         };
         Provider<String> verifyProperty = project.getProviders().gradleProperty("mycelium.verify").orElse("");
         Provider<Directory> generated = project.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java");
-        // The contracts this project imports: the explicit `contracts(...)` if given; in a mod (the Java plugin applied) what its
-        // own sources reference under the namespace, with their requirements; in the verification project (no Java plugin), none
-        // imported and every contract verified.
-        Provider<List<String>> contracts = project.provider(() -> {
-            List<String> explicit = ext.getContracts().get();
-            if (!explicit.isEmpty() || !isMod.get()) {
-                return explicit;
+        // The contracts this project imports: the explicit `contracts(...)` if given; in a mod (the Java plugin applied) what the
+        // compiled sources reference under the namespace, with their requirements; in the verification project (no Java plugin),
+        // none imported and every contract verified. Chosen when the build runs, by a task that waits for whatever writes the
+        // sources: a value computed while the build is
+        // configured sees the sources before any generator ran (a clean Stonecutter build has none yet).
+        TaskProvider<DeriveContractsTask> deriveTask = project.getTasks().register("myceliumDeriveContracts", DeriveContractsTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Chooses the contracts to import: the explicit list, else the ones the compiled sources reference.");
+            t.getRoot().set(ext.getRoot());
+            t.getNamespace().set(ext.getNamespace());
+            t.getExplicit().set(ext.getContracts());
+            t.getMod().set(isMod);
+            t.getMainSources().from(derivationRoots);
+            t.getPureSources().from(ext.getPure().getSources());
+            t.getGeneratedDir().set(generated);
+            t.getContractList().set(project.getLayout().getBuildDirectory().file("mycelium/contracts.txt"));
+            t.dependsOn(sourceGenerators);
+        });
+        Provider<List<String>> contracts = deriveTask.flatMap(DeriveContractsTask::getContractList).map(file -> {
+            try {
+                String text = Files.readString(file.getAsFile().toPath(), StandardCharsets.UTF_8).strip();
+                return text.isEmpty() ? List.<String>of() : List.of(text.split("\\R"));
+            } catch (java.io.IOException x) {
+                throw new org.gradle.api.GradleException("Mycelium: cannot read the chosen contracts: " + x.getMessage(), x);
             }
-            return deriveContracts(ext.getRoot().get().getAsFile(), derivationRoots.getFiles(), ext.getPure().getSources().getFiles(),
-                    ext.getNamespace().get(), generated.get().getAsFile());
         });
         Provider<String> contractMode = project.provider(() -> !ext.getContracts().get().isEmpty() ? "declared"
                 : isMod.get() ? "derived" : "all-verified");
@@ -89,7 +104,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
         // `-Pmycelium.suites=noise,rng` runs only those suites in the era gates (by area or bundle name).
         List<String> suites = listProperty(project, "mycelium.suites");
 
-        Provider<String> fingerprint = project.provider(() -> {
+        Provider<String> fingerprint = contracts.map(ids -> {
             Path root = ext.getRoot().get().getAsFile().toPath();
             List<Path> dirs = new ArrayList<>();
             dirs.add(root.resolve("contracts/registry.json"));
@@ -97,13 +112,18 @@ public final class MyceliumPlugin implements Plugin<Project> {
             // the era and loader tables: a task whose output reads them (the manifest's era block, the Java a target
             // runs on, what the pure layer keeps out) re-runs when they change
             dirs.add(root.resolve("eras"));
-            for (String line : Files.readAllLines(root.resolve("harness/sources.txt"), StandardCharsets.UTF_8)) {
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(root.resolve("harness/sources.txt"), StandardCharsets.UTF_8);
+            } catch (java.io.IOException x) {
+                throw new org.gradle.api.GradleException("Mycelium: cannot read harness/sources.txt: " + x.getMessage(), x);
+            }
+            for (String line : lines) {
                 if (!line.isBlank() && !line.strip().startsWith("#")) {
                     dirs.add(root.resolve(line.strip()));
                 }
             }
             ContractRegistry registry = ContractRegistry.load(root.toFile());
-            List<String> ids = contracts.get();
             if (!ids.isEmpty() || !isMod.get()) {
                 for (ContractRegistry.Entry entry : registry.withRequirements(registry.resolve(ids))) {
                     dirs.add(root.resolve("contracts").resolve(entry.path()).resolve("src"));
@@ -383,6 +403,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getFailOnUnused().set(ext.getFailOnUnused());
                 t.getChecks().set(checks);
                 t.getSources().from(sourceSets.getByName("main").getJava().getSourceDirectories());
+                t.getSources().from(ext.getPure().getSources());
                 t.getImportedDir().set(generated);
                 t.getReportDir().set(usageDir);
                 t.dependsOn(importTask);
@@ -601,12 +622,12 @@ public final class MyceliumPlugin implements Plugin<Project> {
     /** The bundle directory of every contract this project verifies and ran (not one Mycelium's own check proved). */
     private static ConfigurableFileCollection verifyBundles(ConfigurableFileCollection into, MyceliumExtension ext, Provider<Directory> reportDir,
                                                             Provider<List<String>> contracts, Provider<Boolean> isMod, Provider<String> verifyProperty) {
-        into.from((java.util.concurrent.Callable<Object>) () -> {
-            List<Object> dirs = new ArrayList<>();
+        // a provider, not a callable: the list is read when the build runs, after the contracts are chosen
+        into.from(contracts.map(ids -> {
+            List<Directory> dirs = new ArrayList<>();
             if (!ext.getVerify().get()) {
                 return dirs;
             }
-            List<String> ids = contracts.get();
             if (ids.isEmpty() && isMod.get()) {
                 return dirs;
             }
@@ -626,7 +647,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 throw new org.gradle.api.GradleException("Mycelium: cannot read the recorded proofs: " + x.getMessage(), x);
             }
             return dirs;
-        });
+        }));
         return into;
     }
 
@@ -641,8 +662,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
 
     /**
      * The contracts a mod's own sources reference under its namespace ({@code <namespace>.<package>}), by id; their
-     * requirements come with them on import. Reads the main sources (never the generated imports) and the pure layer, as written:
-     * a reference in a comment counts, so a source Stonecutter swaps in or out is still seen.
+     * requirements come with them on import. Reads the main sources as the compiler does (never the generated imports, and the code,
+     * not the comments: what a Stonecutter swap switched off is not a use) and the pure layer.
      */
     static List<String> deriveContracts(java.io.File myceliumRoot, java.util.Collection<java.io.File> mainRoots,
                                         java.util.Collection<java.io.File> pureRoots, String namespace, java.io.File generated) {
@@ -659,7 +680,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) walk::iterator) {
                     if (java.nio.file.Files.isRegularFile(p) && p.toString().endsWith(".java")
                             && !p.toAbsolutePath().startsWith(generated.toPath().toAbsolutePath())) {
-                        all.append(java.nio.file.Files.readString(p, StandardCharsets.UTF_8)).append('\n');
+                        all.append(withoutComments(java.nio.file.Files.readString(p, StandardCharsets.UTF_8))).append('\n');
                     }
                 }
             } catch (java.io.IOException x) {
@@ -680,6 +701,50 @@ public final class MyceliumPlugin implements Plugin<Project> {
         return ids;
     }
 
+
+    /**
+     * The code of a Java source without its comments (what the compiler reads): a reference only a comment makes, such as the
+     * branch a Stonecutter swap switched off, is not a use. String and character literals are kept whole.
+     */
+    static String withoutComments(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        int i = 0;
+        int n = text.length();
+        while (i < n) {
+            char c = text.charAt(i);
+            if (c == '/' && i + 1 < n && text.charAt(i + 1) == '/') {
+                while (i < n && text.charAt(i) != '\n') {
+                    i++;
+                }
+            } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
+                int end = text.indexOf("*/", i + 2);
+                i = end < 0 ? n : end + 2;
+                out.append(' ');
+            } else if (c == '"' || c == '\'') {
+                boolean block = c == '"' && text.startsWith("\"\"\"", i);
+                int start = i;
+                i += block ? 3 : 1;
+                while (i < n) {
+                    char d = text.charAt(i);
+                    if (d == '\\') {
+                        i += 2;
+                    } else if (block ? text.startsWith("\"\"\"", i) : d == c) {
+                        i += block ? 3 : 1;
+                        break;
+                    } else if (!block && d == '\n') {
+                        break;
+                    } else {
+                        i++;
+                    }
+                }
+                out.append(text, start, Math.min(i, n));
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        return out.toString();
+    }
     /**
      * The conventions of one project's extension: neutral defaults, then (when the root declares `myceliumDefaults`) the
      * root's values, then what only this project knows (its name, group, version).

@@ -48,7 +48,7 @@ mycelium {
 }
 ```
 
-Everything the plugin does, and every option, is `docs/plugin.md`. Its tasks are `myceliumImport`, `myceliumVerify`,
+Everything the plugin does, and every option, is `docs/plugin.md`. Its tasks are `myceliumDeriveContracts`, `myceliumImport`, `myceliumVerify`,
 `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>` (and `myceliumEras`),
 `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumCapsule`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`,
 `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta` and `myceliumEvidence`. For this repository alone: `myceliumRepository`,

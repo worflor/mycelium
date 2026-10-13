@@ -48,9 +48,15 @@ to write down.
 | Range proofs | Not derived: the plugin cannot see which versions your tests ran on. A range with no keystone warns (R1), each version stays `interpolated`, and the manifest says so. | `range { keystones(...) }`. |
 | Contract harnesses | Mycelium's own check already ran each one and recorded a fingerprint of the sources (`contracts/proofs.json`). `myceliumVerify` takes a contract whose sources are unchanged, on every Java your gates run, as proven; the manifest records `proven-upstream` and the fingerprint. | `-Pmycelium.verify=always` runs every harness here. A changed source always runs. |
 
-The contract list is read when `myceliumImport` runs, after whatever writes the main sources: the plugin makes the import,
-verify and evidence tasks wait for the tasks that produce the source directories, and for Stonecutter's `stonecutterGenerate`
-by name, which nothing else declares as the sources' producer.
+The list is chosen by `myceliumDeriveContracts`, a task, so it reads the sources as the compile will: after whatever writes
+them. A value computed while the build is configured would see them before any generator ran (a clean Stonecutter build has
+no generated sources yet, and the configuration cache stores such a value before any task runs), and the import would miss
+every contract only a generated source names. The task scans the main source set's directories as they are when it runs,
+Stonecutter's generated directory for a version that is not the active one included, and writes `build/mycelium/contracts.txt`;
+the import, verify, usage and evidence tasks and the era gates read the list from there. It waits for the tasks that produce
+the source directories, and for Stonecutter's `stonecutterGenerate` by name, which nothing else declares as the sources' producer.
+A text scan of the code (comments removed) is enough because a contract's package is under the mod's own namespace: no other
+text can name it. An explicit `contracts(...)` passes through the task unchanged.
 
 ### Optional blocks
 
@@ -216,6 +222,7 @@ Each fixture is a small consumer build that must pass, with planted breaks the g
   overlay chosen, only `jar` carrying the evidence, and the checks at their levels in the manifest. `-Pflex=failP3`,
   `-Pflex=allowP3` and `-Pflex=offP3` set the pure layer's clock check to each level; `-Pflex=leak` plants an integration
   leak (I1) and `-Pflex=pureLeak` a pure layer that does not compile alone: `compileJava` still passes, `check` does not.
+- `./gradlew -p gradle-plugin/src/test/fixtures/derive-consumer check` proves the derivation in a clean build with the configuration cache on: a fully qualified reference with no import, the pure layer, a source directory written by a task named `stonecutterGenerate` that nothing declares as its producer (as Stonecutter does), and one a task declares; none of them exists when the build is configured. It failed (the generated sources did not compile) before the list was chosen at execution time.
 - `./gradlew -p gradle-plugin/src/test/fixtures/defaults-consumer check` proves two projects inheriting one `myceliumDefaults`.
 - `gradle-plugin/src/test/fixtures/ship-consumer` ships a pure layer written for Java 21 to a Java 8 era
   (`docs/decisions/0006-shipping-downgraded-jars.md`).

@@ -98,7 +98,7 @@ the tasks do is `docs/plugin.md`.
 - **Proofs a mod takes from Mycelium.** `Proofs.java` (`contracts/proofs.json`: fingerprints of what Mycelium's own
   check proved), `ProofRecordTask.java` (`myceliumRecordProofs`, this repository only).
 - **Contracts.** `ContractRegistry.java` (reads `contracts/registry.json` strictly; resolves selections and
-  `supersedes`), `ImportContractsTask.java` (`myceliumImport`), `VerifyContractsTask.java` (`myceliumVerify`),
+  `supersedes`), `DeriveContractsTask.java` (`myceliumDeriveContracts`), `ImportContractsTask.java` (`myceliumImport`), `VerifyContractsTask.java` (`myceliumVerify`),
   `Harness.java` (what every runner shares: the harness's sources, and the bundle an era gate runs),
   `UsageTask.java` (`myceliumUsage`).
 - **The pure layer and integrations.** `PurityTask.java` (P1 and P3), `PureCompileTask.java` (the pure layer compiled

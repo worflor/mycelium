@@ -457,6 +457,12 @@ final class FlexibleSelfTest {
         SelfTest.delete(src.resolve("Mod.java"));
         ids = MyceliumPlugin.deriveContracts(root.toFile(), p.getExtensions().getByType(org.gradle.api.plugins.JavaPluginExtension.class).getSourceSets().getByName("main").getJava().getSrcDirs(), ext.getPure().getSources().getFiles(), ext.getNamespace().get(), p.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java").get().getAsFile());
         that(ids.isEmpty(), "derive:another namespace and a longer version number are not references: " + ids);
+        // only code counts: a reference in a comment (a branch a Stonecutter swap switched off) is not a use, but one in a string is kept whole
+        that(MyceliumPlugin.withoutComments("a // x.y\nb /* x.y */ c \"//not a comment\" 'q' \"\\\"/*\" d\n").equals("a \nb   c \"//not a comment\" 'q' \"\\\"/*\" d\n"),
+                "derive:comments are dropped and literals kept");
+        SelfTest.write(src.resolve("More.java"), "package mod;\n// fixture.derive.mycelium.data_catalog.v1.model.Catalog\n/* fixture.derive.mycelium.data_catalog.v1.model.X */\nclass More { }\n");
+        ids = MyceliumPlugin.deriveContracts(root.toFile(), p.getExtensions().getByType(org.gradle.api.plugins.JavaPluginExtension.class).getSourceSets().getByName("main").getJava().getSrcDirs(), ext.getPure().getSources().getFiles(), ext.getNamespace().get(), p.getLayout().getBuildDirectory().dir("generated/sources/mycelium/java").get().getAsFile());
+        that(ids.isEmpty(), "derive:a reference only in a comment is not a use: " + ids);
         // explicit contracts(...) stay an override; the evidence says which it was
         ext.contracts("world.copy@1");
         that(ext.getContracts().get().equals(List.of("world.copy@1")), "derive:an explicit contracts(...) is kept as the override");
