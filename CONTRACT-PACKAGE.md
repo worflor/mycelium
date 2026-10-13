@@ -35,7 +35,8 @@ Each rule says what keeps it. A rule nothing keeps is a wish; add the check or s
 1. **Registered.** A row in `contracts/registry.json` declares the id (`domain.capability@N`), the path (the slug,
    kebab-case) and the package, in the same change as the package. `supersedes` names the contract a new major
    replaces; a build may import one of the two, never both. `requires` lists the contracts whose models this one's
-   model may import. `provenance` says in words who it was written for.
+   model may import. `bridges` lists the slugs of the bridges (`BRIDGE-PACKAGE.md`) that implement the contract's ports; a mod that
+   references one gets this contract. `provenance` says in words who it was written for.
    *Kept by `myceliumRepository` (rows against directories, both ways) and `ContractRegistry` (unknown fields refused).*
 2. **Shaped.** `SPEC.md`, then `model/`, `fixtures/` and `harness/` under the package path, and exactly one
    `Run.java`, in that `harness/`, where every runner starts. *Kept by `myceliumRepository` and both runner scripts.*
@@ -47,7 +48,9 @@ Each rule says what keeps it. A rule nothing keeps is a wish; add the check or s
    (`DESIGN.md` §8.3); a model contract catches it with the law that says what the type must do. A contract whose
    laws a no-op keeps is not a contract. *Kept by `ContractRun`, for every package however its `Run` is written.*
 5. **Every break is caught for its reason.** Each matrix entry names the label that must fail, and only that label
-   counts: failing some other law is a miss. *Kept by `ContractRun`.*
+   counts: failing some other law is a miss. Every `Law:label` the harness asserts also has a matrix entry, or an allowance in
+   the package's `unmutated.json` (`{"schema":1,"unmutated":{"<label>": "<reason, at least 24 characters>"}}`); packages that predate the
+   rule are listed in `contracts/unaudited.json`, which can only shrink. *Kept by `ContractRun` and `myceliumRepository` (`LawCoverage`).*
 6. **Outcomes are sealed** (operation contracts): `Committed(receipt)`, `Rejected(reason)`, `Unsupported(detail)`, and
    `Stale` or `Indeterminate` where the staging really has that state. Zero effect is a rejection, never a receipt. An
    outcome that cannot be confirmed is never an ordinary rejection (`DESIGN.md` §7).

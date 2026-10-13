@@ -544,6 +544,9 @@ public final class WorldClockContractTests {
         c.equalLong(5555L, port.state(StandardTimelines.THE_END).totalTicks(), "C4:no-default-clock-no-skip");
         c.that(!ClockWorld.vanilla().defaultClock("minecraft:the_nether").isPresent(), "C4:no-default-clock-no-skip");
         c.equal(Optional.of(OVERWORLD), ClockWorld.vanilla().defaultClock("minecraft:overworld"), "C4:default-clock-listed");
+        c.equal(Optional.of(OVERWORLD), port.world().defaultClock("minecraft:overworld"), "C4:default-clock-listed");
+        c.equal(Optional.of(StandardTimelines.THE_END), port.world().defaultClock("minecraft:the_end"), "C4:default-clock-listed");
+        c.that(!port.world().defaultClock("minecraft:the_nether").isPresent(), "C4:default-clock-listed");
 
         // A mod's clock is a clock like any other: a calendar with a long period, a marker, a sleep marker of its own.
         ClockWorld calendar = ClockWorld.vanilla()
@@ -561,6 +564,7 @@ public final class WorldClockContractTests {
         c.equalLong(240_000L, modPort.state(CALENDAR).totalTicks(), "C4:sleep-moves-default-clock-only");
         modPort.sleep("mod:dream", true);
         c.equalLong(960_500L, modPort.state(CALENDAR).totalTicks(), "C4:a-mods-clock");
+        c.equal(Optional.of(CALENDAR), modPort.world().defaultClock("mod:dream"), "C4:default-clock-listed");
         c.equalLong(1L, m.periodCount(calendar.timelinesOn(CALENDAR).get(0), modPort.state(CALENDAR).totalTicks()), "C4:a-mods-clock");
     }
 

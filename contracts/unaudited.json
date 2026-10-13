@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "why": "The packages that predate the rule that every asserted law label has a rejection-matrix entry or a reasoned allowance (CONTRACT-PACKAGE.md, rule 5). A ledger that can only shrink: audit a package (write its broken implementations, allow the labels not worth one in its unmutated.json) and take it off. The repository check reports the labels still unmutated here.",
+  "contracts": [
+    "inventory.transfer@1",
+    "world.copy@1",
+    "dimension.travel@1",
+    "dimension.travel@2",
+    "rule.effects@1",
+    "persistence.player-state@1",
+    "presentation.particle-cue@1",
+    "data.catalog@1",
+    "random.seeded@1",
+    "chunk.hold@1",
+    "agent.link@1",
+    "chat.invocation@1",
+    "item.component@1"
+  ]
+}

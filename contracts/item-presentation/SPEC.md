@@ -99,6 +99,10 @@ random shape and hold each to S1, S2, S4 and S6.
 
 ## 4. Rejection matrix
 
+Thirty-eight entries. One fixture class stands behind several entries where the mistakes are one shape (`FaultyPlan`, `FaultyArtefacts`,
+`FaultyLock`, `FaultyProjection`, `FaultyTarget`, `FaultyBounds`, `LenientCompiler`, each with the flaw its entry name says); `DelegatingPlan` is
+their plan helper. Each is the reference compiler with one step replaced.
+
 | Fixture | What it gets wrong | Caught by |
 |---|---|---|
 | `EnumerationOrderCodes` | numbers selections 1, 2, 3 in enumeration order, ignoring the lock | S3 (`S3:existing-codes-kept`) |
@@ -108,9 +112,45 @@ random shape and hold each to S1, S2, S4 and S6.
 | `HashOrderEmitter` | writes JSON keys in hash order | S6 (`S6:canonical-json`) |
 | `InvertedContexts` | reads `only` as `except` and the other way round, so the panel is flat in the hand and lit in the inventory | S8 (`S8:definition-draws-context-rules`) |
 | `NoOpCompiler` | draws the base model for every state | S1 (`S1:totality-agrees-with-evaluator`), and S2 |
+| `FaultyPlan` as `LastMatchWinsPlan` | the plan walks the cases last to first, as the legacy overrides do | S1 (`S1:first-match-wins`) |
+| `FaultyPlan` as `UnmatchedDrawsFirstSelection` | a tuple no case matches draws the first selection, not the base | S1 (`S1:base-when-no-case`) |
+| `FaultyPlan` as `PlanCodeOffTable` | the selection a tuple draws carries a code the plan's table does not hold | S1 (`S1:one-selection-per-tuple`) |
+| `FaultyPlan` as `StrayStackDrawsDefault` | a stack outside the domains is read as the default and reported in domain | S1 (`S1:out-of-domain-draws-base`) |
+| `FaultyPlan` as `AbsentComponentIsForeign` | a stack with no components is reported as outside the domains | S1 (`S1:absent-component-reads-default`) |
+| `FaultyPlan` as `UnprunedPlan` | the plan and its resource keep the inputs no case reads | S1 (`S1:unread-input-dropped`) |
+| `FaultyPlan` as `FlagReadAsPresence` | a flag input is read as "the component is on the stack" | S2 (`S2:adapter-reading-agrees`) |
+| `FaultyPlan` as `FieldReadByInputName` | a field is read by the input's name, not the field path it declares (shows on a scalar component) | S2 (`S2:carrier-view-agrees`) |
+| `FaultyPlan` as `TruncatedPlanResource` | the plan resource lacks the last selection | S2 (`S2:plan-resource-agrees`) |
+| `FaultyPlan` as `PlanResourceWithoutRules` | the plan resource lacks the display context rules | S8 (`S8:plan-keeps-rules`) |
+| `FaultyArtefacts` as `RetiredRowsDropped` | the overrides forget the codes no case produces any more, so such a stack draws its neighbour | S2 (`S2:retired-code-draws-base`) |
+| `FaultyArtefacts` as `LastCaseDropped` | the item definition has no case for the last selection | S2 (`S2:modern-draws-evaluated-model`) |
+| `FaultyArtefacts` as `SilentEmptyProgram` | a program that draws only its base gets no era file | S2 (`S2:artefact-emitted`) |
+| `FaultyArtefacts` as `ReversedCases` | the definition lists its cases from the highest key down | S6 (`S6:cases-in-key-order`) |
+| `FaultyArtefacts` as `CrLfArtefacts` | files are written with CR LF line endings | S6 (`S6:ascii-and-line-feeds`), and S6 canonical form |
+| `FaultyArtefacts` as `LocaleFoldedArtefacts` | the text is case-folded with the default locale, which a Turkish default turns into non-ASCII | S6 (`S6:locale-independent`) |
+| `FaultyArtefacts` as `BuildStampedArtefacts` | each file carries the count of files the compiler has written | S6 (`S6:repeat-identical`) |
+| `FaultyArtefacts` as `LegacyAppliesContexts` | the legacy item model draws a context rule's other model | S8 (`S8:legacy-ignores-contexts`) |
+| `FaultyLock` as `InventedCodes` | compiles against a lock that lacks a selection, giving it the next code instead of refusing | S3 (`S3:missing-lock-lists-lines`) |
+| `FaultyLock` as `NamespacelessLockLines` | the lines it lists drop the namespace and do not read back as lock lines | S3 (`S3:lines-complete-the-lock`) |
+| `FaultyLock` as `GappedLockLines` | the lines it lists start one code above the next free one | S3 (`S3:new-selections-append`), and `S3:missing-lock-lists-lines` |
+| `FaultyProjection` as `BlindToUnknownComponents` | accepts an input over a component or field the catalog lacks | S5 (`S5:unknown-component-rejected`) |
+| `FaultyProjection` as `BlindToKindMismatch` | accepts an input whose domain is of another kind than its field | S5 (`S5:type-mismatch-rejected`) |
+| `FaultyTarget` as `MechanismlessCompiles` | compiles for a version with no mechanism as if it had item definitions | R1 (`R1:no-realization-rejected`) |
+| `FaultyTarget` as `UnguardedOwnModel` | writes overrides on the item's own model when a program also draws it | R2 (`R2:model-clash-rejected`) |
+| `FaultyBounds` as `ExclusiveCap` | refuses a product of exactly the cap it states | S7 (`S7:product-at-cap-accepted`) |
+| `FaultyBounds` as `EnumeratingCap` | enumerates the tuples before comparing the count, so a huge product never reaches the cap | S7 (`S7:product-over-cap-rejected-before-enumeration`) |
+| `LenientCompiler` as `TrustsBuiltProgram` | drops cases that guard an undeclared input and compiles the rest | P1 (`P1:compiler-rechecks-program`) |
+| `LenientCompiler` as `DuplicateRulesDropped` | keeps the first of two rules for one model | S8 (`S8:one-rule-per-model`) |
+| `LenientCompiler` as `UnknownContextsDropped` | drops display context names it does not know | S8 (`S8:unknown-context-rejected`) |
+| `LenientCompiler` as `UndrawnRulesDropped` | drops a rule for a model the program never draws | S8 (`S8:rule-for-undrawn-model-rejected`) |
 
 `NoOpCompiler` emits well-formed artefacts and a plan that never errs; it is in the matrix because a compiler that ignores the program
 must fail.
+
+Fifteen labels have no matrix entry, and `unmutated.json` says why for each: the `L1:*` lock reader, the `P1` parser labels, the `T1:*` build tool,
+`S5:catalog-agrees-with-registry` and the oracle self-check `S8:rules-mean-only-and-except` are assertions on shared model code that no
+`SigilCompiler` implementation replaces, and `S6:declaration-order-independent` guards a normalisation the model applies before a compiler sees the
+program.
 
 ## 5. Using it
 

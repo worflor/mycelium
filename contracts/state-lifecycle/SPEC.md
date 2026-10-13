@@ -120,11 +120,59 @@ every step, as well as in fixed scenarios.
 | `HalfCrossing` | applies a plan into a transaction of its own, so an abort leaves earlier effects applied | L8 (`L8:aborted-crossing-restores`) |
 | `ForgetfulStorage` | accepts a stored form and keeps nothing | L6 (`L6:durable-round-trip`) |
 | `RotatingEngine` | plans the right effects in an order that depends on how many plans it has made | L7 (`L7:same-input-same-plan`) |
+| `SkipsNoOpEffects` | leaves the KEEP effects out of a plan, so it no longer covers every slot of the host | L1 (`L1:plan-covers-scope`) |
+| `PreIncrementedCounter` | hands out 2 as a host's first incarnation | L1 (`L1:first-incarnation`) |
+| `RefusesSoundDeclarations` | (`OverStrictCompiler`) demands a policy for every declared transition, forgetting the scope filter, so a sound declaration is refused | L1 (`L1:complete-accepted`) |
+| `TerseDiagnostics` | rejects with the right codes but messages that name neither slot nor transition | L1 (`L1:diagnostic-names-slot-and-transition`) |
+| `AcceptsUnknownTransition` | (`LaxCompiler`) ignores a policy for a transition nobody declared | L1 (`L1:unknown-transition-rejected`) |
+| `AcceptsOutOfScopePolicy` | (`LaxCompiler`) ignores a policy for a transition that does not apply to the slot's scope | L1 (`L1:out-of-scope-rejected`) |
+| `AcceptsCopyAwayFromForks` | (`LaxCompiler`) accepts COPY where no host is created | L1 (`L1:copy-only-on-forks`) |
+| `AcceptsRegenerateAwayFromForks` | (`LaxCompiler`) accepts REGENERATE where no host is created | L1 (`L1:regenerate-only-on-forks`) |
+| `AcceptsExclusiveAwayFromForks` | (`LaxCompiler`) accepts EXCLUSIVE where no host is created | L1 (`L1:exclusive-only-on-forks`) |
+| `AcceptsSessionKeptPastEnd` | (`LaxCompiler`) lets a session slot keep its value at an end | L1 (`L1:session-dropped-at-end`) |
+| `AcceptsDurableWithoutCodec` | (`LaxCompiler`) accepts a durable slot with no codec | L1 (`L1:durable-needs-codec`) |
+| `AcceptsDependencyCycle` | (`LaxCompiler`) accepts slots in a dependency cycle | L1 (`L1:cycle-rejected`) |
+| `AcceptsUnknownDependency` | (`LaxCompiler`) ignores a dependency on a slot nobody declared | L1 (`L1:unknown-dependency`) |
+| `AcceptsCrossScopeDependency` | (`LaxCompiler`) ignores a dependency on a slot of another scope | L1 (`L1:cross-scope-dependency`) |
+| `AcceptsDuplicateSlot` | (`LaxCompiler`) drops a second declaration of a slot id without a word | L1 (`L1:duplicate-slot-rejected`) |
+| `AcceptsExclusiveThatCreatesValues` | (`LaxCompiler`) lets an exclusive slot declare RESET, REGENERATE or COPY | L1 (`L1:exclusive-creates-value`) |
+| `ReusedIncarnation` | gives a host that comes back the incarnation number of the one that ended | L2 (`L2:incarnation-advances`) |
+| `TombstonedResolver` | resolves no ref of a host id that ever ended, so a relogged player's fresh ref is dead | L2 (`L2:live-ref-resolves`) |
+| `WriteThroughHostId` | a write through a stale ref lands in the host's current incarnation | L2 (`L2:stale-access-gone`) |
+| `SwallowsStaleHosts` | answers a plan or an apply aimed at a stale incarnation with a quiet no-op | L2 (`L2:stale-plan-refused`) |
+| `AnyoneOnlineHolds` | takes any other live host to be the holder of an exclusive slot, so nobody can be first | L3 (`L3:first-holder-created`) |
+| `UncheckedExclusive` | materialize and write of an exclusive slot never ask whether another host holds it | L3 (`L3:second-holder-refused`) |
+| `StrandedExclusive` | at a fork the exclusive value stays with the source | L3 (`L3:clone-takes-the-token`) |
+| `MovingCopy` | COPY implemented as a move, so the source loses its value | L3 (`L3:copy-is-on-both`) |
+| `CloneEndsSource` | a fork ends the source's incarnation as a respawn does | L3 (`L3:fixture-reads`) |
+| `GlobalIncarnationCounter` | counts incarnations across all hosts, so a late host's first is not 1 | L3 (`L3:fork-target-starts-at-first-incarnation`) |
+| `RefusesEveryHolder` | answers Held to every exclusive create or write, so no token ever exists in the sequences | L3 (`L3:token-exercised`) |
+| `SessionLostOnRespawn` | releases a session value at a respawn instead of carrying it to the new incarnation | L4 (`L4:carried-session-value`) |
+| `PeekReadsDefault` | `peek` answers the initial value for an absent value | L5 (`L5:peek-absent`) |
+| `ReadIsPeek` | `read` answers absent instead of the initial value | L5 (`L5:read-gives-initial`) |
+| `MaterializingRead` | `read` stores the default it hands out | L5 (`L5:read-pure`) |
+| `LazyMaterialize` | `materialize` hands back the initial value and keeps nothing | L5 (`L5:materialize-creates`) |
+| `UnloggedWrite` | `write` registers its undo in a transaction nobody holds | L5 (`L5:write-undone-on-abort`) |
+| `StringOnlyStorage` | storage keeps only plain strings, so a component codec's `TagNode` is lost | L6 (`L6:component-codec-round-trip`) |
+| `SwallowedDecodeFailure` | catches the failure of an undecodable stored form and lets the crossing go on | L6 (`L6:undecodable-load-refused`) |
+| `IgnoresDependencies` | plans the slots in id order, not dependencies first | L7 (`L7:dependency-then-id-order`) |
+| `UnloggedMaterialize` | `materialize` registers its undo in a transaction nobody holds | L8 (`L8:aborted-write-restores`) |
+| `ForgetsMigration` | plans a MIGRATE policy as a keep, so the function never runs | L8 (`L8:committed-crossing-applies`) |
+| `UndoOnlyOnSuccess` | hands its undo to the caller's transaction only after every step worked, so a crossing that fails part way leaves what it did | L8 (`L8:failed-crossing-restores`) |
+| `SwallowsFailures` | catches whatever goes wrong while applying and carries on | L8 (`L8:failure-reaches-the-caller`) |
+| `RetractIsNoop` | the undo of a begin does nothing, so an aborted login leaves the host live | L8 (`L8:undecodable-load-aborts`) |
 | `NoOpEngine` | plans nothing: no host begins or ends, nothing is dropped or saved | L4 (`L4:incarnation-ends`); it fails L6 and L2 as well |
 
 `NoOpEngine` breaks no safety law by acting wrongly; it is in the matrix because this is a model contract and a type that
 does nothing must still fail one (`../../CONTRACT-PACKAGE.md`). `ForgetfulStorage`, `RotatingEngine` and the declaration
 labels beyond totality were added to the seven the decision named, so that L6 and L7 are proven and not only stated.
+
+Every law label the harness asserts is the intended label of an entry above, except the three that
+`contracts/state-lifecycle/unmutated.json` allows with its reason. The declaration mutants share one class: `LaxCompiler` takes a `Lapse` (one hole in
+the check) and repairs the declaration the way a lenient check would read it before handing it to the reference check, so
+every other problem is still reported; `OverStrictCompiler` and `TerseDiagnostics` are the two ways a check can be wrong
+without being lenient. The other mutants are plain engines (`Crossings`) and stores (`MemoryHostStore` subclasses), each
+named after the mistake.
 
 ## 4. Using it
 
@@ -196,7 +244,7 @@ What an adapter must do:
 From the Mycelium root: `bash run-contracts.sh state-lifecycle` (or `.\run-contracts.ps1 state-lifecycle`), or
 `./gradlew myceliumVerify -Pmycelium.contracts=state.lifecycle@1`.
 
-Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT`; exit code 0.
+Expected result: reference implementation clean; every entry of the rejection matrix `CAUGHT` for its intended label; exit code 0.
 
 ## 6. Explicit non-claims
 

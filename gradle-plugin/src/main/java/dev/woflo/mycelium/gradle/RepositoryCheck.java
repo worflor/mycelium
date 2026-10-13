@@ -79,6 +79,14 @@ public final class RepositoryCheck {
      *                 results): the harness knows its matrix, so nothing here parses a package's source to count one
      */
     public static Report run(Path root, Map<String, Integer> matrices) throws IOException {
+        return run(root, matrices, null);
+    }
+
+    /**
+     * @param intended each contract's matrix targets (the labels its entries must fail), as the harness ran it; where a contract has
+     *                 none, its {@code Run.java} is read (the laws check, {@link LawCoverage})
+     */
+    public static Report run(Path root, Map<String, Integer> matrices, Map<String, java.util.Set<String>> intended) throws IOException {
         Report report = new Report();
         ContractRegistry registry;
         try {
@@ -89,6 +97,7 @@ public final class RepositoryCheck {
         }
         registryMatchesDisk(root, registry, report);
         packages(root, registry, matrices, report);
+        LawCoverage.run(root, registry, intended, report);
         models(root, registry, report);
         patterns(root, report);
         eras(root, report);

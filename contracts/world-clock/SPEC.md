@@ -142,7 +142,29 @@ next multiple of 24000, checked for every tick of three days and for 3000 random
 | `ForgetfulClient` | A client forgets the fraction it carries between ticks | `C5:sync-agrees-exactly` |
 | `RunningWhenStillSync` | Sends the stored rate even when paused or the rule is off | `C5:still-is-sent-still` |
 | `RemembersCalls` | Gives away a free tick every thousandth call: same input, different answer | `C6:deterministic` |
+| `DriftingCarry` | The carry is truncated to hundredths each tick, so a rate that is not a short decimal drifts from n times r | `C1:accumulates-n-times-rate` |
+| `PauseDropsFraction` | Pausing a clock drops the fraction it carries; a command sequence no longer tracks the exact accounting | `C1:sequence-tracks-exact` |
+| `OneShotNeverBackwards` | A marker with no period is moved forward only: a clock past it stays where it is instead of going to its tick | `C2:one-shot-goes-to-its-tick` |
+| `EdgesCountBackwards` | A sample that goes back in time is counted as the edges crossed the other way (the old dawn rule counts none) | `C3:dawn-is-the-day-edge` |
+| `OpenTimelineHasNoTicks` | A timeline with no period reports zero ticks into it, not the clock's total | `C3:non-periodic-timeline` |
+| `OccursOnlyInFirstPeriod` | `occursAt` forgets the period: a marker occurs only at its own tick, once | `C3:occurs-at` |
+| `NextIncludesNow` | The next occurrence is the one now when the clock is exactly on the marker, not the one after | `C3:previous-next-occurrence` |
+| `FloatTotal` | The total is added through a float: exact for a young world, ticks lost once it passes 2^24 | `C4:tick` |
+| `SleepWithoutMarkerSkipsToDawn` | A clock without the wake marker skips to the next multiple of 24000 anyway | `C4:no-wake-marker-no-skip` |
+| `SleepAtMarkerSkipsADay` | Sleeping exactly on the wake marker skips a whole period, as the game before 26.1 does | `C4:sleep-at-the-marker` |
+| `PortSleepIgnoresRule` (a port) | A port's sleep forgets the `advance_time` rule, so a script of ticks and sleeps leaves the old game | `C4:script-matches-old-game` |
+| `SleepsTheWrongClock` (a port) | Sleeping moves the world's last clock, not the dimension's default | `C4:sleep-uses-default-clock` |
+| `MarkersFromOverworldOnly` (a port) | A command finds markers among the overworld's timelines only, so a mod's clock has none | `C4:a-mods-clock` |
+| `WorldWithoutDefaults` (a port) | The port reports a world with no default clocks, though it sleeps by the real ones | `C4:default-clock-listed` |
+| `QuantisedRate` | A client reads the rate in 64ths: exact for dyadic rates, ticks off for any other | `C5:sync-within-one-tick` |
+| `ChangeSyncIgnoresRule` (a port) | A changed clock is synced as running even when time is not advancing | `C5:join-and-change-agree` |
 | `NoOpClockModel` | Time never passes; no command changes a clock; no marker occurs | `C1:integer-rate-advances` |
+
+Three labels have no entry because no implementer-supplied code can break them; each is allowed with its reason in
+`unmutated.json`, which the repository check reads: `C2:marker-inside-period` and `C2:marker-ids-unique-per-clock` are
+refusals made by the final `Marker`, `Timeline` and `ClockWorld` classes, and `C4:day-count` restates
+`C3:periods-recompose` on the day timeline. Every other label the harness asserts is the intended label of an entry above
+(37 entries in all).
 
 `NoOpClockModel` breaks no rule about moving the wrong way, since it never moves. It is in the matrix because this is a
 model contract: C1 says a running clock advances, and a clock that does nothing must fail it.

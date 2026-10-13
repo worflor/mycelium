@@ -395,9 +395,18 @@ public final class SigilContractTests {
                 + "\"b\": {\"component\": \"example:tool_state\", \"field\": \"cracks\", \"domain\": {\"int\": [0, 2000000000]}}";
         Program big = Programs.mini("example:probe", "example:item/probe", huge,
                 "{\"when\": {\"a\": {\"min\": 1}, \"b\": {\"min\": 1}}, \"model\": \"example:item/a\"}");
-        Compilation result = compiler.compile(big, Lock.empty(), catalog, MODERN);
-        ok(result instanceof Compilation.Rejected r && r.diagnostics().size() == 1 && r.diagnostics().get(0).kind() == Diagnostic.Kind.TOO_LARGE,
-                "S7:product-over-cap-rejected-before-enumeration", () -> "a four-quintillion-tuple product gave " + result);
+        Compilation result;
+        try {
+            result = compiler.compile(big, Lock.empty(), catalog, MODERN);
+        } catch (RuntimeException e) {
+            result = null;
+            c.fail("S7:product-over-cap-rejected-before-enumeration (a four-quintillion-tuple product threw " + e + ")");
+        }
+        final Compilation huge1 = result;
+        if (result != null) {
+            ok(result instanceof Compilation.Rejected r && r.diagnostics().size() == 1 && r.diagnostics().get(0).kind() == Diagnostic.Kind.TOO_LARGE,
+                    "S7:product-over-cap-rejected-before-enumeration", () -> "a four-quintillion-tuple product gave " + huge1);
+        }
 
         int cap = compiler.maxTuples();
         String ranged = "\"n\": {\"component\": \"example:tool_state\", \"field\": \"seams\", \"domain\": {\"int\": [0, " + (cap - 1) + "]}}";
@@ -460,6 +469,21 @@ public final class SigilContractTests {
         Compilation.Compiled done = compiled(spool, lockFor(spool), LEGACY, "unread");
         if (done != null) {
             ok(done.plan().program().inputs().size() == 2, "S1:unread-input-dropped", () -> "the plan keeps inputs " + done.plan().program().inputs());
+            // the plan, not only the oracle, takes the first matching case and falls to the base when none matches
+            Map<String, Object> both = new LinkedHashMap<>();
+            both.put("lit", Boolean.TRUE);
+            both.put("thread", "taut");
+            ok(done.plan().select(both).model().equals("example:item/spool_lit_taut"), "S1:first-match-wins",
+                    () -> "the plan drew " + done.plan().select(both).model() + " for a stack matching two cases");
+            both.put("lit", Boolean.FALSE);
+            ok(done.plan().select(both).model().equals("example:item/spool_taut"), "S1:first-match-wins",
+                    () -> "the plan did not reach the second case: " + done.plan().select(both).model());
+            both.put("thread", "none");
+            Selection noCase = done.plan().select(both);
+            ok(noCase.isBase() && noCase.model().equals(spool.base()) && noCase.inDomain(), "S1:base-when-no-case",
+                    () -> "the plan drew " + noCase + " for a tuple no case matches");
+            Selection noCaseRead = done.plan().select(new Programs.MapView().with("example:spool", "thread", "none"));
+            ok(noCaseRead.isBase() && noCaseRead.inDomain(), "S1:base-when-no-case", () -> "a stack no case matches drew " + noCaseRead);
             Programs.MapView stale = new Programs.MapView().with("example:spool", "thread", "taut").with("example:spool", "tension", Long.valueOf(999999));
             ok(done.plan().select(stale).model().equals("example:item/spool_taut"), "S1:unread-input-dropped", () -> "an unread input changed the selection");
             Programs.MapView bogus = new Programs.MapView().with("example:spool", "thread", "frayed");
@@ -642,6 +666,10 @@ public final class SigilContractTests {
         }
         String definition = modern.artefacts().get(Layout.definition(p.item()));
         String model = legacy.artefacts().get(Layout.model(p.item()));
+        if (definition == null || model == null) {
+            c.fail("S2:artefact-emitted (contexts: the compiler wrote no era file for a program with display context rules)");
+            return;
+        }
         for (Map<String, Object> tuple : Evaluator.tuples(p.pruned().inputs())) {
             String selected = Evaluator.evaluate(p, tuple);
             Selector selector = modern.plan().selectorOf(modern.plan().select(tuple));
@@ -673,6 +701,16 @@ public final class SigilContractTests {
                 "S8:one-rule-per-model", () -> "two rules for one model were accepted");
         ok(Program.parse(panelText(inputs, cases, "{\"only\": [\"first_person\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/a\"}")) instanceof Result.Failed,
                 "S8:unknown-context-rejected", () -> "a misspelt display context was accepted");
+        // a program built in code, not parsed, is held to the same rules by the compiler
+        Context flat = new Context(false, List.of("gui"), "example:item/panel_flat", "example:item/a");
+        Program twice = new Program(p.item(), p.base(), p.inputs(), p.cases(),
+                List.of(flat, new Context(true, List.of("gui"), "example:item/panel_flat", "example:item/b")));
+        Compilation twoRules = compiler.compile(twice, lockFor(twice), catalog, MODERN);
+        ok(twoRules instanceof Compilation.Rejected, "S8:one-rule-per-model", () -> "a compiler handed two rules for one model gave " + brief(twoRules));
+        Program misspelt = new Program(p.item(), p.base(), p.inputs(), p.cases(),
+                List.of(new Context(false, List.of("first_person"), "example:item/panel_flat", "example:item/a")));
+        Compilation unknown = compiler.compile(misspelt, lockFor(misspelt), catalog, MODERN);
+        ok(unknown instanceof Compilation.Rejected, "S8:unknown-context-rejected", () -> "a compiler handed a misspelt display context gave " + brief(unknown));
         // the rules are in no order: written the other way round they compile to the same bytes
         Program turned = panel(inputs, cases, lit + "," + first);
         Compilation.Compiled again = compiled(turned, lockFor(turned), MODERN, "contexts-turned");
@@ -761,6 +799,10 @@ public final class SigilContractTests {
                 Compilation.Compiled done = (Compilation.Compiled) result;
                 boolean isModern = target == MODERN;
                 String artefact = done.artefacts().get(isModern ? Layout.definition(p.item()) : Layout.model(p.item()));
+                if (artefact == null) {
+                    c.fail("S2:artefact-emitted (seed " + seed + ": none at the era's path)");
+                    continue;
+                }
                 for (Map<String, Object> tuple : Evaluator.tuples(p.pruned().inputs())) {
                     String oracle = Evaluator.evaluate(p, tuple);
                     Selection sel = done.plan().select(tuple);

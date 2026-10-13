@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "unmutated": {
+    "C2:marker-inside-period": "Enforced by the Marker record's constructor (and Timeline.Builder), which are final model classes with no implementer seam: a ClockModel or ClockPort variant cannot replace them, so no broken fixture can break this assertion. The refusal is asserted directly on the real constructor, and it mirrors the game's own registration check.",
+    "C2:marker-ids-unique-per-clock": "Enforced by Timeline.Builder and the ClockWorld constructor, final model classes that a ClockModel or ClockPort variant cannot override, so no fixture in the matrix can duplicate an id. The assertion exercises the real classes directly; a bridge that generates datapack JSON from a ClockWorld inherits the refusal because it must build the world through them.",
+    "C4:day-count": "Restates C3:periods-recompose: it checks the same periodCount and currentTicks functions on the 24000 day timeline against the old game's formulas, and the same functions are pinned on that timeline there (5 * 24000 + 13000, 23999 and 24000). Any realistic mutant of either function (PeriodsFromOne, a hardcoded or off-by-one division) already fails C3:periods-recompose, and a bug that spares every period except 24000 is not one an implementer makes."
+  }
+}

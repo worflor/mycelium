@@ -48,7 +48,8 @@ public abstract class RepositoryCheckTask extends DefaultTask {
     @TaskAction
     public void run() throws IOException, InterruptedException {
         Path root = getRoot().get().getAsFile().toPath();
-        RepositoryCheck.Report report = RepositoryCheck.run(root, matrices(getHarnessResults().get().getAsFile().toPath()));
+        RepositoryCheck.Report report = RepositoryCheck.run(root, matrices(getHarnessResults().get().getAsFile().toPath()),
+                intended(getHarnessResults().get().getAsFile().toPath()));
         List<String> ran = new ArrayList<>();
         for (String problem : harnessChecks(root, ran)) {
             report.find("harness", problem);
@@ -94,6 +95,26 @@ public abstract class RepositoryCheckTask extends DefaultTask {
             JsonObject r = e.getAsJsonObject();
             if (r.has("harness")) {
                 out.put(r.get("id").getAsString(), r.getAsJsonObject("harness").getAsJsonArray("matrix").size());
+            }
+        }
+        return out;
+    }
+
+    /** Each contract's rejection-matrix targets, by id: the labels its entries must fail, as the harness ran them. */
+    static Map<String, java.util.Set<String>> intended(Path results) throws IOException {
+        Map<String, java.util.Set<String>> out = new LinkedHashMap<>();
+        if (!Files.isRegularFile(results)) {
+            return out;
+        }
+        JsonObject json = JsonParser.parseString(Files.readString(results, StandardCharsets.UTF_8)).getAsJsonObject();
+        for (JsonElement e : json.getAsJsonArray("results")) {
+            JsonObject r = e.getAsJsonObject();
+            if (r.has("harness")) {
+                java.util.Set<String> labels = new java.util.TreeSet<>();
+                for (JsonElement m : r.getAsJsonObject("harness").getAsJsonArray("matrix")) {
+                    labels.add(m.getAsJsonObject().get("intended").getAsString());
+                }
+                out.put(r.get("id").getAsString(), labels);
             }
         }
         return out;

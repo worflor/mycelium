@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "unmutated": {
+    "L7:declaration-order-irrelevant": "A SlotRegistry keeps no declaration order: StandardCompiler builds it from a TreeMap by id and a per-scope plan order computed from dependencies and ids, and only a compiler can make one, so nothing a Crossings engine or HostStore implementation does can observe the order the slots were declared in. Every plan function of the registry satisfies this claim; the order itself is pinned by L7:dependency-then-id-order (IgnoresDependencies) and the determinism by L7:same-input-same-plan (RotatingEngine).",
+    "L8:aborts-exercised": "A vacuity guard on the seeded sequence: it asserts that the generator drew at least one aborted or failed crossing, which depends on the seeds and the mode probabilities in Simulation, not on the engine or store under test. No implementation that plans successfully can change the count; the laws that use these crossings (L8:aborted-crossing-restores, L8:failed-crossing-restores) each have their own mutants.",
+    "L8:failure-was-partial": "A check on the scenario itself, not on an implementation: after the tripwire fires it asserts the store really changed before the failure (the record migration ran first), so that L8:failed-crossing-restores has something to restore. An engine that fails without having changed anything, for instance by validating first, satisfies L8 and would trip this label, so a mutant for it would be a correct implementation; the engine that leaves debris is caught by L8:failed-crossing-restores (UndoOnlyOnSuccess)."
+  }
+}
