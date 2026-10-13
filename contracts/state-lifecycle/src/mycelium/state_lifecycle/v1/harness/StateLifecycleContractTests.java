@@ -33,7 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 
-/** Laws L1 to L8 of {@code state.lifecycle@1}, run against whatever the rig supplies. */
+/** Laws L1 to L9 of {@code state.lifecycle@1}, run against whatever the rig supplies. */
 public final class StateLifecycleContractTests {
     private final Rig rig;
 
@@ -51,6 +51,7 @@ public final class StateLifecycleContractTests {
         guard(c, "L6", () -> l6DurableRoundTrip(c));
         guard(c, "L7", () -> l7DeterministicPlans(c));
         guard(c, "L8", () -> l8AtomicCrossings(c));
+        guard(c, "L9", () -> l9Releases(c));
         guard(c, "sequences", () -> randomSequences(c));
         return c;
     }
@@ -519,6 +520,98 @@ public final class StateLifecycleContractTests {
     }
 
     // --- seeded sequences ---------------------------------------------------------------------------------------
+
+    // --- L9: a value that ceases is released once; one that moves is not ----------------------------------------
+
+    private void l9Releases(Check c) {
+        TestSlots ts = new TestSlots();
+        List<String> log = new ArrayList<>();
+        java.util.concurrent.atomic.AtomicBoolean armed = new java.util.concurrent.atomic.AtomicBoolean();
+        Slot<String> lamp = ts.shaped(Slot.<String>session("t:r_lamp", HostKind.PLAYER, "dark").onRelease(v -> log.add("lamp:" + v)), HostKind.PLAYER,
+                Policy.keep(), Policy.keep(), Policy.keep(), Policy.drop(), Policy.keep(), Policy.drop())
+                .on(TestSlots.DRIFT, Policy.reset()).on(TransitionId.DEATH, Policy.drop()).build();
+        Slot<String> bulb = ts.shaped(Slot.<String>session("t:r_bulb", HostKind.PLAYER, "off").onRelease(v -> log.add("bulb:" + v)), HostKind.PLAYER,
+                Policy.keep(), Policy.keep(), Policy.keep(), Policy.drop(), Policy.drop(), Policy.drop()).build();
+        Slot<String> wick = ts.shaped(Slot.<String>session("t:r_wick", HostKind.PLAYER, "wick0").onRelease(v -> log.add("wick:" + v)), HostKind.PLAYER,
+                Policy.keep(), Policy.keep(), Policy.keep(), Policy.drop(), Policy.reset(), Policy.drop()).build();
+        Slot<String> filament = ts.shaped(Slot.<String>durable("t:r_filament", HostKind.PLAYER, "", Codecs.STRING).onRelease(v -> log.add("filament:" + v)),
+                HostKind.PLAYER, Policy.keep(), Policy.keep(), Policy.keep(), Policy.keep(), Policy.keep(), Policy.copy()).build();
+        Policy<Integer> strain = Policy.migrate(n -> {
+            if (armed.get()) {
+                throw new IllegalStateException("tripwire");
+            }
+            return n + 1;
+        });
+        Slot<Integer> trip = ts.shaped(Slot.<Integer>session("t:r_zz_trip", HostKind.PLAYER, 0), HostKind.PLAYER,
+                Policy.keep(), Policy.keep(), Policy.keep(), Policy.drop(), Policy.keep(), Policy.drop()).on(TestSlots.DRIFT, strain).build();
+        SlotRegistry registry = SlotRegistry.of(ts.transitions, List.of(lamp, bulb, wick, filament, trip));
+        Crossings engine = rig.engine().get();
+        MemoryHostStore<FakeHost> store = rig.store().get();
+        java.util.function.BiConsumer<TransitionId, Crossing<FakeHost>> cross = (t, x) -> {
+            Plan<FakeHost> plan = engine.plan(t, x, store, registry);
+            try (Tx tx = Tx.open()) {
+                engine.apply(plan, store, tx);
+                tx.commit();
+            }
+        };
+        HostId id = new HostId(HostKind.PLAYER, "w", "p9");
+        HostRef p = new HostRef(id, store.next(id));
+        cross.accept(TransitionId.LOGIN, new Crossing.Begin<>(id, new FakeHost("p9")));
+        try (Tx tx = Tx.open()) {
+            store.write(lamp, p, "L1", tx);
+            store.write(bulb, p, "B1", tx);
+            store.write(wick, p, "W1", tx);
+            store.write(filament, p, "F1", tx);
+            store.write(trip, p, 1, tx);
+            tx.commit();
+        }
+        c.that(log.isEmpty(), "L9:released-once");
+
+        // a RESET releases the value it replaces, once
+        cross.accept(TestSlots.DRIFT, new Crossing.Stay<>(p));
+        c.equal(List.of("lamp:L1"), new ArrayList<>(log), "L9:released-once");
+        log.clear();
+
+        // a crossing that fails part way (the tripwire is planned after the lamp's reset) has released nothing, because it has lost nothing
+        try (Tx tx = Tx.open()) {
+            store.write(lamp, p, "L2", tx);
+            tx.commit();
+        }
+        armed.set(true);
+        boolean failed = false;
+        try {
+            cross.accept(TestSlots.DRIFT, new Crossing.Stay<>(p));
+        } catch (RuntimeException expected) {
+            failed = true;
+        }
+        armed.set(false);
+        c.that(failed, "L8:failure-reaches-the-caller");
+        c.that(log.isEmpty() && "L2".equals(store.peek(lamp, p).valueOrNull()), "L9:aborted-crossing-releases-nothing");
+
+        // a DROP at a death releases the value that was there
+        cross.accept(TransitionId.DEATH, new Crossing.Stay<>(p));
+        c.equal(List.of("lamp:L2"), new ArrayList<>(log), "L9:released-once");
+        log.clear();
+        try (Tx tx = Tx.open()) {
+            store.write(lamp, p, "L3", tx);
+            tx.commit();
+        }
+
+        // a succession: what is kept moves and is not released; what is dropped or reset is, from the old incarnation, once
+        cross.accept(TransitionId.RESPAWN, new Crossing.Succeed<>(p, new FakeHost("p9-again")));
+        List<String> afterRespawn = new ArrayList<>(log);
+        Collections.sort(afterRespawn);
+        c.equal(List.of("bulb:B1", "wick:W1"), afterRespawn, "L9:moved-value-not-released");
+        HostRef p2 = store.current(id).orElseThrow(IllegalStateException::new);
+        c.that("L3".equals(store.peek(lamp, p2).valueOrNull()) && "F1".equals(store.peek(filament, p2).valueOrNull()), "L9:moved-value-not-released");
+        log.clear();
+
+        // an end releases every live value, durable ones too (their stored form stays), once each
+        cross.accept(TransitionId.LOGOUT, new Crossing.End<>(p2));
+        List<String> afterLogout = new ArrayList<>(log);
+        Collections.sort(afterLogout);
+        c.equal(List.of("filament:F1", "lamp:L3", "wick:wick0"), afterLogout, "L9:released-once");
+    }
 
     private void randomSequences(Check c) {
         int tokens = 0;

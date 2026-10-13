@@ -8,11 +8,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Consumer;
 
 /**
  * A declared piece of state: where it lives (scope), whether it is saved (durability), the codec of a saved one, the
  * value an absent slot reads as (initial), what it does at every transition (policies), and the slots whose effects
  * must come before its own (dependencies). Values are immutable: a slot never holds something a caller can change.
+ *
+ * <p>A slot may also declare what releasing its value does ({@link Builder#onRelease}): the part of a value that lives outside the
+ * model (a display entity, an attribute modifier, a buffer not yet written) and must be let go when the value ceases. The engine runs it,
+ * so no mod calls it by hand (law L9).
  *
  * <p>A slot is checked only when it joins a registry ({@link SlotRegistry#compile}); the builder accepts anything, so
  * that the check can name what is wrong.
@@ -25,6 +30,7 @@ public final class Slot<T> {
     private final T initial;
     private final Map<TransitionId, Policy<T>> policies;
     private final Set<SlotId> dependencies;
+    private final Consumer<Object> release;
 
     private Slot(Builder<T> b) {
         this.id = b.id;
@@ -34,6 +40,7 @@ public final class Slot<T> {
         this.initial = b.initial;
         this.policies = Collections.unmodifiableMap(new TreeMap<>(b.policies));
         this.dependencies = Collections.unmodifiableSet(new TreeSet<>(b.dependencies));
+        this.release = b.release;
     }
 
     public static <T> Builder<T> builder(SlotId id, HostKind scope, Durability durability, T initial) {
@@ -54,6 +61,7 @@ public final class Slot<T> {
         b.codec = codec;
         b.policies.putAll(policies);
         b.dependencies.addAll(dependencies);
+        b.release = release;
         return b;
     }
 
@@ -104,6 +112,21 @@ public final class Slot<T> {
         return false;
     }
 
+    /** True when the slot declares what releasing its value does. */
+    public boolean releases() {
+        return release != null;
+    }
+
+    /**
+     * Lets go of what {@code value} owns outside the model, as the slot declared. The engine calls it, exactly once, for each value that
+     * ceases to exist on its host in a crossing that commits (law L9); a provider or a mod does not.
+     */
+    public void releaseValue(Object value) {
+        if (release != null) {
+            release.accept(value);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     T cast(Object value) {
         return (T) value;
@@ -138,6 +161,7 @@ public final class Slot<T> {
         private SlotCodec<T> codec;
         private final Map<TransitionId, Policy<T>> policies = new TreeMap<>();
         private final Set<SlotId> dependencies = new TreeSet<>();
+        private Consumer<Object> release;
 
         private Builder(SlotId id, HostKind scope, Durability durability, T initial) {
             this.id = Objects.requireNonNull(id, "id");
@@ -169,6 +193,19 @@ public final class Slot<T> {
             for (SlotId s : slots) {
                 dependencies.add(Objects.requireNonNull(s, "slot"));
             }
+            return this;
+        }
+
+        /**
+         * What releasing a value of this slot does in the world (not in the model: the model's cell is the engine's). Run by the engine,
+         * after the crossing commits, once for each value that ceases to exist on its host: a DROP or RESET of a value that is there, an
+         * end (a logout, an unload, the server's stop), the old incarnation of a succession. Never for a value that moves (KEEP at a
+         * succession, EXCLUSIVE, COPY, MIGRATE), and never for a crossing that aborts. Must not throw; if it does, the others still run.
+         */
+        @SuppressWarnings("unchecked")
+        public Builder<T> onRelease(Consumer<T> release) {
+            Objects.requireNonNull(release, "release");
+            this.release = value -> release.accept((T) value);
             return this;
         }
 

@@ -121,9 +121,14 @@ taught, that the model could not:
 - **A respawn is one event on every loader** (the copy from the old player), but the logout is not one: Fabric's `DISCONNECT` is the connection's, the
   game's `PlayerList.remove` is the list's. The bridge hears the list's (Fabric `ServerPlayerEvents.LEAVE`, the loaders' logout events), in
   the phase after a mod's own, so a mod can act on a player in its own handler before the crossing drops their values.
-- **A session slot's end cannot clean the world.** The lifecycle drops a value; it does not know that the value is a bunch of display entities. Somnium
-  calls a release in its own logout and stop handlers, before the bridge's. An end observer on a session slot (run just before the drop, with
-  the value) would take those hooks out of every consumer. Not built; the first thing the next consumer should ask for.
+- **A session slot's end cannot clean the world, so the slot says how (law L9).** The first Somnium adoption called a release by hand in its own
+  logout and stop handlers, before the bridge's crossing: the band-aid the Threshold exists to remove. The engine can own it, because it already
+  knows every moment a live value ceases and holds the value: `Slot.Builder.onRelease(Consumer<T>)` declares what letting it go does, and
+  the engine runs it once per value that ceases (a DROP or RESET of a value that is there, an end, the old side of a succession, the server's
+  stop), after the outermost transaction commits (`Tx.onOuterCommit`), so an aborted crossing has lost nothing and releases nothing. A value that
+  moves (KEEP at a succession, MIGRATE, COPY, EXCLUSIVE) is not released. If a release throws, the rest still run and the first failure is thrown
+  after them. Additive within `@1`; four rejection fixtures (`ForgetsRelease`, `DoubleRelease`, `ReleasesMoved`, `EagerRelease`) and the bridge's G9.
+  The mod's own `write` is its own replacement of a value and releases nothing.
 - **Mock players differ by version.** On 26.x the game test's mock player is placed in the player list and so is a host; on 1.21.1 it is not. A mod
   whose tests use mock players keeps a value for an object the game never placed weakly by the object (Somnium's `Held`), which is also where a
   write that arrives after the logout crossing lands (the game awards a stat as it removes a player), so nothing outlives the object.

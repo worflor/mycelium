@@ -95,6 +95,15 @@ keyed by a dead player was.
 
 **`Tx`** is the transaction pattern every package copies (`../../contracts/patterns.json`).
 
+**Release.** A value may own something outside the model: a display entity in the world, an attribute modifier, a buffer not yet written.
+A slot says what letting it go does (`Slot.Builder.onRelease`), and the engine, not the mod, runs it, so no hand-written hook has to
+remember a logout or a stop (law L9). A value *ceases* when its cell is removed or replaced by a DROP or RESET at any transition, by the
+end of its host (a logout, an unload, a remove, the server's stop; a durable value's live cell too, though its stored form stays), or as the
+old incarnation of a succession. A value that *moves* (KEEP at a succession, MIGRATE, COPY, EXCLUSIVE) is not released: what it owns goes
+with it. Releases run in plan order after the outermost transaction commits, so a crossing that aborts or fails releases nothing; if a
+release throws, the rest still run and the first failure is thrown after them, the crossing having committed. The mod's own `write`, which
+replaces a value, is the mod's own replacement: the engine releases only what a crossing removes.
+
 ## 2. Laws
 
 | Law | Statement |
@@ -107,6 +116,7 @@ keyed by a dead player was.
 | L6 | **Durable round trip.** A durable slot's value survives save, end, restart and begin, equal under its codec's own equality. A stored form that does not decode stops the crossing and changes nothing. |
 | L7 | **Deterministic plans.** The same transition, host state and registry give the same plan in the same order, whatever order the slots were declared in; order is dependencies first, then slot id. |
 | L8 | **Atomic crossings.** A plan applied inside a `Tx` that is aborted, or that fails part way, leaves every cell, stored form, live host and incarnation counter as it was before. |
+| L9 | **Release.** A slot's release runs exactly once for each value that ceases to exist on its host in a crossing that commits (DROP, RESET, an end, the old side of a succession), with that value, after the commit. It never runs for a value that moves (KEEP at a succession, MIGRATE, COPY, EXCLUSIVE), and never for a crossing that aborts or fails. |
 
 L2, L3, L4 and L8 are checked over seeded random sequences of crossings (logins, logouts, deaths, respawns, clones, reloads,
 saves, consumer transitions, stops and restarts, plain accesses, and crossings that are aborted or fail half way), after
@@ -165,6 +175,10 @@ every step, as well as in fixed scenarios.
 | `UndoOnlyOnSuccess` | hands its undo to the caller's transaction only after every step worked, so a crossing that fails part way leaves what it did | L8 (`L8:failed-crossing-restores`) |
 | `SwallowsFailures` | catches whatever goes wrong while applying and carries on | L8 (`L8:failure-reaches-the-caller`) |
 | `RetractIsNoop` | the undo of a begin does nothing, so an aborted login leaves the host live | L8 (`L8:undecodable-load-aborts`) |
+| `ForgetsRelease` | removes the value and lets go of nothing, as a hand-written clear list forgets what the value owned | L9 (`L9:released-once`) |
+| `DoubleRelease` | releases every value that ceases a second time by its own hand | L9 (`L9:released-once`) |
+| `ReleasesMoved` | releases a value that only moves to the next incarnation | L9 (`L9:moved-value-not-released`) |
+| `EagerRelease` | releases while applying, before the commit, so a crossing that aborts has let go of what its host still holds | L9 (`L9:aborted-crossing-releases-nothing`) |
 | `NoOpEngine` | plans nothing: no host begins or ends, nothing is dropped or saved | L4 (`L4:incarnation-ends`); it fails L6 and L2 as well |
 
 `NoOpEngine` breaks no safety law by acting wrongly; it is in the matrix because this is a model contract and a type that
@@ -293,6 +307,7 @@ same port):
 | **G6 deferred work** | work holding a ref from before a logout, a relog or a respawn resolves to nothing, and a write through it answers `Gone`; it never reaches the new player object |
 | **G7 server stop** | stopping saves, then ends every live player and the server: no session slot holds a value afterwards and the durable ones are stored |
 | **G8 own transitions** | `fire` applies the policies of the mod's own transition to a live host, and refuses a stale ref |
+| **G9 release** | what a slot's release lets go of runs once, in the crossing that ends the value: not at a death or a dimension change that keeps it, at a respawn that drops it, at a logout, and at the server's stop |
 
 A transition the game cannot drive in a game test (a real network disconnect, a real death by damage) is driven in the case by the
 server path that the loader's event hangs on (`PlayerList.remove`, `PlayerList.respawn`), so the loader's own event fires: the bridge's
@@ -317,5 +332,5 @@ Expected result: reference implementation clean; every entry of the rejection ma
   (a fork followed by a remove, as two crossings) are not modelled. A loader that replaces an entity's object on a dimension
   change reports it as an unload and a load.
 - The Gradle plugin does not run the declaration check at build time; `SlotRegistry.of` runs it when the mod's registry is built.
-- `LifecyclePort` (section 5) is an interface, not a law of the pure model: the harness does not run G1 to G8. The bridge's conformance game tests
+- `LifecyclePort` (section 5) is an interface, not a law of the pure model: the harness does not run G1 to G9. The bridge's conformance game tests
   do, in a real game, on each target a mod builds, and a mod that has not run them has no claim about the loader's events.

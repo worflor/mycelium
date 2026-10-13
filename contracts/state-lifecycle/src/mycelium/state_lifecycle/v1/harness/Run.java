@@ -6,7 +6,11 @@ import mycelium.state_lifecycle.v1.fixtures.CloneEndsSource;
 import mycelium.state_lifecycle.v1.fixtures.CloningExclusive;
 import mycelium.state_lifecycle.v1.fixtures.DefaultPolicy;
 import mycelium.state_lifecycle.v1.fixtures.FakeHost;
+import mycelium.state_lifecycle.v1.fixtures.DoubleRelease;
+import mycelium.state_lifecycle.v1.fixtures.EagerRelease;
 import mycelium.state_lifecycle.v1.fixtures.ForgetfulEngine;
+import mycelium.state_lifecycle.v1.fixtures.ForgetsRelease;
+import mycelium.state_lifecycle.v1.fixtures.ReleasesMoved;
 import mycelium.state_lifecycle.v1.fixtures.ForgetfulStorage;
 import mycelium.state_lifecycle.v1.fixtures.ForgetsMigration;
 import mycelium.state_lifecycle.v1.fixtures.GlobalIncarnationCounter;
@@ -63,6 +67,18 @@ public final class Run {
                 new ContractRun.Broken("ForgetfulEngine",
                         () -> new StateLifecycleContractTests(new Rig(ForgetfulEngine::new, store, compiler)).run(),
                         "L4:session-slots-empty"),
+                new ContractRun.Broken("ForgetsRelease",
+                        () -> new StateLifecycleContractTests(new Rig(ForgetsRelease::new, store, compiler)).run(),
+                        "L9:released-once"),
+                new ContractRun.Broken("DoubleRelease",
+                        () -> new StateLifecycleContractTests(new Rig(DoubleRelease::new, store, compiler)).run(),
+                        "L9:released-once"),
+                new ContractRun.Broken("ReleasesMoved",
+                        () -> new StateLifecycleContractTests(new Rig(ReleasesMoved::new, store, compiler)).run(),
+                        "L9:moved-value-not-released"),
+                new ContractRun.Broken("EagerRelease",
+                        () -> new StateLifecycleContractTests(new Rig(EagerRelease::new, store, compiler)).run(),
+                        "L9:aborted-crossing-releases-nothing"),
                 new ContractRun.Broken("IdOnlyResolver",
                         () -> new StateLifecycleContractTests(new Rig(engine, IdOnlyResolver::new, compiler)).run(),
                         "L2:stale-ref-gone"),

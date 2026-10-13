@@ -20,6 +20,9 @@ import java.util.Set;
  *           RESET new, MIGRATE: CARRY then MIGRATE
  * FORKS     BEGIN the target; then DROP, RESET, MIGRATE (of the source's value), COPY, REGENERATE, EXCLUSIVE: MOVE
  * </pre>
+ *
+ * <p>A slot that declares a release ({@link Slot.Builder#onRelease}) has it run for each value that ceases: the cell a DROP, a RELEASE or a RESET
+ * removes or replaces, once, after the outermost transaction commits (law L9). CARRY, COPY, MOVE, MIGRATE and KEEP move or keep a value and release nothing.
  */
 public final class StandardCrossings implements Crossings {
     public static final StandardCrossings INSTANCE = new StandardCrossings();
@@ -201,12 +204,36 @@ public final class StandardCrossings implements Crossings {
     @Override
     public <H> void apply(Plan<H> plan, HostStore<H> store, Tx tx) {
         checkFresh(plan, store);
+        List<Runnable> releases = new ArrayList<>();
         for (Effect effect : plan.effects()) {
             if (effect instanceof Effect.OfHost host) {
                 applyHost(host, store, tx);
             } else {
-                applySlot(plan.transition(), (Effect.OfSlot) effect, store, tx);
+                applySlot(plan.transition(), (Effect.OfSlot) effect, store, tx, releases);
             }
+        }
+        if (!releases.isEmpty()) {
+            // after the outermost commit, never before: a crossing that aborts has released nothing, because it has lost nothing
+            tx.onOuterCommit(() -> runReleases(releases));
+        }
+    }
+
+    /** Runs every release, in plan order; if some throw, the rest still run and the first failure is thrown after them. */
+    private static void runReleases(List<Runnable> releases) {
+        RuntimeException first = null;
+        for (Runnable release : releases) {
+            try {
+                release.run();
+            } catch (RuntimeException e) {
+                if (first == null) {
+                    first = e;
+                } else {
+                    first.addSuppressed(e);
+                }
+            }
+        }
+        if (first != null) {
+            throw new CrossingException("a release failed (the crossing had committed, and every other release ran): " + first.getMessage(), first);
         }
     }
 
@@ -262,7 +289,7 @@ public final class StandardCrossings implements Crossings {
         }
     }
 
-    private static void applySlot(TransitionId at, Effect.OfSlot e, HostStore<?> store, Tx tx) {
+    private static void applySlot(TransitionId at, Effect.OfSlot e, HostStore<?> store, Tx tx, List<Runnable> releases) {
         if (e.op() == Effect.OfSlot.Op.KEEP) {
             return;
         }
@@ -280,6 +307,11 @@ public final class StandardCrossings implements Crossings {
             putOrRemoveStored(store, to.host(), id, storedTo);
             putOrRemoveStored(store, from.host(), id, storedFrom);
         });
+        boolean ceases = e.op() == Effect.OfSlot.Op.DROP || e.op() == Effect.OfSlot.Op.RELEASE || e.op() == Effect.OfSlot.Op.RESET;
+        if (ceases && slot.releases() && cellTo.isPresent()) {
+            Object value = cellTo.get();
+            releases.add(() -> slot.releaseValue(value)); // the value that was there, which the DROP or RESET is about to replace
+        }
         switch (e.op()) {
             case DROP:
                 store.removeCell(to, id);

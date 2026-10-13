@@ -24,7 +24,7 @@ import java.util.function.UnaryOperator;
  * </ul>
  *
  * <p>An implementation keeps the laws of the contract on the real game, which the harness cannot run: the bridge's conformance
- * game tests (SPEC section 5) hold it, and hold a mod's override of it, to the cases G1 to G8.
+ * game tests (SPEC section 5) hold it, and hold a mod's override of it, to the cases G1 to G9.
  *
  * @param <P> the platform's player
  * @param <S> the platform's server
