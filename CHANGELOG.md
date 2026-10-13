@@ -69,7 +69,7 @@ Ran: `bash run-contracts.sh item-component` (reference clean, 23 of 23 caught), 
 Decision 0017 (`docs/decisions/0017-offer-dont-police.md`) built into the plugin.
 
 - **One enforcement model.** Every check has a level (`off`, `warn`, `fail`) set in `mycelium { checks { } }`, with a documented
-  default table (`docs/plugin.md`): fail only for silent breakage (`P1.split`, `I1`, `R0`, `R3`, `L1`, `PR1`), warn for the rest.
+  default table (`docs/plugin.md`): fail only for silent breakage (`P1.split`, `I1`, `R0`, `R3`, `L1`, `PR1`, and `B1`), warn for the rest.
   `allow(check, site, reason)` lets one site through; the levels, their defaults and every allowance are in the evidence manifest.
   P3 (clock, environment, unseeded chance) is a warning, the "own platform package" text rule and the `SplittableRandom` ban are gone
   (compiling alone and the era gate's stub check are the proof), a missing keystone or wall proof warns (versions stay interpolated),

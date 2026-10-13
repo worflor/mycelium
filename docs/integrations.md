@@ -13,7 +13,7 @@ build time instead of hoping.
 | I2 unreferenced | Nothing outside the home package mentions it, except the integration's declared **gates**: the one place that checks the mod is loaded, then calls in. |
 
 Comments are ignored (a doc comment may name anything). The report is `build/mycelium/isolation/isolation.json`, and a
-violation fails the build with the file and the package.
+violation is reported with the file and the package: I1 fails the build, I2 warns by default (`mycelium { checks { } }` sets either).
 
 ```kotlin
 mycelium {

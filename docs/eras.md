@@ -129,7 +129,7 @@ Its laws are checked on every build. Each was proven by a planted violation that
 |---|---|---|
 | **P1 pure** | It mentions no Minecraft, loader, Mixin or integration package (every root in `eras/loaders.json`), and none of the artifact's own platform packages (every other main source package). No package is split between the layers. | `myceliumPurity`, on the source (comments and strings ignored) |
 | **P2 linkage** | Every class, method and field it reaches outside itself exists on each era's Java, **whether or not a suite reaches the call**. | each era gate: ASM reads the bytecode's outside references; a probe inside the era's own JVM resolves them |
-| **P3 deterministic** | It reads no clock, no environment, and no unseeded randomness. It doesn't use `SplittableRandom` (use `random.seeded@1`). | `myceliumPurity` |
+| **P3 deterministic** | It reads no clock, no environment, and no unseeded randomness. Its chance comes from `random.seeded@1`, not `Math.random`, `ThreadLocalRandom`, an unseeded `new Random()`, `UUID.randomUUID` or `SecureRandom`; `SplittableRandom` is not matched (an era without the class is caught by the era gate's stub check). | `myceliumPurity` |
 | **Stubs** | Where the era is older than the source's release, nothing is left that JvmDowngrader could not backport. Each gap is traced to the calling method. | each era gate, on the downgraded, shaded jar |
 | **Behaviour** | Every suite passes on each era's JVM: contract references stay clean, every rejection is caught, the kernels' suites pass. | each era gate |
 

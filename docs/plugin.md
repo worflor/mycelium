@@ -86,7 +86,7 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 | Task | Effect |
 |---|---|
 | `myceliumImport` | Copies each selected contract's `model` (and its requirements') into `build/generated/sources/mycelium/java` under the mod's namespace, and adds it to `main`. A model that reaches the harness is refused. |
-| `myceliumBridgeImport` | Copies the bridges the imported contracts bring (a contract's registry row lists them) into `build/generated/sources/mycelium/bridges/java`, as the realization table's variant and overlays for the target Minecraft version, rewritten under the mod's namespace, and adds them to `main`. With `bridges { conformance() }` the bridge's conformance cases go to `build/generated/sources/mycelium/conformance/java`, added to the `gametest` source set (else `main`; `conformance("name")` picks one). A bridge with no realization on the target is not imported (B2). Skipped in a verification project. |
+| `myceliumBridgeImport` | Copies the bridges the mod takes (the ones its sources reference as `<namespace>.bridges.<slug>`, or the ones `bridges { use(...) }` names; never one merely because its contract is imported) into `build/generated/sources/mycelium/bridges/java`, as the realization table's variant and overlays for the target Minecraft version, rewritten under the mod's namespace, and adds them to `main`. With `bridges { conformance() }` the bridge's conformance cases go to `build/generated/sources/mycelium/conformance/java`, added to the `gametest` source set (else `main`; `conformance("name")` picks one). A bridge with no realization on the target, or a build with no `minecraft`, is not imported (B2, not an error). An overridden bridge still gets its conformance cases with `conformance()`. Skipped in a verification project. |
 | `myceliumBridges` | Checks the mod's bridge choices (B1, B2) and writes `build/mycelium/bridges/bridges.json`, which the evidence manifest records. In `check`. |
 | `myceliumBridgeLinkage` | This repository only: every bridge variant, with each overlay, compiled against the game and linked against every version it covers that has name data (`eras/names.json`); versions without data are reported, not failed. In `check`; it needs a JDK as new as the newest era's Java (a toolchain). |
 | `myceliumVerify` | Compiles and runs each selected harness whose sources are not the ones Mycelium's own check proved (`contracts/proofs.json`); collects each harness's report. In `check`. `-Pmycelium.contracts=a@1,b@1` overrides the selection for one run; `-Pmycelium.verify=always` runs every harness. |
@@ -125,7 +125,7 @@ in the table: it holds or the artifact is not what it says. The table is the che
 | `I1` | **fail** | an optional integration's API is mentioned only in its home package | `NoClassDefFoundError` when the other mod is not installed |
 | `I2` | warn | the integration's home is referenced only from its gates (derived unless declared) | the home loaded without its guard |
 | `B1` | fail | a bridge the mod overrides (`bridges { override(slug, className) }`) has a class that exists and implements the bridge's port | an override the contract's laws cannot be held to |
-| `B2` | warn | an imported bridge has a realization on the target version | a bridge the build silently left out, so its port has no native half there |
+| `B2` | warn | an imported bridge has a realization on the target version, and the build sets `minecraft` | a bridge the build silently left out, so its port has no native half there |
 | `U1` | warn | an explicitly imported contract is referenced by the mod's own sources (`failOnUnused = true` sets `fail`) | a manifest that says the mod carries a contract it never uses |
 | `S1` | warn | the portability surface has not grown past `surfaceBaseline` (`surfaceFailOnGrowth = true` sets `fail`; `off` skips `myceliumSurface`) | the next port growing unseen |
 | `R0` | **fail** | the claimed range is real: both ends are versions, the loader exists on each, proofs name real versions the artifact claims | a claim about versions that do not exist |
@@ -165,8 +165,9 @@ source for its target.
   which also brings the bridge's contract. The realization table (`eras/minecraft.json`, one table per divide) says which
   variant covers the target version; the variant's overlays for that version replace or add same-named files. A `none` row,
   or no row, means the bridge is not imported and B2 says so.
-- **Override.** `bridges { override("item-carrier", "com.me.MyCarrier") }` imports nothing for that bridge and checks only that
-  the class implements the port (B1). `skip("slug")` leaves a bridge out. Overrides are always possible; the evidence records
+- **Override.** `bridges { override("item-carrier", "com.me.MyCarrier") }` imports no source for that bridge and checks only that
+  the class implements the port (B1). With `conformance()` it still gets the bridge's cases and the game's rig (the cases are written
+  against the port), never the bridge's source. A bridge's classes live in the package `<namespace>.bridges.item_carrier` (slug with `_`). `skip("slug")` leaves a bridge out (a slug that names no bridge is refused, like `use`). Overrides are always possible; the evidence records
   them.
 - **Conformance.** `bridges { conformance() }` also imports the bridge's conformance cases, plain Java the mod registers as
   game tests (`ItemCarrierConformance.cases(...)` for `item-carrier`, `ClockConformance.cases()` and `.timed(...)` for `world-clock`, `PresenterConformance.cases(...)` for `item-presentation`).
@@ -175,6 +176,8 @@ source for its target.
   added to the same source set's resources. The jar a mod ships leaves those data files out (`shipConformanceResources()` keeps
   them) and, with `conformanceClassesOutOfJar()`, the conformance classes; the `conformance-consumer` fixture proves the four modes.
 - **Evidence.** The manifest's `bridges` section records the variant and overlays chosen for the target, or the override.
+
+The default `namespace` is the group plus the artifact id (`com.acme.dream_mod.mycelium`), so two mods in a group do not share one; with no group it is `mycelium.imported.<id>` and the build warns. A namespace the mod writes always wins.
 
 ## Declaring once (`myceliumDefaults`)
 

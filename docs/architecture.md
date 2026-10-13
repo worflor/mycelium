@@ -88,9 +88,14 @@ These are the invariants every change keeps. Each says what keeps it.
 | Gate | What it proves |
 |---|---|
 | `myceliumVerify` | every harness: the reference clean, every matrix entry caught for its label, a `NoOp*` among them. In a mod, only for a contract whose sources differ from what `contracts/proofs.json` (written by `myceliumRecordProofs`) says Mycelium proved |
+| `myceliumDeriveContracts` | which contracts and bridges the mod takes: its own imports under its namespace (and `<namespace>.bridges.<slug>` references), or the lists it wrote; .java, .kt and .scala are scanned |
+| `myceliumPackMeta` | the pack format a target version needs, written into the mod's resources from the era table |
+| `myceliumPresentation` | the item presentation programs compiled to the era's files, or why an item has no selection on that version |
+| `myceliumRecordProofs` | writes `contracts/proofs.json` from the reports, only for a full, passing run (never a narrowed one) |
+| `myceliumBridgeImport` | the bridges a mod takes, as the variant and overlays for its target, under its namespace |
 | `myceliumPurity`, `myceliumPureCompile` | the contract models are a pure layer (P1, P3), and compile alone |
 | `myceliumEras` | every harness on every Java an era runs on: stubs, linkage (P2), behaviour |
-| `myceliumBridgeLinkage` | every bridge variant, with each overlay, compiles against the game and resolves in the published names of each version it covers that has name data |
+| `myceliumBridgeLinkage` | every bridge variant, with each overlay, compiles against the newest version of its group that has name data and is reference-checked on the rest; it reports "linked N of M version(s), K not linked (why)", and a missing toolchain is a note |
 | `myceliumBridges` | a mod's bridge override exists and implements the port (B1); a bridge with no realization on the target is reported (B2) |
 | `myceliumRange` | an artifact's claimed Minecraft range against the era table, its proofs and its loader metadata |
 | `myceliumLinkage` | every reference the finished artifact makes resolves in the game's published names on each version of its range that has name data |

@@ -41,7 +41,7 @@ real game. The mod states its intent through the contract; the bridge carries it
 
 A bridge is an offer. The mod can:
 - take it as it is;
-- **override** a variant with its own class (`bridges { override("item.carrier", "com.example.MyCarrier") }`), which must
+- **override** a variant with its own class (`bridges { override("item-carrier", "com.example.MyCarrier") }`), which must
   implement the same port; the contract's laws still apply to it, nothing else does;
 - **extend** it: bridges are open classes with documented seams, not sealed boxes;
 - skip it and write native code directly. Native stays first-class (`DESIGN.md` §4).

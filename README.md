@@ -70,7 +70,7 @@ then `Result: PASS|FAIL`. A green exit is one input to acceptance, never the dec
 | Status | Contract models and rejection matrices are checked by the repository build. |
 | Java | Contracts and harness: written for 17, proven on every Java an era runs on (`docs/eras.md`). Plugin: built for 17. |
 | Loaders | Whatever `eras/minecraft.json` lists for an era: Fabric, Quilt, NeoForge and Forge on modern versions, the Bukkit family (Spigot, Paper, Purpur, Folia) for plugins, and the loaders of older eras. The plugin knows none of them: each is a row of data. |
-| Dependencies | None at design time. The plugin uses Gson and ASM; era gates fetch JvmDowngrader and each era's JDK when needed. |
+| Dependencies | None at design time. The plugin uses Gson and ASM; era gates fetch JvmDowngrader and each era's JDK when needed; `myceliumBridgeLinkage` (this repository's gate) fetches Mojang's game archives for the versions it links. |
 
 ## What Mycelium does not claim
 
@@ -88,6 +88,7 @@ then `Result: PASS|FAIL`. A green exit is one input to acceptance, never the dec
 | To use the plugin | `docs/plugin.md` |
 | What a good addition looks like | `docs/admission.md` |
 | What a contract package is made of | `CONTRACT-PACKAGE.md` |
+| What a bridge package is made of, and how to write one | `BRIDGE-PACKAGE.md` |
 | Worked examples of crossings | `contracts/README.md` |
 | Versions, eras and the pure layer's laws | `docs/eras.md` |
 | Optional integrations kept isolated | `docs/integrations.md` |

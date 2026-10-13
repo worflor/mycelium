@@ -139,7 +139,8 @@ the tasks do is `docs/plugin.md`.
 - **Evidence.** `EvidenceTask.java` (`myceliumEvidence`), `Fingerprint.java` (stable SHA-256 over files and
   directories, for inputs and evidence).
 - **This repository only.** `MyceliumRepositoryPlugin.java` (`dev.woflo.mycelium.repository`), `RepositoryCheck.java`
-  (the repository against what it states), `RepositoryCheckTask.java` (`myceliumRepository`),
+  (the repository against what it states), `LawCoverage.java` (every law label a harness asserts has a rejection-matrix entry or a reasoned
+  allowance in the package's `unmutated.json`), `RepositoryCheckTask.java` (`myceliumRepository`),
   `RefreshVersionsTask.java` (`myceliumRefreshVersions`), `RefreshNamesTask.java` (`myceliumRefreshNames`),
   `NameRefresh.java` (what the refresh does apart from the task).
 
@@ -182,6 +183,9 @@ Every loop ends the same way: `./gradlew check` green, and a `CHANGELOG.md` entr
 - **Add an era, a loader or a version.** Edit `eras/minecraft.json` or `eras/loaders.json` with sources, or run
   `./gradlew myceliumRefreshVersions` when a version ships. The repository check proves the table still covers every
   version exactly once. Name data is pinned with `myceliumRefreshNames` (`docs/eras.md`).
+- **Write or change a bridge.** `BRIDGE-PACKAGE.md`, "Write a bridge": the registry row's `bridges`, the realization rows in
+  `eras/minecraft.json`, `myceliumRefreshNames`, the cases written against the port. Run `./gradlew myceliumBridgeLinkage`
+  (and `myceliumRepository`) and a consumer fixture.
 - **Change the harness.** It is every contract's evidence. Prove the rule in `harness/test` and run every package.
 - **Change a document.** Follow `docs/admission.md`, "A document". A decision gets its own record: copy the structure of
   `docs/decisions/0001-substrate.md` (date, status, context, options, decision, evidence, consequences).
