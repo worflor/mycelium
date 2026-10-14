@@ -26,7 +26,9 @@ governs a type over any sequence of calls (`contracts/chunk-hold`).
 | `persistence.player-state@1` | `contracts/player-state` | Durable per-player state with an explicit schema and a walk-verified migration chain | Somnium |
 | `presentation.particle-cue@1` | `contracts/cue` | A particle or sound cue scheduled against a profile-resolved key, emitted at the outermost commit | Somnium |
 | `data.catalog@1` | `contracts/data-catalog` | A reloadable, validated set of named data entries: what a datapack folder becomes | Somnium |
+| `data.generation@1` | `contracts/data-generation` | Several catalogs that name one another, published as one view or not at all: every entry accounted for, references resolved across catalogs (a required kind's break refuses, an optional entry leaves with what named it), one name by a fixed canonical hash of the contents and the interpreter, the live view serving meanwhile. Requires `data.catalog@1` | Cartomancy |
 | `random.seeded@1` | `contracts/random-seeded` | A seed that means the same stream on every Java and after every refactor | Somnium |
+| `random.keyed@1` | `contracts/random-keyed` | A value derived from public inputs that does not run back to them, and a draw no one can forecast without the world's key: owned SHA-256 and HMAC-SHA-256 over an injective, domain-separated message, compared with odds exactly | Cartomancy |
 | `agent.link@1` | `contracts/agent-link` | A mod answering an out-of-process agent over a connection that drops: who may ask, at-most-once | Recon |
 | `chat.invocation@1` | `contracts/chat-invocation` | Turning public chat into private requests without listening to it or recording it | Recon |
 | `chat.coverage@1` | `contracts/chat-coverage` | Retired: tracking whether an owned chat stream is complete. Kept so older builds resolve it | Recon |

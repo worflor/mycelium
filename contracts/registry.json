@@ -68,11 +68,26 @@
       "provenance": "written for Somnium"
     },
     {
+      "id": "data.generation@1",
+      "path": "data-generation",
+      "package": "mycelium.data_generation.v1",
+      "status": "reference",
+      "requires": ["data.catalog@1"],
+      "provenance": "written for Cartomancy"
+    },
+    {
       "id": "random.seeded@1",
       "path": "random-seeded",
       "package": "mycelium.random_seeded.v1",
       "status": "reference",
       "provenance": "written for Somnium"
+    },
+    {
+      "id": "random.keyed@1",
+      "path": "random-keyed",
+      "package": "mycelium.random_keyed.v1",
+      "status": "reference",
+      "provenance": "written for Cartomancy"
     },
     {
       "id": "chunk.hold@1",

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-10-13 - data.generation@1: one view over catalogs that name one another
+
+New contract `data.generation@1` (`contracts/data-generation`), written for Cartomancy, requiring `data.catalog@1`: a
+mod's catalogs (rules, and the data that names them) assembled into one candidate, every reference resolved across
+them, and published as one generation with one name, or not at all, the live generation serving meanwhile.
+`contracts/data-generation/SPEC.md` has the model, the hash, laws G1 to G8 with P1, and the matrix.
+
+- **Model.** The mod's `Assembler<D, G>` declares its `Kind`s (`REQUIRED` or `OPTIONAL`) and its interpreter version,
+  reads an offer into a `Part` per entry (canonical content, references) with its findings, and builds the value from
+  the survivors. `StandardGenerations` checks the offer's shape, accounts for every offered entry, resolves references
+  to a fixed point (a broken required entry refuses; an optional one leaves with whatever named it, transitively),
+  names the survivors, numbers them, builds, and publishes in one write; any refusal returns `Kept` with every finding
+  and the live generation untouched. Nothing the assembler throws escapes.
+- **The hash.** Fixed and canonical (`Hashing`): SHA-256 over a length-framed listing of the published entries in code
+  point order (UTF-8 byte order, not `String.compareTo`), each with its content's SHA-256, under a domain tag and the
+  interpreter. Golden values are pinned in the harness, computed by the reference and independently in Python.
+- **Verification.** 16 broken implementations, each the reference with one step wrong (`Pipeline` carries the hooks):
+  `PiecewiseGenerations`, `MixedGenerations`, `FailOpenGenerations`, `DisturbingGenerations`,
+  `DanglingTolerantGenerations`, `ShallowDropGenerations`, `PartOrderHashGenerations`, `MapOrderHashGenerations`,
+  `Utf16OrderHashGenerations`, `ContentBlindHashGenerations`, `InterpreterBlindHashGenerations`,
+  `ConstantNumberGenerations`, `FirstFindingGenerations`, `TrustingGenerations`, `EscapingGenerations`,
+  `NoOpGenerations`, all caught for their labels; a seeded property (300 candidates) holds G2 against an independent
+  reachability oracle. `bash run-contracts.sh data-generation`: reference clean (6517 assertions), 16 of 16 caught.
+
 ## 2026-10-13 - state.lifecycle@1: the lifecycle bridge, and bridges that split by loader
 
 `bridges/lifecycle` is the native half of the Threshold: `PlayerLifecycle`, a `LifecyclePort` that turns Fabric's, NeoForge's and Forge's events
