@@ -10,6 +10,7 @@
   ],
   "contracts": {
     "agent.link@1": "b66b5f8770fe90e9ad6c53f6a95c844f47e5bb4ff9cdc2428babf2b360ce0382",
+    "block.presentation@1": "b02e5275f038c1f5067e21996f1ec17e82f49939a481c5a5a756b5052a51b3f8",
     "chat.coverage@1": "47406a76f658c28bfd53e238f539f6bccfcf45ee4f63e139f304b914b602f99f",
     "chat.invocation@1": "408b92e09ca5a897800e6995078d731689c3edd68eae9e901882bf05ffddd899",
     "chunk.hold@1": "b7123b89ab73b11a76a41d139210e1389492dd7f8673277fb75db5bff2271054",

@@ -105,13 +105,17 @@ public final class Eras {
     /** The divide whose realization table says how a version draws an item's state (docs/decisions/0012). */
     public static final String ITEM_PRESENTATION = "item.presentation";
 
+    /** The divide whose realization table says how a version draws a block's state from its block entity (docs/decisions/0019). */
+    public static final String BLOCK_PRESENTATION = "block.presentation";
+
     /**
      * The realizations a divide's table may name, for a divide the compiler (not a bridge) owns. A bridge's divide takes its
      * vocabulary from the bridge's own variants ({@code bridge.json}), which the repository check holds the table to; "none"
      * is always allowed and means the game cannot do it there.
      */
     public static final java.util.Map<String, java.util.Set<String>> VOCABULARY = java.util.Map.of(
-            ITEM_PRESENTATION, java.util.Set.of("item-definition", "model-overrides", "none"));
+            ITEM_PRESENTATION, java.util.Set.of("item-definition", "model-overrides", "none"),
+            BLOCK_PRESENTATION, java.util.Set.of("dynamic-model", "none"));
 
     /**
      * A range of versions and the realization a divide takes on them (decisions 0012 and 0016): one table per divide,
@@ -465,6 +469,15 @@ public final class Eras {
     /** The realization a Minecraft version draws an item's state with; a version no row covers is a refusal that says so. */
     public String presentationFor(String minecraft) {
         return realizationFor(ITEM_PRESENTATION, minecraft);
+    }
+
+    public List<Realization> blockPresentation() {
+        return realizations(BLOCK_PRESENTATION);
+    }
+
+    /** The realization a Minecraft version draws a block's state with; a version no row covers is a refusal that says so. */
+    public String blockPresentationFor(String minecraft) {
+        return realizationFor(BLOCK_PRESENTATION, minecraft);
     }
 
     /** Whether a bound names a whole line ({@code 26.x}) rather than one version. */

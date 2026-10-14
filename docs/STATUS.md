@@ -14,15 +14,6 @@ counts are on `README.md`'s status line. History is `CHANGELOG.md`.
 - **The Sigil in Somnium: adopted** (`docs/decisions/0012-sigil-item-presentation.md`, "Somnium, adopted"). Not run in a game: 26.1, 26.2 and 1.14 to 1.21.3
   other than 1.21.1 (linked, not played). The conformance classes still ship in a mod's jar unless it opts them out.
 
-- **The Threshold in a game.** `state.lifecycle@1`'s port is implemented by `bridges/lifecycle` for 1.21 to 1.21.1 and 26.3 on, on Fabric, NeoForge
-  and Forge (decision 0016, "Loader halves"). Somnium adopts it (its design note, "the Threshold in Somnium"); the bridge's conformance cases and eight tests of its leaks run in its
-  game tests, and pass on all six (Fabric, NeoForge and Forge, 26.3 and 1.21.1; decision 0013, "The bridge, as built"). Not built: the versions between 1.21.1 and 26.3 (rows say `none`), entity and level hosts (the bridge keeps players and
-  the server), a loader-API linkage (the loaders' classes are not in the names data, so a loader's half is compiled by the mod's build only), and a
-  real disconnect or a real stop in a game test (the cases drive `PlayerList.remove` and the bridge's stop).
-- **A build-time check of a mod's slot registry.** `state.lifecycle@1` checks a registry when the mod builds it at run
-  time (`SlotRegistry.of`); a Gradle task that runs the same check at build time is not written.
-- **The presentation fixture in the self-tests.** `gradle-plugin/src/test/fixtures/presentation-consumer` proves the task
-  wiring when built by hand; the plugin's self-test does not build it.
 
 ## Not built
 

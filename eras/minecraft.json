@@ -290,6 +290,10 @@
     {"from": "1.14", "to": "1.21.11", "realization": "emulated-clock", "what": "the game has one clock, dayTime: the overworld clock is that, and a mod's own clocks are held in saved data, advanced on the server tick and synced by the mod's payload"},
     {"from": "c0.0.11a", "to": "1.13.2", "realization": "none", "what": "the bridge is written in Mojang's names, which the game's own mappings give from 1.14.4 (a variant in the older names could cover these)"}
   ],
+  "block.presentation": [
+    {"from": "1.14", "to": "26.x", "realization": "dynamic-model", "what": "the baked model of a block can be replaced by one that composes models, fed per block from its block entity (Fabric's renderer API from 1.14, Forge's and NeoForge's model data after it)"},
+    {"from": "c0.0.11a", "to": "1.13.2", "realization": "none", "what": "no channel from a block entity's data to its baked model: a block is drawn from its block state alone"}
+  ],
   "state.lifecycle": [
     {"from": "26.3", "to": "26.x", "realization": "loader-events", "what": "a player and the server cross by the loader's events (login, logout, the copy to a respawned player, death, a dimension change, a save, the server's start and stop); durable values live in the overworld's saved data, a SavedDataType with a codec"},
     {"from": "1.21.2", "to": "26.2", "realization": "none", "what": "the bridge's loader halves are written against the events of 1.21 to 1.21.1 and of 26.3 on (Fabric API, NeoForge and Forge as they are there), and the versions between are not read: a mod that targets one writes this half itself, or the half is added here when it has been read and built on that version"},

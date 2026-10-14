@@ -8,6 +8,13 @@
       },
       "networkSynced": true
     },
+    "fixture:display": {
+      "fields": {
+        "lit": "bool",
+        "north": "string"
+      },
+      "networkSynced": true
+    },
     "fixture:server_state": {
       "fields": {
         "deadline": "int"

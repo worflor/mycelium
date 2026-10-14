@@ -127,7 +127,7 @@ the tasks do is `docs/plugin.md`.
   game has under one naming on one version), `Inventory.java` (the game's own classes, resolving a member through its
   hierarchy as the JVM does).
 - **Presentation.** `Presentation.java` (what `myceliumPresentation` and `myceliumPresentationLock` do apart from
-  Gradle: reads a consumer's programs, compiles `item.presentation@1`'s model with what it requires, runs its tool),
+  Gradle: reads a consumer's programs and mosaics, compiles `item.presentation@1`'s and `block.presentation@1`'s models with what they require, runs their tools),
   `PresentationSpec.java` (`mycelium { presentation { } }`), `PresentationTask.java` (`myceliumPresentation`: the
   programs compiled for the target's realization into generated resources), `PresentationLockTask.java`
   (`myceliumPresentationLock`: appends the legacy codes the programs need to the committed lock, on request).

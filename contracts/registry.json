@@ -135,6 +135,14 @@
       "provenance": "written for Somnium"
     },
     {
+      "id": "block.presentation@1",
+      "path": "block-presentation",
+      "package": "mycelium.block_presentation.v1",
+      "status": "reference",
+      "requires": ["item.presentation@1"],
+      "provenance": "written for Cartomancy"
+    },
+    {
       "id": "state.lifecycle@1",
       "path": "state-lifecycle",
       "package": "mycelium.state_lifecycle.v1",

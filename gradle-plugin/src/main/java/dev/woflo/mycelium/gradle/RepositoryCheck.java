@@ -439,7 +439,7 @@ public final class RepositoryCheck {
     }
 
     /**
-     * The realization tables (docs/decisions/0012, 0016), one per divide: each row has real bounds in order, and every real
+     * The realization tables (docs/decisions/0012, 0016, 0019), one per divide: each row has real bounds in order, and every real
      * version falls in exactly one row, so the compiler or bridge holds no version of its own and a version can never be left
      * without an answer. The divides the compiler owns have a vocabulary ({@link Eras#VOCABULARY}); a bridge's divide takes it
      * from the bridge ({@link BridgeCheck}).

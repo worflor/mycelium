@@ -1189,6 +1189,17 @@ public final class SelfTest {
         that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[]}", "t").presentationFor("1.21.4"), "no item.presentation row covers"),
                 "presentation:a table without rows answers no version");
 
+        // the block table (docs/decisions/0019): its own rows, its own realizations
+        String[][] blocks = {{"26.3", "dynamic-model"}, {"1.21.1", "dynamic-model"}, {"1.20.1", "dynamic-model"}, {"1.14", "dynamic-model"},
+                {"1.13.2", "none"}, {"1.12.2", "none"}, {"b1.7.3", "none"}, {"c0.30_01c", "none"}};
+        for (String[] e : blocks) {
+            that(e[1].equals(eras.blockPresentationFor(e[0])), "blockPresentation:" + e[0] + " is " + e[1]);
+        }
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[],\"realizations\":{\"block.presentation\":[{\"from\":\"1.0\",\"to\":\"1.x\",\"realization\":\"item-definition\"}]}}", "t"),
+                "block.presentation realization 'item-definition' is not one of"), "blockPresentation:an item realization is refused for blocks");
+        that(refuses(() -> Eras.parse("{\"schema\":2,\"eras\":[]}", "t").blockPresentationFor("1.21.4"), "no block.presentation row covers"),
+                "blockPresentation:a table without rows answers no version");
+
         Path base = copy(root);
         Set<String> baseline = findings(base);
         delete(base);
@@ -1206,6 +1217,13 @@ public final class SelfTest {
         expect(root, "a presentation row that runs backwards", r -> replace(r.resolve("eras/minecraft.json"),
                         "\"from\": \"1.14\", \"to\": \"1.21.3\"", "\"from\": \"1.21.3\", \"to\": \"1.14\""),
                 f -> f.contains("runs backwards"), baseline);
+        expect(root, "a gap in the block presentation table", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"from\": \"1.14\", \"to\": \"26.x\", \"realization\": \"dynamic-model\"",
+                        "\"from\": \"1.15\", \"to\": \"26.x\", \"realization\": \"dynamic-model\""),
+                f -> f.contains("Minecraft 1.14 falls in no block.presentation row"), baseline);
+        expect(root, "an overlap in the block presentation table", r -> replace(r.resolve("eras/minecraft.json"),
+                        "\"to\": \"1.13.2\", \"realization\": \"none\", \"what\": \"no channel", "\"to\": \"1.14\", \"realization\": \"none\", \"what\": \"no channel"),
+                f -> f.contains("Minecraft 1.14 falls in several block.presentation rows"), baseline);
 
         // the tasks' core, on the fixture consumer's own sources
         Path fixture = root.resolve("gradle-plugin/src/test/fixtures/presentation-consumer/src/main/presentation");
@@ -1255,6 +1273,30 @@ public final class SelfTest {
             Presentation.Outcome none = Presentation.compile(root, work, "1.12.2", sources, components, lock);
             that(!none.ok() && none.diagnostics().stream().anyMatch(d -> d.contains("NO_REALIZATION") && d.contains("1.12.2")),
                     "presentation:a version with no mechanism fails, naming it: " + none.diagnostics());
+
+            // block mosaics (docs/decisions/0019): the same sources, the block table, no lock
+            Presentation.Outcome noMosaics = Presentation.compileMosaics(root, work, "1.21.4", sources, components, lock);
+            that(noMosaics.ok() && noMosaics.items() == 0 && noMosaics.files().isEmpty(), "presentation:sources with no mosaic compile no block");
+            Files.copy(fixture.resolve("display.mosaic.json"), sources.resolve("display.mosaic.json"));
+            Presentation.Outcome display = Presentation.compileMosaics(root, work, "1.21.4", sources, components, lock);
+            that(display.ok() && "dynamic-model".equals(display.realization()) && display.items() == 1
+                            && display.files().keySet().equals(Set.of("META-INF/mycelium/presentation/fixture/display.mosaic.plan.json")),
+                    "presentation:a mosaic compiles to its plan: " + display.diagnostics() + display.files().keySet());
+            that(display.files().equals(Presentation.compileMosaics(root, work, "1.21.4", sources, components, lock).files()),
+                    "presentation:the same mosaic gives the same plan");
+            Presentation.Outcome stillItems = Presentation.compile(root, work, "1.21.4", sources, components, lock);
+            that(stillItems.ok() && stillItems.files().size() == 3 && stillItems.files().keySet().stream().noneMatch(f -> f.contains("display")), "presentation:a mosaic is not an item program: " + stillItems.diagnostics());
+            Presentation.Outcome oldBlocks = Presentation.compileMosaics(root, work, "1.12.2", sources, components, lock);
+            that(!oldBlocks.ok() && oldBlocks.diagnostics().stream().anyMatch(d -> d.contains("NO_REALIZATION") && d.contains("1.12.2")),
+                    "presentation:a version with no block mechanism fails, naming it: " + oldBlocks.diagnostics());
+            Files.writeString(sources.resolve("leak.mosaic.json"), "{\"block\": \"fixture:leak\", \"inputs\": {\"late\": "
+                    + "{\"component\": \"fixture:server_state\", \"field\": \"deadline\", \"domain\": {\"int\": [0, 9]}}}, \"parts\": "
+                    + "[{\"when\": {\"late\": {\"min\": 5}}, \"model\": \"fixture:block/leak_late\"}]}", StandardCharsets.UTF_8);
+            Presentation.Outcome leakedBlock = Presentation.compileMosaics(root, work, "1.21.4", sources, components, lock);
+            that(!leakedBlock.ok() && leakedBlock.diagnostics().stream().anyMatch(d -> d.contains("SERVER_PRIVATE") && d.contains("fixture:server_state")),
+                    "presentation:a mosaic over a server-private component fails the build: " + leakedBlock.diagnostics());
+            Files.delete(sources.resolve("leak.mosaic.json"));
+            Files.delete(sources.resolve("display.mosaic.json"));
 
             // the lock is only ever appended to
             String before = Files.readString(lock, StandardCharsets.UTF_8);

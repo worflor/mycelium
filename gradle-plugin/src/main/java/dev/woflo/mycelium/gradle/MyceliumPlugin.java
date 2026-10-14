@@ -253,10 +253,10 @@ public final class MyceliumPlugin implements Plugin<Project> {
         Provider<Directory> presentationLockWork = project.getLayout().getBuildDirectory().dir("mycelium/presentation-lock-work/model");
         TaskProvider<PresentationTask> presentationTask = project.getTasks().register("myceliumPresentation", PresentationTask.class, t -> {
             t.setGroup("mycelium");
-            t.setDescription("Compiles the item presentation programs for the target Minecraft version into its native artefacts and the plan the adapter reads.");
+            t.setDescription("Compiles the item presentation programs and block mosaics for the target Minecraft version into their native artefacts and the plans the adapter reads.");
             t.getRoot().set(ext.getRoot());
             t.getMinecraft().set(ext.getMinecraft());
-            // the compiler is item.presentation@1's models (and what they require): tracked as files when the build runs, not
+            // the compilers are item.presentation@1's and block.presentation@1's models (and what they require): tracked as files when the build runs, not
             // computed while it is configured
             t.getCompilerSources().from(ext.getRoot().map(dir -> dir.file("contracts/registry.json")), ext.getRoot().map(dir -> dir.dir("eras")),
                     ext.getRoot().map(dir -> dir.dir("contracts").getAsFileTree().matching(pattern -> pattern.include("**/model/**/*.java"))));

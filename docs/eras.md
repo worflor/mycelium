@@ -69,6 +69,10 @@ ranges cross the eras: model overrides run through four of them. The `item.prese
 target and holds no version number of its own (`Eras.presentationFor`, `docs/decisions/0012-sigil-item-presentation.md`). The
 repository check proves every real version falls in exactly one range, each bound is a real version, and no range runs backwards.
 
+The `block.presentation` table is the same shape for blocks: `dynamic-model` (the loader can replace a block's baked model with one that
+composes models from its block entity's data, from 1.14) or `none`. The `block.presentation@1` compiler reads the row for the target
+(`Eras.blockPresentationFor`, `docs/decisions/0019-mosaic-block-presentation.md`), and the repository check holds it to the same proofs.
+
 ### Name data
 
 `runtime` says what a loader runs the game as; `eras/names.json` holds what the game *has* under each naming on each

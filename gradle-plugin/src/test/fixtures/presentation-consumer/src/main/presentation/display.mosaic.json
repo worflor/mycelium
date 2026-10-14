@@ -1,0 +1,12 @@
+{
+  "block": "fixture:display",
+  "inputs": {
+    "lit": {"component": "fixture:display", "field": "lit", "domain": "bool"},
+    "north": {"component": "fixture:display", "field": "north", "domain": {"enum": ["none", "moon", "sun"]}}
+  },
+  "parts": [
+    {"model": "fixture:block/display_core"},
+    {"model": "fixture:block/display_side_{north}"},
+    {"when": {"lit": true}, "model": "fixture:block/display_flame", "turn": 90}
+  ]
+}

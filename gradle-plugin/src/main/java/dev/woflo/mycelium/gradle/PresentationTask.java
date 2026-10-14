@@ -105,27 +105,39 @@ public abstract class PresentationTask extends DefaultTask {
                 getSources().get().getAsFile().toPath(), getComponents().get().getAsFile().toPath(), getLock().get().getAsFile().toPath());
         Files.writeString(reportDir.resolve("presentation.json"), new GsonBuilder().setPrettyPrinting().create()
                 .toJson(Presentation.summary(outcome, minecraft)), StandardCharsets.UTF_8);
-        if (!outcome.ok()) {
-            // a problem leaves the item with no model on this version: PR1 fails by default; a warn writes no files and says so
+        Presentation.Outcome mosaics = Presentation.compileMosaics(root, getWorkDir().get().getAsFile().toPath(), minecraft,
+                getSources().get().getAsFile().toPath(), getComponents().get().getAsFile().toPath(), getLock().get().getAsFile().toPath());
+        Files.writeString(reportDir.resolve("mosaics.json"), new GsonBuilder().setPrettyPrinting().create()
+                .toJson(Presentation.summary(mosaics, minecraft, Presentation.BLOCK_CONTRACT)), StandardCharsets.UTF_8);
+        if (!outcome.ok() || !mosaics.ok()) {
+            // a problem leaves the item (or the block) with no model on this version: PR1 fails by default; a warn writes no files and says so
+            java.util.Set<String> diagnostics = new java.util.LinkedHashSet<>(outcome.diagnostics());
+            diagnostics.addAll(mosaics.diagnostics());       // a missing catalog is one finding, not one per contract
             Checks.Findings found = new Checks.Findings(Checks.decode(getChecks().get()));
-            for (String d : outcome.diagnostics()) {
+            for (String d : diagnostics) {
                 found.add("PR1", minecraft, d);
             }
-            found.conclude(getLogger(), "presentation: " + outcome.diagnostics().size() + " problem(s) compiling for Minecraft "
-                    + minecraft + " (" + outcome.realization() + ")");
+            found.conclude(getLogger(), "presentation: " + diagnostics.size() + " problem(s) compiling for Minecraft "
+                    + minecraft + " (" + outcome.realization() + ", blocks " + mosaics.realization() + ")");
             // whatever level PR1 is at, the build says what it did not do: at warn or off the finding is quiet or absent, and an item
             // that is drawn with no model should never be a surprise at the end of a green build
             int programs = Presentation.programs(getSources().get().getAsFile().toPath(), getComponents().get().getAsFile().toPath(),
                     getLock().get().getAsFile().toPath());
-            getLogger().lifecycle("Mycelium: {} item(s) have no selection on Minecraft {}; no presentation files written", programs, minecraft);
+            int blocks = Presentation.mosaics(getSources().get().getAsFile().toPath(), getComponents().get().getAsFile().toPath(),
+                    getLock().get().getAsFile().toPath());
+            getLogger().lifecycle("Mycelium: {} item(s) and {} block mosaic(s) have no selection on Minecraft {}; no presentation files written",
+                    programs, blocks, minecraft);
             return;
         }
-        for (Map.Entry<String, String> file : outcome.files().entrySet()) {
-            Path to = out.resolve(file.getKey());
-            Files.createDirectories(to.getParent());
-            Files.writeString(to, file.getValue(), StandardCharsets.UTF_8);
+        for (Presentation.Outcome done : java.util.List.of(outcome, mosaics)) {
+            for (Map.Entry<String, String> file : done.files().entrySet()) {
+                Path to = out.resolve(file.getKey());
+                Files.createDirectories(to.getParent());
+                Files.writeString(to, file.getValue(), StandardCharsets.UTF_8);
+            }
         }
-        getLogger().lifecycle("Mycelium: compiled {} item presentation program(s) for Minecraft {} as {}; {} file(s) written",
-                outcome.items(), minecraft, outcome.realization(), outcome.files().size());
+        getLogger().lifecycle("Mycelium: compiled {} item presentation program(s) as {} and {} block mosaic(s) as {} for Minecraft {}; {} file(s) written",
+                outcome.items(), outcome.realization(), mosaics.items(), mosaics.realization(), minecraft,
+                outcome.files().size() + mosaics.files().size());
     }
 }
