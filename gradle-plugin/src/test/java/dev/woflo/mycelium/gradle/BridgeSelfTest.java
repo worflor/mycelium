@@ -740,6 +740,13 @@ final class BridgeSelfTest {
         t.getSources().from(src.toFile());
         t.getReportDir().set(dir.resolve("usage").toFile());
         that(FlexibleSelfTest.runs(t), "bridges:a contract the mod uses only through its bridge is used (U1)");
+        // last: a source set added now is one nothing else here resolves
+        sets.create("extra");
+        Set<String> after = new HashSet<>();
+        org.gradle.api.Task bridgesTask = p.getTasks().getByName("myceliumBridges");
+        bridgesTask.getMustRunAfter().getDependencies(bridgesTask).forEach(task -> after.add(task.getName()));
+        that(after.contains("extraClasses"),
+                "bridges:the check runs after another source set's classes and resources, which ForgeGradle writes into one directory: " + after);
     }
 
     private static Set<org.gradle.api.Task> reachable(org.gradle.api.Task from) {

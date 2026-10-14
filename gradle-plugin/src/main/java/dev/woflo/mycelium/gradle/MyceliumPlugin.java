@@ -499,9 +499,10 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 // an override may live in another source set (a client one); look there when it was built, never build it for this
                 t.getOtherClasses().from(project.provider(() -> sourceSets.stream().filter(set -> !set.getName().equals("main"))
                         .flatMap(set -> set.getOutput().getClassesDirs().getFiles().stream()).toList()));
-                // ordering, not a dependency: when another source set is built in this run it is built first
+                // ordering, not a dependency: when another source set is built in this run it is built first, its resources
+                // too, which ForgeGradle writes into the same directory as its classes
                 t.mustRunAfter(project.provider(() -> sourceSets.stream().filter(set -> !set.getName().equals("main"))
-                        .map(set -> set.getOutput().getClassesDirs()).toList()));
+                        .map(set -> set.getClassesTaskName()).toList()));
                 t.getReportDir().set(bridgesReport);
             });
             evidenceTask.configure(t -> {
