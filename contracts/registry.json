@@ -39,6 +39,14 @@
       "provenance": "written for Somnium"
     },
     {
+      "id": "storage.access@1",
+      "path": "storage-access",
+      "package": "mycelium.storage_access.v1",
+      "status": "reference",
+      "requires": ["inventory.transfer@1"],
+      "provenance": "written for Cartomancy"
+    },
+    {
       "id": "world.clock@1",
       "path": "world-clock",
       "package": "mycelium.world_clock.v1",

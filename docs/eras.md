@@ -21,7 +21,7 @@ Three files hold what the plugin knows about versions. The repository check (`my
 | File | What it holds |
 |---|---|
 | `eras/minecraft.json` | Every version, by era: its Java, the loaders a mod or plugin can target (and the version each begins on), how its code is named, the Java a loader's scanner reads, and the walls a port crosses. Ordered newest first. |
-| `eras/loaders.json` | Each loader or native entrance's family (`mod`, `plugin`, `agent`), Java packages and the game's own, each with where it was read, and where a built artifact declares the Minecraft versions it accepts. The pure layer may mention none of the packages (P1). |
+| `eras/loaders.json` | Each loader or native entrance's family (`mod`, `plugin`, `agent`), Java packages and the game's own, each with where it was read, where a built artifact declares the Minecraft versions it accepts, and the unit it keeps fluids in. The pure layer may mention none of the packages (P1). |
 | `eras/versions.json` | Every real version, from Mojang's launcher manifest: releases, betas and alphas (snapshots are not targets). |
 
 **Bounds.** An era covers every version from `from` to `to`, both included. A bound is either a version as the
@@ -56,6 +56,11 @@ every `since`, `outerJava` and name step names a loader the era lists, beginning
   loader declares the Minecraft versions it accepts: the file (the first that exists), its format, where the value
   is and the syntax it is written in (`semver` for Fabric and Quilt, `maven` for Forge and NeoForge, `api-version`
   for Bukkit). `CompatExpr` reads and writes the three.
+- **`fluid`** (in `eras/loaders.json`) says how a loader keeps fluids in block storage: the unit's name, how many of it make
+  a bucket (`perBucket`: Fabric's and Quilt's droplets, 81,000; Forge's and NeoForge's millibuckets, 1,000) and where that
+  is read. `storage.access@1` declares one unit, thousandths of a bucket, and its seam converts to the loader's exactly; a
+  loader with no `fluid` row keeps no fluid storage a mod can reach. `Loaders` reads it strictly, and a buildscript reads it
+  as `mycelium.fluidPerBucket(loader)`.
 
 ### The realization tables
 

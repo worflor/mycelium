@@ -1397,6 +1397,24 @@ public final class SelfTest {
                 "loaders:a compat in a syntax nothing reads is refused");
         that(refuses(() -> Loaders.parse(valid.replace("\"path\":\"x\",", ""), "t"), "needs a path"),
                 "loaders:a json compat with no path is refused");
+        Loaders units = Loaders.load(root.toFile());
+        that(units.fluidPerBucket("fabric") == 81_000 && units.fluidPerBucket("quilt") == 81_000
+                        && units.fluidPerBucket("forge") == 1_000 && units.fluidPerBucket("neoforge") == 1_000
+                        && table.get("fabric").fluid().unit().equals("droplet") && table.get("paper").fluid() == null,
+                "loaders:a loader says how many of its fluid units make a bucket, or keeps no fluid storage");
+        that(refuses(() -> units.fluidPerBucket("paper"), "keeps no fluid storage"),
+                "loaders:the fluid unit of a loader with no fluid storage is refused, by name");
+        that(refuses(() -> units.fluidPerBucket("riftloader"), "'riftloader' is not one eras/loaders.json knows"),
+                "loaders:the fluid unit of a loader the table does not know is refused");
+        String fluid = valid.replace("\"source\":\"s\",\"compatFrom\"", "\"source\":\"s\",\"fluid\":{\"unit\":\"u\",\"perBucket\":81000,\"source\":\"fs\"},\"compatFrom\"");
+        that(Loaders.parse(fluid, "t").fluidPerBucket("b") == 81_000 && Loaders.parse(fluid, "t").loaders().get("a").fluid() == null,
+                "loaders:a fluid row reads, and a borrowed compat keeps the loader's own fluid row");
+        that(refuses(() -> Loaders.parse(fluid.replace("\"perBucket\":81000", "\"perBucket\":0"), "t"), "a whole perBucket of at least 1"),
+                "loaders:a fluid unit of no size is refused");
+        that(refuses(() -> Loaders.parse(fluid.replace(",\"source\":\"fs\"}", "}"), "t"), "the source it was read from"),
+                "loaders:a fluid row that does not say where it was read is refused");
+        that(refuses(() -> Loaders.parse(fluid.replace("\"unit\":\"u\"", "\"unit\":\"u\",\"since\":\"1.17\""), "t"), "not 'since'"),
+                "loaders:a fluid row with a field nothing reads is refused");
     }
 
     // --- the loaders' own range syntaxes -----------------------------------------------------------------------------

@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "unmutated": {
+    "U1:exact": "FluidUnit's own arithmetic (T15: droplets and millibuckets convert exactly, a remainder converts to nothing, a unit whose bucket is not a multiple of 1000 steps in whole buckets). FluidUnit is a final record of the model that no port, adapter or executor of the matrix replaces, so no broken implementation can reach it; the seams that would misuse it are the matrix's RoundingFluidSeam and FlooringFluidSeam, caught by S5:native-conserved and S5:remainder-refused, which measure the world in droplets and millibuckets rather than trusting the unit."
+  }
+}

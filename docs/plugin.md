@@ -62,7 +62,7 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 
 - `checks { }`: the level of each check and per-site allowances (below).
 - `loader`: the loader this project builds for (`loader = "fabric"`, a key of `eras/loaders.json`). Only a bridge whose native half is written per loader reads it; set it once in `myceliumDefaults` or in each loader's project.
-- `packMeta { }`, `overlays { }`, `mixinJava`, `minecraftRange(loader)`: what the era table generates for the target (below).
+- `packMeta { }`, `overlays { }`, `mixinJava`, `minecraftRange(loader)`, `fluidPerBucket(loader)`: what the era tables generate for the target (below).
 - `pure { }`: the mod's pure layer, proven on every era and shipped downgraded where an era needs it (`docs/eras.md`).
 - `integration(...)`: an optional integration kept isolated (`docs/integrations.md`).
 - `ports(...)`: the mod's own packages that are meant to touch the platform, for `myceliumSurface`.
@@ -227,6 +227,10 @@ the same whether a setting came from the root or the project.
   metadata writes it (`CompatExpr`: a Fabric `depends`, a Forge `versionRange`), from the declared `range` if there is one, else
   from the oldest to the newest `minecraft` of the projects in the build. It names a contiguous range, not the versions
   between that were never targeted: declare `range { keystones(...) }` to say which were run.
+- **A loader's fluid unit.** `mycelium.fluidPerBucket("fabric")` is how many of that loader's fluid units make a bucket
+  (`eras/loaders.json`, `fluid.perBucket`): the native unit `storage.access@1`'s fluid seam converts its thousandths of a
+  bucket to. A mod hands it to its game tests, which hold the loader's own constant to it; a loader with no fluid storage is
+  refused by name.
 - **Resource overlays per schema era.** `overlays { base(file("src/main/resources-1211")); from("26.1", file("src/main/resources-2601")) }`
   adds to the resources the directory whose version is the newest at or below the target. It chooses by version bound, not by
   data; overlays inside one jar (`overlays` in `pack.mcmeta`) are not generated yet (`docs/STATUS.md`).

@@ -44,8 +44,22 @@ public final class Loaders {
                          String syntax, String from, String before) {
     }
 
-    /** One loader: its family, the package roots it puts in reach, where that fact comes from, and where it declares compatibility. */
-    public record Loader(String name, String family, List<String> packages, String source, Compat compat) {
+    /**
+     * How a loader keeps fluids in block storage: the name of its unit and how many of it make a bucket (Fabric's droplets,
+     * 81,000; Forge's and NeoForge's millibuckets, 1,000), and where that is read. {@code storage.access@1} converts its declared
+     * unit, thousandths of a bucket, to this one exactly at the seam; a loader with no fluid storage API has none.
+     */
+    public record Fluid(String unit, long perBucket, String source) {
+    }
+
+    /** What a {@link Fluid} row may say. */
+    public static final Set<String> FLUID_KEYS = Set.of("unit", "perBucket", "source");
+
+    /**
+     * One loader: its family, the package roots it puts in reach, where that fact comes from, where it declares compatibility,
+     * and how it keeps fluids ({@code null}: it has no fluid storage a mod can reach).
+     */
+    public record Loader(String name, String family, List<String> packages, String source, Compat compat, Fluid fluid) {
     }
 
     private final List<String> game;
@@ -93,7 +107,8 @@ public final class Loaders {
             if (o.has("compatFrom")) {
                 borrowed.put(name, o.get("compatFrom").getAsString());
             }
-            loaders.put(name, new Loader(name, family, packages(o, file, name), source(o, file, name), compat));
+            Fluid fluid = o.has("fluid") ? fluid(o.get("fluid"), file, name) : null;
+            loaders.put(name, new Loader(name, family, packages(o, file, name), source(o, file, name), compat, fluid));
         }
         for (Map.Entry<String, String> b : borrowed.entrySet()) {
             Loader from = loaders.get(b.getValue());
@@ -102,7 +117,7 @@ public final class Loaders {
                         + "', which declares none of its own");
             }
             Loader own = loaders.get(b.getKey());
-            loaders.put(b.getKey(), new Loader(own.name(), own.family(), own.packages(), own.source(), from.compat()));
+            loaders.put(b.getKey(), new Loader(own.name(), own.family(), own.packages(), own.source(), from.compat(), own.fluid()));
         }
         return new Loaders(packages(root.getAsJsonObject("game"), file, "game"),
                 packages(root.getAsJsonObject("tools"), file, "tools"), loaders);
@@ -144,6 +159,27 @@ public final class Loaders {
         return new Compat(files, format, path, table, where, key, syntax, from, before);
     }
 
+    private static Fluid fluid(JsonElement e, String file, String loader) {
+        if (!e.isJsonObject()) {
+            throw new IllegalStateException(file + ": '" + loader + "' fluid is {\"unit\": name, \"perBucket\": n, \"source\": where}");
+        }
+        JsonObject f = e.getAsJsonObject();
+        for (String key : f.keySet()) {
+            if (!FLUID_KEYS.contains(key)) {
+                throw new IllegalStateException(file + ": '" + loader + "' fluid has unit, perBucket and source, not '" + key + "'");
+            }
+        }
+        String unit = f.has("unit") ? f.get("unit").getAsString() : "";
+        String source = f.has("source") ? f.get("source").getAsString() : "";
+        long perBucket = f.has("perBucket") && f.get("perBucket").isJsonPrimitive() && f.get("perBucket").getAsJsonPrimitive().isNumber()
+                ? f.get("perBucket").getAsLong() : 0;
+        if (unit.isBlank() || source.isBlank() || perBucket < 1) {
+            throw new IllegalStateException(file + ": '" + loader + "' fluid needs a unit, a whole perBucket of at least 1 and the"
+                    + " source it was read from");
+        }
+        return new Fluid(unit, perBucket, source);
+    }
+
     private static List<String> packages(JsonObject o, String file, String what) {
         List<String> out = new ArrayList<>();
         if (o == null || !o.has("packages")) {
@@ -165,6 +201,21 @@ public final class Loaders {
 
     public Map<String, Loader> loaders() {
         return Map.copyOf(loaders);
+    }
+
+    /**
+     * How many of a loader's fluid units make a bucket ({@code fluid.perBucket}): what {@code storage.access@1}'s seam converts
+     * to on that loader. A loader the table does not know, or one with no fluid storage, is refused by name.
+     */
+    public long fluidPerBucket(String loader) {
+        Loader l = loaders.get(loader);
+        if (l == null) {
+            throw new IllegalStateException("'" + loader + "' is not one eras/loaders.json knows (it knows " + new TreeSet<>(loaders.keySet()) + ")");
+        }
+        if (l.fluid() == null) {
+            throw new IllegalStateException("'" + loader + "' keeps no fluid storage a mod can reach (eras/loaders.json has no fluid row for it)");
+        }
+        return l.fluid().perBucket();
     }
 
     /** Every package root the pure layer may never mention: the game, the tools, every loader. Sorted, each once. */

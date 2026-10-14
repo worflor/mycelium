@@ -200,6 +200,15 @@ public abstract class MyceliumExtension {
     }
 
     /**
+     * How many of the loader's fluid units make a bucket ({@code eras/loaders.json}, {@code fluid.perBucket}): the native unit
+     * {@code storage.access@1}'s fluid seam converts to on that loader, for a mod's build to hand its game tests. A loader with
+     * no fluid storage is refused by name.
+     */
+    public long fluidPerBucket(String loader) {
+        return Loaders.load(getRoot().get().getAsFile()).fluidPerBucket(loader);
+    }
+
+    /**
      * The Minecraft versions this artifact says it runs on and what proves it (docs/decisions/0009): read from the
      * consumer's ledger or written here, held by {@code myceliumRange} to the era table, the proofs and the loader's own
      * metadata, and recorded in the evidence manifest.

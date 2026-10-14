@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "note": "The Java packages each loader in eras/minecraft.json puts in a mod's reach (and each plugin platform in a plugin's), and the game's own. The pure layer may mention none of them (docs/eras.md, law P1); myceliumPurity reads this file, so a loader named in an era is guarded as soon as it is named here, and the repository check fails if an era names a loader this file does not. Each entry says where its packages come from, so it can be re-verified: a loader's packages are what its own published artifacts declare, not what its name suggests. 'family' says what kind of artifact the loader runs: 'mod' (reaches into the game), 'plugin' (reaches the game only through a published API) or 'agent' (a Java agent); a wall that names a family splits every loader of it. 'compat' says where a built artifact declares the Minecraft versions it accepts, so the range gate can read what the loader will enforce: the file in the artifact's resources (the first that exists), its format ('json': 'path' is dotted keys with [key=value] selecting an array element; 'toml': a table, its 'where' keys and the 'key' wanted; 'yaml': a top-level 'key'), and the 'syntax' its value is written in ('semver': Fabric and Quilt, 'maven': Forge and NeoForge, 'api-version': Bukkit); 'compatFrom' borrows another loader's. 'from' and 'before' say, where the file began later than the loader did, where an older artifact declares it instead. A loader with no 'compat' enforces none the build can read.",
+  "note": "The Java packages each loader in eras/minecraft.json puts in a mod's reach (and each plugin platform in a plugin's), and the game's own. The pure layer may mention none of them (docs/eras.md, law P1); myceliumPurity reads this file, so a loader named in an era is guarded as soon as it is named here, and the repository check fails if an era names a loader this file does not. Each entry says where its packages come from, so it can be re-verified: a loader's packages are what its own published artifacts declare, not what its name suggests. 'family' says what kind of artifact the loader runs: 'mod' (reaches into the game), 'plugin' (reaches the game only through a published API) or 'agent' (a Java agent); a wall that names a family splits every loader of it. 'compat' says where a built artifact declares the Minecraft versions it accepts, so the range gate can read what the loader will enforce: the file in the artifact's resources (the first that exists), its format ('json': 'path' is dotted keys with [key=value] selecting an array element; 'toml': a table, its 'where' keys and the 'key' wanted; 'yaml': a top-level 'key'), and the 'syntax' its value is written in ('semver': Fabric and Quilt, 'maven': Forge and NeoForge, 'api-version': Bukkit); 'compatFrom' borrows another loader's. 'from' and 'before' say, where the file began later than the loader did, where an older artifact declares it instead. A loader with no 'compat' enforces none the build can read. 'fluid' says how the loader keeps fluids in block storage: its unit's name, how many of it make a bucket ('perBucket') and where that is read; storage.access@1 converts its declared unit, thousandths of a bucket, to it exactly at the seam, and a loader with no 'fluid' keeps no fluid storage a mod can reach.",
   "game": {
     "packages": [
       "net.minecraft",
@@ -28,7 +28,8 @@
         "net.fabricmc"
       ],
       "source": "Fabric Loader and Fabric API (net.fabricmc:fabric-loader, net.fabricmc.fabric-api:fabric-api on maven.fabricmc.net)",
-      "compat": {"file": ["fabric.mod.json"], "format": "json", "path": "depends.minecraft", "syntax": "semver"}
+      "compat": {"file": ["fabric.mod.json"], "format": "json", "path": "depends.minecraft", "syntax": "semver"},
+      "fluid": {"unit": "droplet", "perBucket": 81000, "source": "FluidConstants.BUCKET in Fabric API's transfer API (net.fabricmc.fabric.api.transfer.v1.fluid, module fabric-transfer-api-v1); where the Fabric API in use lacks that module, there is no fluid storage a mod can reach"}
     },
     "forge": {
       "family": "mod",
@@ -37,7 +38,8 @@
         "cpw.mods"
       ],
       "source": "Forge (net.minecraftforge:forge on maven.minecraftforge.net); cpw.mods is FML before 1.13 and ModLauncher/SecureJarHandler after",
-      "compat": {"file": ["META-INF/mods.toml", "META-INF/neoforge.mods.toml"], "format": "toml", "table": "dependencies.*", "where": {"modId": "minecraft"}, "key": "versionRange", "syntax": "maven", "from": "1.13", "before": "Forge reads the Minecraft versions a mod accepts from its @Mod annotation (acceptedMinecraftVersions) before 1.13, which is code the build does not read"}
+      "compat": {"file": ["META-INF/mods.toml", "META-INF/neoforge.mods.toml"], "format": "toml", "table": "dependencies.*", "where": {"modId": "minecraft"}, "key": "versionRange", "syntax": "maven", "from": "1.13", "before": "Forge reads the Minecraft versions a mod accepts from its @Mod annotation (acceptedMinecraftVersions) before 1.13, which is code the build does not read"},
+      "fluid": {"unit": "millibucket", "perBucket": 1000, "source": "FluidType.BUCKET_VOLUME (net.minecraftforge.fluids, from 1.19), FluidAttributes.BUCKET_VOLUME before it and Fluid.BUCKET_VOLUME before 1.13: a FluidStack's amount is in millibuckets"}
     },
     "neoforge": {
       "family": "mod",
@@ -46,7 +48,8 @@
         "cpw.mods"
       ],
       "source": "NeoForge (net.neoforged:neoforge on maven.neoforged.net); cpw.mods is the ModLauncher its early versions ran on",
-      "compat": {"file": ["META-INF/neoforge.mods.toml", "META-INF/mods.toml"], "format": "toml", "table": "dependencies.*", "where": {"modId": "minecraft"}, "key": "versionRange", "syntax": "maven"}
+      "compat": {"file": ["META-INF/neoforge.mods.toml", "META-INF/mods.toml"], "format": "toml", "table": "dependencies.*", "where": {"modId": "minecraft"}, "key": "versionRange", "syntax": "maven"},
+      "fluid": {"unit": "millibucket", "perBucket": 1000, "source": "FluidType.BUCKET_VOLUME (net.neoforged.neoforge.fluids): a FluidStack's amount, and a fluid resource handler's, is in millibuckets"}
     },
     "quilt": {
       "family": "mod",
@@ -55,7 +58,8 @@
         "net.fabricmc"
       ],
       "source": "Quilt Loader and QSL (org.quiltmc:quilt-loader, org.quiltmc.qsl on maven.quiltmc.org); Quilted Fabric API keeps Fabric API's net.fabricmc packages",
-      "compat": {"file": ["quilt.mod.json"], "format": "json", "path": "quilt_loader.depends[id=minecraft].versions", "syntax": "semver"}
+      "compat": {"file": ["quilt.mod.json"], "format": "json", "path": "quilt_loader.depends[id=minecraft].versions", "syntax": "semver"},
+      "fluid": {"unit": "droplet", "perBucket": 81000, "source": "Quilted Fabric API carries Fabric API's transfer API unchanged (FluidConstants.BUCKET)"}
     },
     "legacy-fabric": {
       "family": "mod",
