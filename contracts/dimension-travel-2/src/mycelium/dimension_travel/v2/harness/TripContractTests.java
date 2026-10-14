@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
-/** Fixtures T1..T11 for {@code dimension.travel@2}: a trip is journaled before it moves anyone. */
+/** Fixtures T1..T12 for {@code dimension.travel@2}: a trip is journaled before it moves anyone. */
 public final class TripContractTests {
     private static final PlayerId PLAYER = new PlayerId("dreamer");
     private static final DimensionId OVERWORLD = new DimensionId("minecraft:overworld");
@@ -62,6 +62,7 @@ public final class TripContractTests {
         t9AlreadyHome(c);
         t10Unsupported(c);
         t11AntiEvasion(c);
+        t12Arrive(c);
         return c;
     }
 
@@ -234,5 +235,32 @@ public final class TripContractTests {
         TravelOutcome o = depart(fresh());
         c.that(!(o instanceof TravelOutcome.Unsupported), "T11:no-evasion-unsupported");
         c.that(!(o instanceof TravelOutcome.Rejected), "T11:no-evasion-rejected");
+    }
+
+    /** L9: a one-way trip ends where it is: arriving strikes the journal, moves no one, settles nothing, and an abort above it brings the trip back. */
+    private void t12Arrive(Check c) {
+        MemoryTravelPort port = fresh();
+        depart(port);
+        TravelTx tx = TravelTx.open();
+        RecoverOutcome o = trips.arrive(port, PLAYER, tx);
+        tx.commit();
+        c.that(o instanceof RecoverOutcome.Recovered r && !r.receipt().broughtHome() && port.journal(PLAYER).isEmpty(), "T12:arrive-strikes-the-trip");
+        c.equal(AWAY, port.where(PLAYER), "T12:arrive-moves-no-one");
+        MemoryTravelPort aborted = fresh();
+        depart(aborted);
+        TravelTx outer = TravelTx.open();
+        trips.arrive(aborted, PLAYER, outer);
+        outer.abort();
+        c.that(aborted.journal(PLAYER).isPresent(), "T12:arrive-is-undone-by-an-abort");
+        MemoryTravelPort none = fresh();
+        TravelTx t3 = TravelTx.open();
+        RecoverOutcome nothing = trips.arrive(none, PLAYER, t3);
+        t3.commit();
+        c.that(nothing instanceof RecoverOutcome.Rejected r && r.reason() == Reason.NO_TRIP, "T12:arrive-without-a-trip-rejected");
+        MemoryTravelPort plain = new UnjournaledPort();
+        plain.seed(PLAYER, HOME, CARRIED);
+        TravelTx t4 = TravelTx.open();
+        c.that(trips.arrive(plain, PLAYER, t4) instanceof RecoverOutcome.Unsupported, "T12:arrive-unsupported-without-a-journal");
+        t4.commit();
     }
 }

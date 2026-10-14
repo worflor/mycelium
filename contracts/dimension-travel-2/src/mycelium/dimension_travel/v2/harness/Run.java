@@ -1,5 +1,6 @@
 package mycelium.dimension_travel.v2.harness;
 
+import mycelium.dimension_travel.v2.fixtures.ArriveExecutors;
 import mycelium.dimension_travel.v2.fixtures.EagerSettleExecutor;
 import mycelium.dimension_travel.v2.fixtures.ForgetfulJournalPort;
 import mycelium.dimension_travel.v2.fixtures.LateJournalExecutor;
@@ -41,7 +42,16 @@ public final class Run {
                                 "T6:settled-once"),
                         new ContractRun.Broken("EagerSettleExecutor",
                                 () -> new TripContractTests(new EagerSettleExecutor(), MemoryTravelPort::new).run(),
-                                "T7:no-settle-before-commit")
+                                "T7:no-settle-before-commit"),
+                        new ContractRun.Broken("ArriveKeepsJournal",
+                                () -> new TripContractTests(ArriveExecutors.keepsJournal(), MemoryTravelPort::new).run(),
+                                "T12:arrive-strikes-the-trip"),
+                        new ContractRun.Broken("ArriveMovesHome",
+                                () -> new TripContractTests(ArriveExecutors.movesHome(), MemoryTravelPort::new).run(),
+                                "T12:arrive-moves-no-one"),
+                        new ContractRun.Broken("ArriveIgnoresAbort",
+                                () -> new TripContractTests(ArriveExecutors.ignoresAbort(), MemoryTravelPort::new).run(),
+                                "T12:arrive-is-undone-by-an-abort")
                 ));
         System.exit(exit);
     }

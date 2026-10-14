@@ -58,13 +58,18 @@ trip exactly once, at the right time.
   and leaves the trip open (`T7`).
 - **L8 (already home)** — the traveller is at the origin (the process died after the move home, before the strike):
   `recover` strikes and settles nothing (`T9`).
+- **L9 (a one-way trip ends where it is)** — `arrive` (additive, `Trip.arrive` and a default `TripExecutor.arrive`) strikes
+  the open journal in a scope nested in the caller's transaction, moves no one and settles nothing; an abort above it brings the trip
+  back; `Rejected(NO_TRIP)` without a trip, `Unsupported` without `JOURNALED` (`T12`). It is for a move whose arrival is its end (a card that
+  sets a player down in another world and does not mean to bring them back): the journal still covers the window between leaving and
+  arriving, and a failed move keeps it for the next session's `recover`. Written for Cartomancy.
 - **P1** — a port that claims `JOURNALED` keeps a journal (`T1:journal-written`); a qualified, admissible departure
   commits and may not hide behind a refusal (`T11`).
 - **Admission** — without `JOURNALED` every verb is `Unsupported` and nothing changes (`T10`).
 
 ## 5. Fixtures and rejection matrix
 
-`T1`..`T11` in `harness/TripContractTests.java`. The reference port is `MemoryTravelPort` over a `Store`;
+`T1`..`T12` in `harness/TripContractTests.java`. The reference port is `MemoryTravelPort` over a `Store`;
 `restart()` is a new process over the same store (how a crash is simulated).
 
 | Implementation | Violates | Caught by |
@@ -76,6 +81,9 @@ trip exactly once, at the right time.
 | `NeverStrikePort` (never strikes) | L5 | `T5:journal-struck-on-return` |
 | `SilentRecoverExecutor` (brings home, never settles) | L6 | `T6:settled-once` |
 | `EagerSettleExecutor` (settles before the commit) | L7 | `T7:no-settle-before-commit` |
+| `ArriveKeepsJournal` (says the trip has ended and leaves the journal open) | L9 | `T12:arrive-strikes-the-trip` |
+| `ArriveMovesHome` (ends the trip by bringing the traveller back) | L9 | `T12:arrive-moves-no-one` |
+| `ArriveIgnoresAbort` (strikes in a transaction of its own) | L9 | `T12:arrive-is-undone-by-an-abort` |
 
 ## 6. Versioning
 

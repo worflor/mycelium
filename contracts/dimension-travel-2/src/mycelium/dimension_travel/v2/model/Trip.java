@@ -86,6 +86,27 @@ public final class Trip {
     }
 
     /**
+     * The trip ends where it is: a one-way journey whose arrival is its end (a card that sets a player down in another world, and
+     * does not mean to bring them back). The journal is struck in a scope nested in {@code tx}, so an abort above it brings the trip
+     * back; nobody is moved and nothing is settled. {@code Rejected(NO_TRIP)} if no trip is open.
+     */
+    public static RecoverOutcome arrive(TravelPort port, PlayerId player, TravelTx tx) {
+        Objects.requireNonNull(port, "port");
+        Objects.requireNonNull(tx, "tx");
+        if (!port.traits().containsAll(REQUIRED_TRAITS)) {
+            return new RecoverOutcome.Unsupported("port lacks required traits");
+        }
+        Optional<Journal> open = port.journal(player);
+        if (open.isEmpty()) {
+            return new RecoverOutcome.Rejected(Reason.NO_TRIP);
+        }
+        TravelTx inner = tx.openNested();
+        port.strikeJournal(player, inner);
+        inner.commit();
+        return new RecoverOutcome.Recovered(new RecoverReceipt(player, open.get(), false));
+    }
+
+    /**
      * At the start of a session: an open journal means the process died mid-trip. Bring the traveller home if they
      * are not, strike the journal, and ask the consumer to settle exactly once, after the outermost commit. Already
      * home (the process died after the move but before the strike): strike only; there is nothing to settle.
