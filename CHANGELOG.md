@@ -12,6 +12,10 @@
 - Edited the existing Git history to remove consumer feature content while retaining genuine development commits,
   authors, dates, and useful branches. No replacement or scripted history was introduced.
 
+Validation: `./gradlew check` passed: 21 contracts, all 326 rejection entries caught, Java 8, 16, 17, 21 and 25,
+bridge linkage, repository checks, regenerated proofs, and the plugin self-tests (936 assertions). Verification used a
+512 MiB daemon heap and one worker.
+
 ## 2026-10-13 - block.presentation@1: the Mosaic
 
 A block drawn from its block entity's data, declared once. Four independent parts with twenty-eight states each illustrate why compilation should avoid enumerating their product. `contracts/block-presentation/SPEC.md` has the model, laws M1 to M7, the matrix and
