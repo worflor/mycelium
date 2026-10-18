@@ -9,6 +9,8 @@
 - Refined the documentation around current behavior, evidence limits, and concise provenance. Updated the contract
   index for the retained packages and used synthetic presentation and data-generation examples.
 - Preserved contract APIs, executable model code, law labels, rejection entries, and the founding architecture. Consumer source audits are redacted from publication editions; complete records remain private.
+- Refined consumer-specific implementation notes across every reachable branch and corrected malformed Markdown escapes.
+  Component and storage fixtures use neutral ownership data.
 - Edited the existing Git history to remove consumer feature content while retaining genuine development commits,
   authors, dates, and useful branches. No replacement or scripted history was introduced.
 

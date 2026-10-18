@@ -13,7 +13,7 @@
     "dimension.travel@1": "6406cd688bb056b97b34a492b76636d5e3e55e7bcb3914c9e86e6e97987a8397",
     "dimension.travel@2": "ee1c0f3dfd21960824efd5c63234116dd90ceb818b22eeea0876f37d46baf46c",
     "inventory.transfer@1": "faf5ef81ba3d3cbee6835a5c11db84c6ae7eec37bc9bd895568a4f0f0d1f8d10",
-    "item.component@1": "0c4ff18f2566bb06e79eefcd6e0a31aaa0e3c71ebb330fa757f0a49d7c2bd24c",
+    "item.component@1": "0a1c7a386d5d97f216b29a530bf37748d4d4f30ede208b6406bffcad1f33961c",
     "item.presentation@1": "af4990f146a0ac0de8905541991738d621162d2667cd1ac0b4964f772f111245",
     "persistence.player-state@1": "0a8b04005e4516e3e6a553d8ade35d43d46e0e9030d0928efdefc6ae18e3e410",
     "presentation.particle-cue@1": "4f41f54f3ca774bafdc131758d747bb1ccb58275e0baff4217ddc36c8556fe23",
@@ -21,7 +21,7 @@
     "random.seeded@1": "11d324c50c3b7e4fbb122331b655e0994a254e9055237e7a3e0f4604f40839b6",
     "rule.effects@1": "f04a9329834f82c76018a14ae801f2bcac7be7b227b24bb97b8c926acb1f4b68",
     "state.lifecycle@1": "5f65ba1dd9b51a1a25d876ad358a4cf5fdd9ad93bc0de66613babdba8c31e172",
-    "storage.access@1": "a6caa55c4c50f5f4f68bb83dc0fdb043f8fd622df3eda271ac5f6e1b69105ee3",
+    "storage.access@1": "1b632d4048f2b1388831c94dd85311b45b81c19b7111125a29b5eb9144d90a3f",
     "world.clock@1": "7f9b6bc2a93ccd49d31fd36e44226a2e6f7fe09eb428a1281f0ef5a1d653f50d",
     "world.copy@1": "ea2edf1533d342b4b8eccea87ccf8b5a3ee1b1e952761f87d5826a8bd36c36b7"
   }
