@@ -2,25 +2,42 @@
 
 **A build-time compatibility compiler you develop alongside your Minecraft mod.**
 
-Mycelium grows in the seams: between Minecraft versions, between loaders, and between a mod's intent and the platform
-that carries it. **NAML: Not A Mod Loader.** Imported models and bridges become private code under your mod's namespace;
-there is no shared Mycelium runtime to install.
+Porting a mod often means working out the same behavior again through a different API. Mycelium gives that behavior
+a definition of its own, so your feature logic can stay independent of the versions and loaders that carry it.
 
-Building with it has two parts:
+**NAML: Not A Mod Loader.** It runs as part of your build. Your mod ships its own copy of the imported code, under
+its own namespace, with no shared Mycelium runtime to install.
+
+For example, item state can live in legacy NBT on one version and modern data components on another. Mycelium's
+[component contract](contracts/item-component/SPEC.md) lets you describe the state once; its carrier bridges handle
+the native storage. The same separation applies to other version and loader differences: give the behavior a contract,
+then connect it to the platform.
+
+## Build alongside your mod
 
 1. **Structure the mod around Mycelium.** Give feature logic a clear boundary from native platform code, and connect
    the mod's build to a separate Mycelium checkout or fork.
-2. **Define the contracts the mod needs.** A contract states a feature's meaning across targets, with laws and tests.
-   Reuse an existing one when it is convenient and fits; otherwise build the declaration your feature needs.
+2. **Define the behavior your features need.** A contract states what must hold across targets, with laws and tests.
+   Reuse an existing one when it fits, or develop a new contract and its native implementations with the feature.
 
 Mycelium supplies the shared machinery: target selection from era data, private source imports, bridge selection,
-resource generation, Java compatibility gates, packaging, and evidence. Defining a contract is feature work: you
-supply its meaning, and the compiler handles the repeated compatibility work around it.
+resource generation, Java compatibility gates, packaging, and evidence. You supply the feature's meaning; the compiler
+handles the repeated compatibility work around it. Native code still has access to the platform's full capabilities.
 
-The compiler grows with each mod that builds on it. Add missing contracts or target realizations alongside the feature
-that needs them, in your own checkout or private fork. Upstream issues and pull requests are optional ways to
-contribute. The [building guide](docs/building-with-mycelium.md) explains the loop; the
-[contract index](contracts/README.md) contains examples, not prerequisites.
+Mycelium grows through use in real mods. Your checkout or private fork can grow with yours; contributing upstream is
+optional. The [building guide](docs/building-with-mycelium.md) walks through the process, and the
+[contract index](contracts/README.md) offers worked examples to explore.
+
+## Confidence you can inspect
+
+Each contract has a reference implementation and deliberately broken implementations. Its tests must accept the
+reference and catch each broken one for the right reason, including an implementation that does nothing. Bugs found
+while building mods become lasting checks of the behavior that matters.
+
+The build also checks Java compatibility and native references against pinned target data, and records what it checked
+in the jar. Those results are inspectable: model tests establish contract behavior, linkage checks establish which
+references resolve, and your mod's game tests establish what happens in the running game. Save-file and protocol
+compatibility need their own tests. The [architecture guide](docs/architecture.md) explains the boundaries.
 
 ## Connect the builds
 
@@ -73,7 +90,8 @@ the reference result and whether each broken implementation was `CAUGHT` for its
 | Targets | `eras/minecraft.json` records version, Java, loader, naming, and realization data. An era row describes a target; it does not prove a mod or bridge works there. |
 | Dependencies | Contracts and harness use the JDK only. The plugin uses Gson and ASM; era gates resolve JvmDowngrader and JDKs as needed. Bridge linkage reads pinned game archives. |
 
-### Task index
+<details>
+<summary>Task index</summary>
 
 The [plugin reference](docs/plugin.md#tasks) describes each task and its inputs.
 
@@ -84,12 +102,7 @@ The [plugin reference](docs/plugin.md#tasks) describes each task and its inputs.
 | Generate and package | `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta`, `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumEvidence` |
 | Maintain this repository | `myceliumRepository`, `myceliumBridgeLinkage`, `myceliumRecordProofs`, `myceliumRefreshVersions`, `myceliumRefreshNames` |
 
-## Evidence and limits
-
-A passing harness proves the model and its rejection matrix. Linkage checks resolve references against pinned data.
-Neither proves behavior in a running game: that evidence comes from a consumer's game tests on each target.
-Source portability also does not establish save-file or protocol compatibility. Features that need native code retain
-the platform's full capabilities.
+</details>
 
 ## Documentation
 

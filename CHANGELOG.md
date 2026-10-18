@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-18 - Give mod authors a clearer introduction
+
+Refined the README around the porting problem, a component-storage example, and the contract authoring loop. Explained
+how deliberately broken implementations and target checks provide inspectable evidence, with game-test boundaries
+alongside it. Kept build instructions and placed the task index in a collapsible section.
+
+Validation: `./gradlew check`; README links, task coverage, and Markdown structure checked.
+
 ## 2026-10-18 - Publish reusable compiler machinery deliberately
 
 - Clarified the two-part authoring model: structure the mod around Mycelium and define the contracts its features need.
