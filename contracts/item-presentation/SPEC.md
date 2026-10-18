@@ -1,9 +1,17 @@
 # item.presentation@1 - the Sigil
 
+| | |
+|---|---|
+| Contract id | `item.presentation@1` (implementation namespace `mycelium.item_presentation.v1`) |
+| Kind | Model contract (`CONTRACT-PACKAGE.md`): laws over a compiler and the plan it hands an adapter |
+| Requires | `item.component@1` (its component ids, definitions and carrier snapshot): declared in `contracts/registry.json`, `docs/decisions/0014-contracts-compose-by-declared-requirement.md` |
+| Written for | Somnium. Examples below use synthetic item state. The decision is `docs/decisions/0012-sigil-item-presentation.md` |
+| Reference model | `src/`: pure Java 17, no Minecraft or loader imports, no dependency but `item.component@1`'s model |
+| Claims discipline | Everything here is design-time. A passing harness proves the reference compiler and the matrix; it says nothing about how a game draws a model. That evidence is a consumer's own gametests and client lanes |
 
 ## 1. The problem
 
-An item that looks like its state is written twice today, once per model era:
+An item whose appearance depends on state needs different assets per model era:
 
 - from 1.21.4: an item definition (`assets/<ns>/items/<id>.json`) that selects a model, typically a `select` on the
   `custom_model_data` strings;
@@ -22,7 +30,7 @@ evaluates the same program at run time, so the artefacts, the stack's selector a
 | `Program` | `(item, base, inputs, cases, contexts)`: one item's presentation. Inputs are held sorted by name; the first case whose guard holds wins; no match draws `base`; `contexts` are optional display context rules |
 | `Input` | A named reading of one component field (or, for a scalar component, of the component itself) with a finite `Domain` and a default (the domain's first value unless stated): used when the component or field is absent |
 | `Domain` | `Flag` (a bool field), `Present` (a unit component is on the stack), `IntRange(min, max)` (bounds within 2^31), `Choice` (listed texts of `[a-z0-9_]`) |
-| `Case`, `Condition` | An ordered guard to a model. A guard is a conjunction of per-input `Equals`, `AnyOf` or `Within` (a range, either bound open). The model is a reference or a template: `example:item/band_mended_{seams}_cracked_{cracks}` |
+| `Case`, `Condition` | An ordered guard to a model. A guard is a conjunction of per-input `Equals`, `AnyOf` or `Within` (a range, either bound open). The model is a reference or a template: `example:item/tool_charged_{charge}_worn_{wear}` |
 | `Template` | The `{input}` placeholders of a model reference, and their expansion (a flag as `true`/`false`, a number in decimal digits, an enum text as is) |
 | `Evaluator` | The pure evaluation: `evaluate(program, tuple)` is the model a tuple draws; `read(program, view)` reads a stack; `tuples`/`product` enumerate and size the domains. The oracle every artefact is held to |
 | `ComponentView` | What a stack's components look like: `has(component)`, `field(component, path)`. `CarrierView` implements it over an `item.component@1` `CarrierSnapshot` and `ComponentRegistry` |
@@ -43,6 +51,22 @@ nothing), evaluates the cases for each, and collapses tuples that reach one mode
 
 ### The program file
 
+```json
+{
+  "item": "example:status_tool",
+  "base": "example:item/status_tool_base",
+  "inputs": {
+    "charge": {"component": "example:tool_state", "field": "charge", "domain": {"int": [0, 3]}},
+    "wear":   {"component": "example:tool_state", "field": "wear",   "domain": {"int": [0, 2]}},
+    "broken": {"component": "example:tool_state", "field": "broken", "domain": "bool"}
+  },
+  "cases": [
+    {"when": {"broken": true},      "model": "example:item/status_tool_broken"},
+    {"when": {"charge": {"min": 1}}, "model": "example:item/status_tool_charged_{charge}_worn_{wear}"},
+    {"when": {"wear": {"min": 1}},   "model": "example:item/status_tool_worn_{wear}"}
+  ]
+}
+```
 
 A guard value is a bare value (equals), an array (in) or `{"min": n, "max": n}` (range). A `present` input has no
 `field`, and neither has an input over a scalar component (the catalog says `"value": "string"` for it: the component is
@@ -50,12 +74,12 @@ the value). `default` is optional on an input.
 
 **Display contexts.** An item definition can ask how an item is shown (the hand, the gui, the ground, an item display
 entity) and an item model with overrides cannot, so a program may say where the definition draws another model than the one a
-state selected:
+state selected. For example, add this property to the program above:
 
 ```json
 "contexts": [
-  {"only": ["firstperson_righthand", "firstperson_lefthand"], "model": "example:item/sky_panel_knot", "draw": "example:item/sky_panel_knot_first"},
-  {"except": ["gui"], "model": "example:item/sky_panel_base", "draw": "example:item/sky_panel_lit"}
+  {"only": ["firstperson_righthand", "firstperson_lefthand"], "model": "example:item/status_tool_broken", "draw": "example:item/status_tool_broken_first"},
+  {"except": ["gui"], "model": "example:item/status_tool_base", "draw": "example:item/status_tool_held"}
 ]
 ```
 
@@ -110,7 +134,7 @@ their plan helper. Each is the reference compiler with one step replaced.
 | `OffByOneLegacy` | tells the adapter to write code + 1 onto the stack | S2 (`S2:legacy-draws-evaluated-model`) |
 | `LeakyProjection` | accepts an input over a server-private component | S5 (`S5:server-private-rejected`) |
 | `HashOrderEmitter` | writes JSON keys in hash order | S6 (`S6:canonical-json`) |
-| `InvertedContexts` | reads `only` as `except` and the other way round, so the panel is flat in the hand and lit in the inventory | S8 (`S8:definition-draws-context-rules`) |
+| `InvertedContexts` | reads `only` as `except` and the other way round, so the lamp is flat in the hand and lit in the inventory | S8 (`S8:definition-draws-context-rules`) |
 | `NoOpCompiler` | draws the base model for every state | S1 (`S1:totality-agrees-with-evaluator`), and S2 |
 | `FaultyPlan` as `LastMatchWinsPlan` | the plan walks the cases last to first, as the legacy overrides do | S1 (`S1:first-match-wins`) |
 | `FaultyPlan` as `UnmatchedDrawsFirstSelection` | a tuple no case matches draws the first selection, not the base | S1 (`S1:base-when-no-case`) |
@@ -195,7 +219,7 @@ reads the plan and the catalog the build generated, `present(stack)` selects fro
 before it, in the root tag before 1.20.5 and in the component after), and `writeRaw(item, snapshot)` writes it into the raw item data a display
 entity is built from. The model-overrides variant checks that the plan was compiled for the era it draws by.
 
-**Example, a band.** The program above has seams 0 to 3, cracks 0 to 2 and broken. It spans 24 tuples and collapses to 12 selections and the
+**Example, a tool.** The program above has charge 0 to 3, wear 0 to 2 and broken. It spans 24 tuples and collapses to 12 selections and the
 base. Adding a case that draws a new model appends one line to the lock and renumbers nothing. Removing a case leaves its lock lines, and the code
 then draws the base.
 

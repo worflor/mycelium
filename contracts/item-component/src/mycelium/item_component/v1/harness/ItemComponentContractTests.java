@@ -281,9 +281,11 @@ public final class ItemComponentContractTests {
         TagNode.TagCompound isbNbt = translator.toLegacyNbt(isbSnapshot, isbRegistry);
         CarrierSnapshot isbRecovered = translator.fromLegacyNbt(isbNbt, isbRegistry);
         c.equal(isbSnapshot, isbRecovered, "T1:round-trip-isomorphism");
-        ComponentId cardDataId = ComponentId.of("example:card_instance");
-        ComponentId deckBoxId = ComponentId.of("example:deck_box_contents");
-        ComponentId rackId = ComponentId.of("example:active_rack");
+
+        // 3. Synthetic nested record, list, and index vector
+        ComponentId cardDataId = ComponentId.of("example:item_state");
+        ComponentId deckBoxId = ComponentId.of("example:contained_items");
+        ComponentId rackId = ComponentId.of("example:active_indices");
 
         ComponentRegistry cartoRegistry = ComponentRegistry.builder()
                 .register(cardDataId, ComponentCodec.COMPOUND, TagNode.TagCompound.empty())
@@ -292,7 +294,7 @@ public final class ItemComponentContractTests {
                 .build();
 
         TagNode.TagCompound cardInstance = TagNode.TagCompound.empty()
-                .with("card_id", TagNode.TagString.of("example:the_fool"))
+                .with("item_id", TagNode.TagString.of("example:sample_item"))
                 .with("condition", TagNode.TagString.of("MINT"))
                 .with("edition", TagNode.TagString.of("GILDED_FOIL"))
                 .with("is_foil", TagNode.TagByte.of((byte) 1))
@@ -408,7 +410,7 @@ public final class ItemComponentContractTests {
         c.equal(deepSnapshot, deepRecovered, "T1:round-trip-isomorphism");
 
         // 3. Special Strings (runes, formatting codes, quotes, zero-length arrays)
-        ComponentId runesId = ComponentId.of("example:rune_inscription");
+        ComponentId runesId = ComponentId.of("example:inscription");
         ComponentId byteArrayId = ComponentId.of("example:byte_array");
         ComponentRegistry specialRegistry = ComponentRegistry.builder()
                 .register(runesId, ComponentCodec.STRING, "")

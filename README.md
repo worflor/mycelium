@@ -1,104 +1,111 @@
 # Mycelium
 
-Mycelium grows in the seams. Between one Minecraft version and the next, between Fabric and NeoForge and Forge, between
-what a mod means and what each platform lets it say, it threads through and carries that meaning across.
+**A build-time compatibility compiler you develop alongside your Minecraft mod.**
 
-**NAML: Not A Mod Loader.** (Also: Not Another Mod Loader.) Mycelium ships no runtime and replaces no loader. It lives
-between them, at development time, as the machine a mod builds with.
+Mycelium grows in the seams: between Minecraft versions, between loaders, and between a mod's intent and the platform
+that carries it. **NAML: Not A Mod Loader.** Imported models and bridges become private code under your mod's namespace;
+there is no shared Mycelium runtime to install.
 
-That machine is a compatibility compiler. A mod meets a divide (something true on one version or loader and different on
-another) and turns it into:
+Building with it has two parts:
 
-- **a declaration**: a pure model of what the mod means, with no Minecraft in it;
-- **laws and a rejection matrix**: what must hold on every target, and a broken implementation for each law, a
-  do-nothing one among them, that the harness must catch;
-- **era data**: what changes at which version, as rows the compiler reads;
-- **build-time compilers**: Gradle tasks that import the model under the mod's own namespace and emit each target's
-  artefacts;
-- **gates and evidence**: checks that fail the build, and a manifest in every jar of what ran and what did not.
+1. **Structure the mod around Mycelium.** Give feature logic a clear boundary from native platform code, and connect
+   the mod's build to a separate Mycelium checkout or fork.
+2. **Define the contracts the mod needs.** A contract states a feature's meaning across targets, with laws and tests.
+   Reuse an existing one when it is convenient and fits; otherwise build the declaration your feature needs.
 
-Mycelium is live. It grows with the mods that use it: when your mod meets a divide, you cross it here, once, for every
-target, and your mod uses the result in the same piece of work. It is built to be correct before it is friendly, because
-its main users are agents, and precision is a feature.
+Mycelium supplies the shared machinery: target selection from era data, private source imports, bridge selection,
+resource generation, Java compatibility gates, packaging, and evidence. Defining a contract is feature work: you
+supply its meaning, and the compiler handles the repeated compatibility work around it.
 
-## Building with it
+The compiler grows with each mod that builds on it. Add missing contracts or target realizations alongside the feature
+that needs them, in your own checkout or private fork. Upstream issues and pull requests are optional ways to
+contribute. The [building guide](docs/building-with-mycelium.md) explains the loop; the
+[contract index](contracts/README.md) contains examples, not prerequisites.
 
-1. Say what the mod means, without Minecraft. Write the laws and the broken implementations.
-2. Put version knowledge in `eras/`, not in code.
-3. Compile per-target artefacts from the declaration; do not branch by hand.
-4. Use it in the mod in the same piece of work, and prove it on every target.
-5. Gate and record: `./gradlew check`, and a `CHANGELOG.md` entry.
+## Connect the builds
 
-The playbook, with how to recognise a divide, is `docs/building-with-mycelium.md`. The packages in `contracts/` are
-worked examples of earlier crossings, not a shelf to choose from (`contracts/README.md`).
-
-## Starting a mod
+Keep Mycelium as a separate project beside your mod and include its Gradle plugin. The checkout may be upstream or
+your own fork:
 
 ```kotlin
 // settings.gradle.kts
-pluginManagement { includeBuild("../mycelium/gradle-plugin") }   // wherever your checkout is
-
-// build.gradle.kts
-plugins { id("dev.woflo.mycelium") }
-mycelium {
-    root = rootProject.file("../mycelium")
-    namespace = "com.example.mymod.mycelium"      // artifact-owned prefix
-    minecraft = "1.21.1"                          // the era: its Java, its gate, its evidence
-    // contracts, integration gates and the jar that ships are derived from your sources; checks { } sets a check's level
+pluginManagement {
+    includeBuild("../mycelium/gradle-plugin")
 }
 ```
 
-Everything the plugin does, and every option, is `docs/plugin.md`. Its tasks are `myceliumDeriveContracts`, `myceliumImport`, `myceliumVerify`,
-`myceliumBridgeImport`, `myceliumBridges`, `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>` (and `myceliumEras`),
-`myceliumPureShip`, `myceliumDowngradeJar`, `myceliumCapsule`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`,
-`myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta` and `myceliumEvidence`. For this repository alone: `myceliumBridgeLinkage` (every bridge variant against the game), `myceliumRepository`,
-`myceliumRecordProofs`, `myceliumRefreshVersions` and `myceliumRefreshNames`.
+```kotlin
+// build.gradle.kts — a loader's build plugin may already apply java
+plugins {
+    java
+    id("dev.woflo.mycelium")
+}
 
-To run this repository's own checks:
-
-```bash
-./gradlew check                                              # everything the repository promises
-./gradlew myceliumVerify -Pmycelium.contracts=world.copy@1   # one contract through the plugin
-bash run-contracts.sh                                        # every harness without Gradle (or .\run-contracts.ps1)
+mycelium {
+    root = rootProject.file("../mycelium")
+    namespace = "com.example.mymod.mycelium"
+    minecraft = "1.21.1"
+}
 ```
 
-Each harness prints the reference result, then every broken implementation `CAUGHT` or `MISSED` for its intended label,
-then `Result: PASS|FAIL`. A green exit is one input to acceptance, never the decision (`DESIGN.md` §11).
+Contract selection follows references in your sources. Bridges are selected when referenced or explicitly requested;
+loader-specific bridges also need `loader`. See the [plugin reference](docs/plugin.md) for configuration, generated
+resources, check levels, and jar packaging. Pin the checkout revision used by your build.
+
+## Build and verify Mycelium
+
+Use a JDK 17 or newer to run Gradle. Bridge linkage needs a toolchain as new as the newest era; Gradle provisions
+toolchains when needed. The first build may download dependencies, JDKs, and pinned game archives.
+
+```bash
+./gradlew check
+./gradlew myceliumVerify -Pmycelium.contracts=world.copy@1
+bash run-contracts.sh
+```
+
+On Windows, use `.\gradlew.bat` and `.\run-contracts.ps1`. The standalone runners check the harnesses only. Each reports
+the reference result and whether each broken implementation was `CAUGHT` for its intended label.
 
 | | |
 |---|---|
-| Status | Contract models and rejection matrices are checked by the repository build. |
-| Java | Contracts and harness: written for 17, proven on every Java an era runs on (`docs/eras.md`). Plugin: built for 17. |
-| Loaders | Whatever `eras/minecraft.json` lists for an era: Fabric, Quilt, NeoForge and Forge on modern versions, the Bukkit family (Spigot, Paper, Purpur, Folia) for plugins, and the loaders of older eras. The plugin knows none of them: each is a row of data. |
-| Dependencies | None at design time. The plugin uses Gson and ASM; era gates fetch JvmDowngrader and each era's JDK when needed; `myceliumBridgeLinkage` (this repository's gate) fetches Mojang's game archives for the versions it links. |
+| Status | Contracts: 21 packages, 326 rejection fixtures. `./gradlew check` runs the harnesses, era gates, bridge linkage, and repository checks. [Open work](docs/STATUS.md), [history](CHANGELOG.md). |
+| Java | Contract models and harness: Java 17 source, checked on every era's Java. Gradle plugin: Java 17 bytecode. See [era gates](docs/eras.md). |
+| Targets | `eras/minecraft.json` records version, Java, loader, naming, and realization data. An era row describes a target; it does not prove a mod or bridge works there. |
+| Dependencies | Contracts and harness use the JDK only. The plugin uses Gson and ASM; era gates resolve JvmDowngrader and JDKs as needed. Bridge linkage reads pinned game archives. |
 
-## What Mycelium does not claim
+### Task index
 
-- That a contract passing its harness behaves correctly in a real game. That is the mod's gametest evidence, per target.
-- That source portability implies save or protocol portability (`DESIGN.md` §8.6).
-- That every feature translates. Native work is first-class, and is tracked as native (`DESIGN.md` §4).
+The [plugin reference](docs/plugin.md#tasks) describes each task and its inputs.
 
-## Where to go next
-
-| You want | Read |
+| Purpose | Tasks |
 |---|---|
-| To work on this repository | `AGENTS.md` |
-| To cross a divide in a mod | `docs/building-with-mycelium.md` |
-| How the machine fits together | `docs/architecture.md` |
-| To use the plugin | `docs/plugin.md` |
-| What a good addition looks like | `docs/admission.md` |
-| What a contract package is made of | `CONTRACT-PACKAGE.md` |
-| What a bridge package is made of, and how to write one | `BRIDGE-PACKAGE.md` |
-| Worked examples of crossings | `contracts/README.md` |
-| Versions, eras and the pure layer's laws | `docs/eras.md` |
-| Optional integrations kept isolated | `docs/integrations.md` |
-| Why a choice was made | `docs/decisions/` |
-| What is open | `docs/STATUS.md` |
-| The founding design (v0.4, frozen) | `DESIGN.md` |
+| Select and import | `myceliumDeriveContracts`, `myceliumImport`, `myceliumBridgeImport` |
+| Check a mod | `myceliumVerify`, `myceliumBridges`, `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>`, `myceliumEras`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`, `myceliumCapsule` |
+| Generate and package | `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta`, `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumEvidence` |
+| Maintain this repository | `myceliumRepository`, `myceliumBridgeLinkage`, `myceliumRecordProofs`, `myceliumRefreshVersions`, `myceliumRefreshNames` |
+
+## Evidence and limits
+
+A passing harness proves the model and its rejection matrix. Linkage checks resolve references against pinned data.
+Neither proves behavior in a running game: that evidence comes from a consumer's game tests on each target.
+Source portability also does not establish save-file or protocol compatibility. Features that need native code retain
+the platform's full capabilities.
+
+## Documentation
+
+| Read | For |
+|---|---|
+| [Architecture](docs/architecture.md) | The layers, principles, and what each check proves |
+| [Building with Mycelium](docs/building-with-mycelium.md) | Crossing a version or loader divide |
+| [Plugin](docs/plugin.md) | Consumer configuration and tasks |
+| [Eras](docs/eras.md) | Version data, pure-layer laws, and Java gates |
+| [Integrations](docs/integrations.md) | Isolating optional mod dependencies |
+| [Contracts](CONTRACT-PACKAGE.md), [bridges](BRIDGE-PACKAGE.md) | Package formats and contribution rules |
+| [Admission](docs/admission.md), [AGENTS.md](AGENTS.md) | What belongs here and how to work on it |
+| [Decisions](docs/decisions/) | Dated rationale and evidence |
+| [Founding design](DESIGN.md) | The frozen design record; later decisions take precedence |
 
 ## License
 
-Mycelium is licensed under the [Mozilla Public License 2.0](LICENSE). The licence applies file by file: a mod built with
-Mycelium, including a paid or closed one, keeps its own licence, while Mycelium's files, and any changes made to them,
-stay under MPL-2.0 wherever they are carried, including contract models and stubs copied into a mod's jar. The licence
-grants no rights to the name Mycelium; a modified fork is published under a name of its own.
+[Mozilla Public License 2.0](LICENSE) (MPL-2.0), including Mycelium source imported into a consumer. See the license for
+its terms and source-distribution requirements.

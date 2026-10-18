@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-10-18 - Publish reusable compiler machinery deliberately
+
+- Clarified the two-part authoring model: structure the mod around Mycelium and define the contracts its features need.
+  Existing contracts are optional reuse; separate checkouts and private forks are ordinary development routes.
+- Scoped this repository to reusable compiler machinery and intentionally shared contracts. Consumer-owned feature
+  definitions remain in their own development tree under the same gates (decision 0022).
+- Refined the documentation around current behavior, evidence limits, and concise provenance. Updated the contract
+  index for the retained packages and used synthetic presentation and data-generation examples.
+- Preserved contract APIs, executable model code, law labels, rejection entries, and the founding architecture. Consumer source audits are redacted from publication editions; complete records remain private.
+- Edited the existing Git history to remove consumer feature content while retaining genuine development commits,
+  authors, dates, and useful branches. No replacement or scripted history was introduced.
+
+## 2026-10-13 - block.presentation@1: the Mosaic
+
+A block drawn from its block entity's data, declared once. Four independent parts with twenty-eight states each illustrate why compilation should avoid enumerating their product. `contracts/block-presentation/SPEC.md` has the model, laws M1 to M7, the matrix and
+examples; `docs/decisions/0019-mosaic-block-presentation.md` the reasoning.
+
+- **The contract.** A `Mosaic` is the Sigil's inputs over component fields and an ordered list of `Part`s (a guard, a model or template,
+  a quarter-turn); every part whose guard holds is drawn, in order. It requires `item.presentation@1` and is read by the Sigil's own
+  `Program` reader, so there is one guard language. The compiler writes the plan resource
+  (`META-INF/mycelium/presentation/<ns>/<path>.mosaic.plan.json`) with its **manifest**: exactly the models any state can draw.
+- **Laws.** M1 totality, M2 order and turn, M3 independence, M4 manifest (none missing, none extra), M5 projection (inputs only over
+  network-visible components), M6 determinism, M7 bounded **per part** (the cap applies to each part's span, checked before
+  enumeration, so independent parts cost their sum and not the product of every domain).
+- **Verification.** 8 broken compilers join the matrix (`ReversedTurn`, `SwappedOrder`, `ManifestOmitsTemplates`, `ManifestOverreach`,
+  `LeakyProjection`, `HashOrderEmitter`, `CapIgnoring`, `NoOpMosaic`); 40 seeded random mosaics are held to M1, M4 and M6.
+- **Era table.** `eras/minecraft.json`'s `realizations` gains a `block.presentation` table (`dynamic-model` from 1.14, `none` before), its
+  vocabulary in `Eras.VOCABULARY` beside `item.presentation`'s; the repository check holds it, like every table, to cover every real
+  version exactly once; `Eras.blockPresentationFor`.
+- **Plugin.** `myceliumPresentation` also compiles `*.mosaic.json` in the presentation sources (at any depth, as the item programs are)
+  through `MosaicTool`, beside the item programs; a mosaic is never an item program; the two contracts' compiled models are kept apart
+  (the task's work directory has one per contract), and `compilerSources` already tracks both contracts' models. A problem in either is
+  a `PR1` finding, one per distinct diagnostic, and a `warn` writes no presentation files and says how many items and mosaics have no
+  selection. Self-tests cover the block table (lookup, refusals, a gap, an overlap) and the task core on a fixture mosaic (compile,
+  determinism, a version with no mechanism, a server-private input).
+
 ## 2026-10-13 - data.generation@1: one view over catalogs that name one another
 
 New contract `data.generation@1` (`contracts/data-generation`), written for Cartomancy, requiring `data.catalog@1`: a
@@ -27,7 +63,7 @@ them, and published as one generation with one name, or not at all, the live gen
 ## 2026-10-13 - state.lifecycle@1: the lifecycle bridge, and bridges that split by loader
 
 `bridges/lifecycle` is the native half of the Threshold: `PlayerLifecycle`, a `LifecyclePort` that turns Fabric's, NeoForge's and Forge's events
-into the contract's crossings (decision 0013, "The bridge"; decision 0016, "Loader halves"). Somnium adopted it the same day (its session-state leaks are fixed on it), and the bridge's conformance cases and nine game tests pass on Fabric, NeoForge and Forge, 26.3 and 1.21.1: what the game taught is in decision 0013, "The bridge, as built".
+into the contract's crossings (decision 0013, "The bridge"; decision 0016, "Loader halves"). Somnium adopted it the same day (its session-state leaks are fixed on it), and the bridge's conformance cases and nine game tests pass on Fabric, NeoForge and Forge, 26.3 and 1.21.1: what the game taught is in decision 0013, "Bridge and release callbacks".
 
 - **The port** (additive in `@1`, SPEC section 5): `LifecyclePort<P, S>` gives a mod its registry, a `HostStore` for players and one for the server,
   `current(player)` (a `HostRef` while that object is the host's current one), `fire` and `cross` for its own transitions, and `write`, `materialize`
@@ -61,7 +97,7 @@ components, writes the era's selector, and writes the raw item data a display en
   selector, neighbours are kept, equal-state stacks stay equal, copy, save and sync, raw item data, an empty stack untouched.
 - **Plugin.** A mod's jar leaves the conformance data out (`shipConformanceResources()` keeps it) and, on request, the conformance
   classes (`conformanceClassesOutOfJar()`); presentation sources honour `myceliumDefaults`. A `conformance-consumer` fixture proves the modes.
-- Consumer conformance exercises the generated presentation resources.
+- **Somnium** adopted the generated presentation plans and runtime bridge (decision 0012).
 
 ## 2026-10-13 - world.clock@1: the bridges (native-clock, emulated-clock) and their proof in Somnium
 
@@ -223,11 +259,28 @@ and written back was a `CarrierSnapshot` unequal to the one it came from (T1). `
 remainder only when it holds something, and the record laws assert whole-snapshot equality. Found by Somnium's first
 record components; additive within `@1`.
 
+## 2026-10-12 - item.component@1: a record combinator
+
+`RecordCodec` joins `listOf` and `mapOf`: a mod declares a small record once (named fields, each with its codec, some
+optional) instead of hand-writing compound encode and decode. It is a `ComponentCodec` and a `FieldAwareCodec` at once, and
+`definition(id, default)` registers both, so fields a codec does not know survive decode, edit and encode (T9) with no new
+mechanism. A missing optional decodes as absent and is never written; a missing required field or a field of the wrong
+shape is a `CodecException`, which T5 already quarantines with the raw compound; fields and remainder are written in sorted
+order (T6). Additive within `@1`: law T12 (Record Fidelity) and four labels (`T12:record-remainder`,
+`T12:record-optional-absent`, `T12:record-malformed-rejected`, `T12:record-sorted`).
+
+Learned from Somnium: repeated field-by-field reads of small component records motivated the combinator.
+
+- **Verification:** four broken record bindings join the matrix (`RemainderDroppingRecords`, `AbsentWritingRecords`,
+  `ForgivingRecords`, `UnsortedRecords`), each caught by its own label, beside the six translators already there.
+
+Ran: `bash run-contracts.sh item-component` (clean, 10 rejections caught), `./gradlew check` (green).
+
 ## 2026-10-11 - item.component@1: Data Component <-> NBT Carrier Translation
 
 Added `item.component@1` (`contracts/item-component`): a pure, deterministic bidirectional translation and carrier model
 bridging modern Minecraft Data Components (1.20.5+) and legacy item NBT compounds (pre-1.20.5, specifically 1.20.1), written
-for consumers with immutable component definitions.
+for Cartomancy's typed item-state requirements.
 
 - **Pure Model:** `TagNode` algebraic data type representing NBT AST without Minecraft dependencies, `ComponentCodec<T>`,
   `ComponentDefinition<T>`, `ComponentRegistry`, and immutable `CarrierSnapshot`.
@@ -453,5 +506,3 @@ The existing laws, refusal types and request replay semantics are unchanged.
 
 Verification: the complete repository check passes with 115 rejection fixtures across 17 contracts. The agent-link
 reference and its 17 rejection entries pass on Java 8, 16, 17, 21 and 25; plugin self-tests pass 208 assertions.
-
-

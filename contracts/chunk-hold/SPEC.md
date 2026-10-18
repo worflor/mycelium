@@ -6,6 +6,8 @@ chunk, type and level, not one per holder. 26.3's `TicketStorage` matches ticket
 everyone. So two systems that each hold a chunk take each other's hold away the moment either lets go, and writes into
 that chunk fall into nothing.
 
+It was found in Somnium: one subsystem releasing a chunk ticket unloaded chunks another subsystem still needed.
+The contract separates each holder's claim from the engine's deduplicated ticket.
 
 ## Model
 
@@ -54,5 +56,5 @@ tickets go with it. Take every ticket of that type through the ledger: a single 
 bug back.
 
 Not covered: ticket levels as a range (a hold at radius 2 and another at radius 1 are different places here),
-simulation versus loading, persistence across restarts (a dream's holds never need it). Add them as a minor version
+simulation versus loading, persistence across restarts (outside the session-scoped requirement). Add them as a minor version
 when a consumer needs them.

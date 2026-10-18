@@ -1,22 +1,26 @@
 # How Mycelium works
 
-Mycelium is a compatibility compiler a mod builds with. A divide between versions or loaders becomes a declaration,
-laws that say what must hold, and generated per-target artefacts, with evidence of what held. It ships no runtime. It
-exists at development time, between a mod's intent and the loaders and versions that run it, and it grows with the mods
-that use it (`docs/decisions/0015-a-compiler-you-build-with.md`).
+Mycelium is a build-time compatibility compiler developed alongside a mod. A divide between versions or loaders becomes
+a declaration, laws that say what must hold, and generated per-target artefacts, with evidence of what held. It introduces no shared
+runtime. It exists at development time, between a mod's intent and the loaders and versions that run it, and grows with
+the mods that use it (`docs/decisions/0015-a-compiler-you-build-with.md`).
+
+The mod supplies its structure and behavioral contracts; Mycelium supplies the common compatibility machinery.
+Existing contracts are optional reuse. New declarations and realizations are developed with the feature in the mod's
+Mycelium checkout or private fork, so the compiler's capabilities grow through use. Upstream contribution is independent
+of that development loop.
 
 This page is the technical model. `README.md` is the front door, `docs/building-with-mycelium.md` is what to do when a
 mod meets a divide, and `DESIGN.md` is the founding record this page descends from.
 
 ## The anatomy of a crossing
 
-Every divide Mycelium has crossed has the same parts. The parts are the machine; the contracts in `contracts/` are what
-the machine produced.
+A crossing combines a pure declaration, explicit obligations, target data, and build-time verification.
 
 | Part | What it is | Where it lives |
 |---|---|---|
 | **Declaration** | A pure model of what the mod means, in plain Java, with no Minecraft types. Domain-specific: each divide gets its own precise model. | `model/` of a contract package |
-| **Laws** | Sentences that must hold on every target. Each one is a sentence a do-nothing implementation breaks. | the package's `SPEC.md` |
+| **Laws** | Obligations on every target, including positive behavior that a do-nothing implementation breaks. | the package's `SPEC.md` |
 | **Rejection matrix** | One broken implementation per law, ideally the bug a mod really made, and a `NoOp*`. The harness must catch every one for its own label. | `fixtures/` and `harness/` |
 | **Era data** | What changes at which version, as rows the compiler reads. Never numbers in code. | `eras/` (`docs/eras.md`) |
 | **Compilers** | Build-time tasks that import models, generate each target's artefacts, ship the jar. | `gradle-plugin/` (`docs/plugin.md`) |
@@ -35,13 +39,14 @@ The tower (`DESIGN.md` §5) keeps platform access in one layer, so everything el
 | L0 Intent | the mod | Authored behaviour, feel criteria, feature identifiers | no |
 | L1 Kernels | the mod's pure layer | Pure algorithms over explicit inputs | **never** |
 | L2 Contracts | **`contracts/`** | Typed, versioned declarations and their laws | **never** |
-| L2b Bridges | **`bridges/`** | The native half of a divide: one adapter per realization, imported as source for the target | yes, Mojang names, linked against every version it covers |
+| L2b Bridges | **`bridges/`** | The native half of a divide: one adapter per realization, imported as source for the target | yes; game references linked where name data is pinned; loader APIs checked by the consumer |
 | L3 Seams | the mod | Planning and composition, reaching the platform only through L2 | only through contracts |
 | L4 Providers | the mod, per loader and era | Native implementations and lifecycle binding: the platform-access layer | yes, with full power |
 | L5 Machine | **`gradle-plugin/`**, plus the mod's buildscripts | Import, verify, eras, isolation, evidence | n/a |
 | L6 Verification | contract harnesses; the mod's gametests | Rejection matrices, era gates, real-game evidence | test-time |
 
-Mycelium proper is L2 and L5. The rest lives in each mod. The goal of the whole arrangement is a small platform layer
+Mycelium owns the contract models, reusable bridges, and build machinery (L2, L2b, L5). Each mod owns its intent,
+kernels, composition, native extensions, and game-test evidence. The goal of the whole arrangement is a small platform layer
 and a large pure layer, with the pure layer proven on every era automatically (`docs/eras.md`).
 
 ## Principles
@@ -51,7 +56,8 @@ These are the invariants every change keeps. Each says what keeps it.
 1. **Claims discipline** (`DESIGN.md` §11, §14). A passing harness is design-time evidence: the reference model and the
    rejection matrix hold. It says nothing about a real game. Game-target evidence belongs to the mod, from its own
    gametests. The evidence manifest records what ran and what was not checked, with why, and never claims in-game
-   behaviour; neither may any document or commit here. *Kept by `myceliumEvidence` and review.*
+   behaviour. Documents may report attributed consumer observations, with their targets and limits; they do not extend
+   those observations to untested targets. *Kept by `myceliumEvidence` and review.*
 2. **A no-op fails every contract.** Safety alone is satisfiable by doing nothing, so every contract has laws a
    do-nothing implementation breaks (`DESIGN.md` §8.3). *Kept by `ContractRun`.*
 3. **No shared runtime.** Imported models live under each mod's own namespace, privately. Two mods pinning different
@@ -68,9 +74,9 @@ These are the invariants every change keeps. Each says what keeps it.
 7. **Everything stated is derived or checked.** If the repository says it, the build fails when it stops being true
    (`docs/decisions/0004-the-repository-checks-itself.md`). Prose is the one exception, and it follows the rules in
    `docs/admission.md`.
-8. **Correct over friendly.** Agents are Mycelium's main users, so precision is a feature: exact ids, strict readers
-   that refuse unknown fields, reports that say what they checked, gates that name the break. A convenient default that
-   hides a decision is a defect here.
+8. **Precision is part of the interface.** Exact ids, strict readers that refuse unknown fields, reports that say
+   what they checked, and gates that name the break make the machine usable by people and agents. A convenient default
+   that hides a decision is a defect here.
 9. **Offer, don't police** (`docs/decisions/0017-offer-dont-police.md`). Mycelium offers a mod its compiler, its proofs and
    its data; it does not stand between the mod and its own code. A check fails by default only for silent breakage (a build
    that would ship something that does not work and say nothing); every other check warns, and every check has a level and
@@ -123,6 +129,6 @@ carry the design:
 ## Relationship to the founding design
 
 `DESIGN.md` (v0.4) is the founding record: the thesis, the audit that motivated it, the tower, the first contract. It is
-frozen, and it stays accurate about why Mycelium exists. Decisions that go beyond it are in `docs/decisions/`, and where
-a decision and the design differ, the decision is current. The largest such step is decision 0015: the design's
+frozen as historical rationale rather than a description of every implemented capability. Decisions that go beyond it
+are in `docs/decisions/`, and where a decision and the design differ, the decision is current. The largest such step is decision 0015: the design's
 "promote a native pattern to a contract on evidence" became "grow Mycelium when a mod meets a divide".

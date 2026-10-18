@@ -18,12 +18,12 @@ final class Programs {
     private Programs() {
     }
 
-    /** The components a tool_state band and a spool read. {@code server_state} is server-private. */
+    /** The components a tool_state tool and a dial read. {@code server_state} is server-private. */
     static final String CATALOG_JSON = "{\"schema\": 1, \"components\": {"
-            + "\"example:tool_state\": {\"networkSynced\": true, \"fields\": {\"seams\": \"int\", \"cracks\": \"int\", \"broken\": \"bool\"}},"
+            + "\"example:tool_state\": {\"networkSynced\": true, \"fields\": {\"charge\": \"int\", \"wear\": \"int\", \"broken\": \"bool\"}},"
             + "\"example:server_state\": {\"networkSynced\": false, \"fields\": {\"deadline\": \"int\"}},"
-            + "\"example:spool\": {\"networkSynced\": true, \"fields\": {\"thread\": \"string\", \"tension\": \"int\"}},"
-            + "\"example:worn\": {\"networkSynced\": true, \"value\": \"string\"},"
+            + "\"example:dial\": {\"networkSynced\": true, \"fields\": {\"mode\": \"string\", \"unused_level\": \"int\"}},"
+            + "\"example:display_part\": {\"networkSynced\": true, \"value\": \"string\"},"
             + "\"minecraft:glider\": {\"networkSynced\": true, \"unit\": true}}}";
 
     static ComponentCatalog catalog() {
@@ -31,53 +31,53 @@ final class Programs {
     }
 
     private static final String BAND_INPUTS = "\"inputs\": {"
-            + "\"seams\": {\"component\": \"example:tool_state\", \"field\": \"seams\", \"domain\": {\"int\": [0, 3]}},"
-            + "\"cracks\": {\"component\": \"example:tool_state\", \"field\": \"cracks\", \"domain\": {\"int\": [0, 2]}},"
+            + "\"charge\": {\"component\": \"example:tool_state\", \"field\": \"charge\", \"domain\": {\"int\": [0, 3]}},"
+            + "\"wear\": {\"component\": \"example:tool_state\", \"field\": \"wear\", \"domain\": {\"int\": [0, 2]}},"
             + "\"broken\": {\"component\": \"example:tool_state\", \"field\": \"broken\", \"domain\": \"bool\"}}";
     static final String BROKEN = "{\"when\": {\"broken\": true}, \"model\": \"example:item/status_tool_broken\"}";
-    static final String MENDED = "{\"when\": {\"seams\": {\"min\": 1}}, \"model\": \"example:item/status_tool_mended_{seams}_cracked_{cracks}\"}";
-    static final String CRACKED = "{\"when\": {\"cracks\": {\"min\": 1}}, \"model\": \"example:item/status_tool_cracked_{cracks}\"}";
-    static final String PRIME = "{\"when\": {\"seams\": 3, \"cracks\": 2, \"broken\": false}, \"model\": \"example:item/status_tool_aaa_prime\"}";
+    static final String MENDED = "{\"when\": {\"charge\": {\"min\": 1}}, \"model\": \"example:item/status_tool_charged_{charge}_worn_{wear}\"}";
+    static final String CRACKED = "{\"when\": {\"wear\": {\"min\": 1}}, \"model\": \"example:item/status_tool_worn_{wear}\"}";
+    static final String PRIME = "{\"when\": {\"charge\": 3, \"wear\": 2, \"broken\": false}, \"model\": \"example:item/status_tool_aaa_prime\"}";
 
-    /** The tool_state band: seams 0 to 3, cracks 0 to 2, and broken. Twelve selections and the base. */
-    static String bandText(String... cases) {
+    /** The tool_state tool: charge 0 to 3, wear 0 to 2, and broken. Twelve selections and the base. */
+    static String toolText(String... cases) {
         return "{\"item\": \"example:status_tool\", \"base\": \"example:item/status_tool_base\", " + BAND_INPUTS
                 + ", \"cases\": [" + String.join(", ", cases) + "]}";
     }
 
-    static Program band() {
-        return parse(bandText(BROKEN, MENDED, CRACKED));
+    static Program tool() {
+        return parse(toolText(BROKEN, MENDED, CRACKED));
     }
 
-    /** The band with a case added in front, whose model sorts before every other. */
-    static Program bandExtended() {
-        return parse(bandText(PRIME, BROKEN, MENDED, CRACKED));
+    /** The tool with a case added in front, whose model sorts before every other. */
+    static Program toolExtended() {
+        return parse(toolText(PRIME, BROKEN, MENDED, CRACKED));
     }
 
-    /** The band with a case taken away. */
-    static Program bandReduced() {
-        return parse(bandText(BROKEN, MENDED));
+    /** The tool with a case taken away. */
+    static Program toolReduced() {
+        return parse(toolText(BROKEN, MENDED));
     }
 
-    /** The band written with its inputs and guards in another order: the same program. */
-    static Program bandReordered() {
-        return parse("{\"cases\": [" + BROKEN + ", {\"model\": \"example:item/status_tool_mended_{seams}_cracked_{cracks}\", \"when\": {\"seams\": {\"min\": 1}}}, "
+    /** The tool written with its inputs and guards in another order: the same program. */
+    static Program toolReordered() {
+        return parse("{\"cases\": [" + BROKEN + ", {\"model\": \"example:item/status_tool_charged_{charge}_worn_{wear}\", \"when\": {\"charge\": {\"min\": 1}}}, "
                 + CRACKED + "], \"base\": \"example:item/status_tool_base\", \"item\": \"example:status_tool\", \"inputs\": {"
                 + "\"broken\": {\"domain\": \"bool\", \"field\": \"broken\", \"component\": \"example:tool_state\"},"
-                + "\"cracks\": {\"domain\": {\"int\": [0, 2]}, \"field\": \"cracks\", \"component\": \"example:tool_state\"},"
-                + "\"seams\": {\"domain\": {\"int\": [0, 3]}, \"field\": \"seams\", \"component\": \"example:tool_state\"}}}");
+                + "\"wear\": {\"domain\": {\"int\": [0, 2]}, \"field\": \"wear\", \"component\": \"example:tool_state\"},"
+                + "\"charge\": {\"domain\": {\"int\": [0, 3]}, \"field\": \"charge\", \"component\": \"example:tool_state\"}}}");
     }
 
-    /** A spool: an enum, a unit component, and an input no case reads. The first matching case wins. */
-    static Program spool() {
-        return parse("{\"item\": \"example:spool\", \"base\": \"example:item/spool_base\", \"inputs\": {"
-                + "\"thread\": {\"component\": \"example:spool\", \"field\": \"thread\", \"domain\": {\"enum\": [\"none\", \"loose\", \"taut\"]}},"
+    /** A dial: an enum, a unit component, and an input no case reads. The first matching case wins. */
+    static Program dial() {
+        return parse("{\"item\": \"example:dial\", \"base\": \"example:item/dial_base\", \"inputs\": {"
+                + "\"mode\": {\"component\": \"example:dial\", \"field\": \"mode\", \"domain\": {\"enum\": [\"none\", \"idle\", \"active\"]}},"
                 + "\"lit\": {\"component\": \"minecraft:glider\", \"domain\": \"present\"},"
-                + "\"tension\": {\"component\": \"example:spool\", \"field\": \"tension\", \"domain\": {\"int\": [0, 1000000]}}},"
+                + "\"unused_level\": {\"component\": \"example:dial\", \"field\": \"unused_level\", \"domain\": {\"int\": [0, 1000000]}}},"
                 + "\"cases\": ["
-                + "{\"when\": {\"lit\": true, \"thread\": [\"loose\", \"taut\"]}, \"model\": \"example:item/spool_lit_{thread}\"},"
-                + "{\"when\": {\"thread\": \"taut\"}, \"model\": \"example:item/spool_taut\"},"
-                + "{\"when\": {\"thread\": \"loose\"}, \"model\": \"example:item/spool_loose\"}]}");
+                + "{\"when\": {\"lit\": true, \"mode\": [\"idle\", \"active\"]}, \"model\": \"example:item/dial_lit_{mode}\"},"
+                + "{\"when\": {\"mode\": \"active\"}, \"model\": \"example:item/dial_active\"},"
+                + "{\"when\": {\"mode\": \"idle\"}, \"model\": \"example:item/dial_idle\"}]}");
     }
 
     /** A program with these inputs and cases, for the ones that test one thing. */

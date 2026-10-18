@@ -1,5 +1,8 @@
 # data.generation@1
 
+One coherent, named view over several catalogs that name one another, published whole or not at all. Related catalogs
+are validated together, and a consumer can identify the exact generation an operation read. Written for Cartomancy;
+the examples below are synthetic.
 
 | | |
 |---|---|

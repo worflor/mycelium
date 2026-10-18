@@ -1,46 +1,41 @@
-# Status board
+# Open work
 
-Known work, loose ends and warnings worth keeping visible. It is a board, not a roadmap: work happens without ever
-appearing here, and an item leaves when it is done. What is true of the repository is checked by `./gradlew check`; the
-counts are on `README.md`'s status line. History is `CHANGELOG.md`.
+Implementation gaps and evidence still needed. Completed work belongs in [CHANGELOG.md](../CHANGELOG.md); design
+rationale belongs in [decisions](decisions/). This board does not define the full scope of the project.
 
-## In flight
+## Bridges and game evidence
 
-- **`world.clock@1` bridge: what is not yet run or built.** `native-clock` and `emulated-clock` are built (`bridges/world-clock`) and
-  linked on every version with name data; conformance has run in Somnium on 26.3 and 1.21.1 only (decision 0018, "Evidence"). Not
-  built: `emulated-clock-takeover` (optional); `ClockConformance.sleeping` (a real sleeper) has no harness that makes the server
-  count a mock player as sleeping. Not run in a game: 26.1, 26.2 and the pre-26.1 versions other than 1.21.1.
+- **World clocks:** `native-clock` and `emulated-clock` have linkage coverage where name data is pinned. Recorded
+  consumer conformance covers 26.3 and 1.21.1; other versions still need game runs. `ClockConformance.sleeping` needs a
+  harness whose player the server counts as sleeping. The optional `emulated-clock-takeover` remains unbuilt.
+  [Decision 0018](decisions/0018-world-clock.md) records the limits and prerequisites.
+- **Item presentation:** recorded consumer game runs cover 26.3 and 1.21.1. Other versions covered by the bridge still
+  need game evidence. [Decision 0012](decisions/0012-sigil-item-presentation.md).
+- **Lifecycle:** the bridge covers player and server hosts on the ranges in `eras/minecraft.json`; entity and level
+  hosts and the intervening version ranges need implementations. Loader API references are compiled by consumers,
+  outside Mycelium's game-only linkage gate. Conformance drives player removal and the bridge's stop method; a real
+  client disconnect and server shutdown still need evidence. [Decision 0013](decisions/0013-threshold-state-lifecycle.md).
 
-- **The Sigil in Somnium: adopted** (`docs/decisions/0012-sigil-item-presentation.md`, "Somnium, adopted"). Not run in a game: 26.1, 26.2 and 1.14 to 1.21.3
-  other than 1.21.1 (linked, not played). The conformance classes still ship in a mod's jar unless it opts them out.
+## Build tooling
 
+- **Slot registry validation at build time:** `SlotRegistry.of` validates declarations when constructed. A Gradle task
+  that runs the check on a consumer's declarations is not implemented.
+- **Presentation fixture automation:** `gradle-plugin/src/test/fixtures/presentation-consumer` checks task wiring and
+  packaging when run separately. The plugin self-test exercises the compiler but does not build this fixture.
+- **Overlays inside one jar:** `overlays { }` selects a resource directory for a target. Generation of `pack.mcmeta`
+  overlays for a jar spanning resource schemas is not implemented.
+- **Range evidence from test runs:** keystones are declared by the consumer. The plugin cannot infer which game tests
+  ran; ranges without keystones warn and remain `interpolated`.
+- **Local contract incubation:** a `localContracts` input would let a mod develop a package under the same gates before
+  moving it upstream. Until then, develop packages in the separate Mycelium checkout or fork the mod builds with.
+  [Decision 0015](decisions/0015-a-compiler-you-build-with.md).
 
-## Not built
+## Data and verification
 
-- **Overlays inside one jar.** `mycelium { overlays { } }` chooses a resource directory per schema era; the game's own
-  `overlays` in `pack.mcmeta` (one jar serving several pack formats, `supported_formats` ranges across a wall) is not
-  generated. `myceliumPackMeta` writes one target's `pack.mcmeta`.
-- **Range proofs from test runs.** The plugin cannot see which versions a mod's tests ran on, so keystones are still
-  declared; a range with none warns (R1) and its versions stay `interpolated` (decision 0017, item 4).
-- **Pack formats for versions that have no jar here.** The `packFormat` rows marked `wiki` in `eras/minecraft.json` were read
-  from minecraft.wiki's table, not a game jar; the others match the game's own `version.json`.
-- **Incubating a package in the mod that needs it.** A `localContracts` input to the plugin, so a mod can develop a
-  package under the same gates in its own repository before it moves here (decision 0015). Until it exists, the package
-  is written here, in the same piece of work as the mod's use of it.
-- **Rungs.** Platform ports, each when a mod needs it: 1.20.1 (Fabric, Forge); 1.18.2; 1.16.5 (Java 8); 1.12.2 (Forge,
-  Legacy Fabric; no data packs); 1.7.10; Beta 1.7.3. The era table already covers every one; what is missing is the
-  platform layer of a mod running there (`docs/eras.md`, `docs/reference/porting-lessons.md`).
-
-## Open questions
-
-- Contract format and corpus storage beyond a file tree and a registry (`DESIGN.md` §15).
-- Where each of the design's gates (`DESIGN.md` §14) stands against real mods. It is recorded in `CHANGELOG.md` and
-  `docs/decisions/` as it moves.
-
-## Warnings
-
-- The contract index (`contracts/README.md`) is prose. Nothing fails when a package is missing from it.
-- Comments in the plugin's source cite `docs/eras.md` sections that have since moved to `docs/plugin.md` (shipping,
-  downgrading, the portability surface). The behaviour is unchanged; the pointers are slightly off.
-- Several mods build on Mycelium at once, and so do several agents. A change in place to a package's meaning reaches all
-  of them; make it a new major.
+- **Pack formats:** rows marked `wiki` in `eras/minecraft.json` need verification against game jars. Other rows cite
+  the game's `version.json`.
+- **Platform ports:** era coverage is data coverage. A mod reaches another target only when its platform layer and
+  full game suite run there; see [porting lessons](reference/porting-lessons.md).
+- **Contract index:** `contracts/README.md` is maintained by review; the repository gate checks the registry and package
+  tree, not completeness of the prose index.
+- **Corpus storage:** storage beyond the file tree and registry remains an open design question from `DESIGN.md` §15.

@@ -59,10 +59,10 @@ public final class SigilContractTests {
     }
 
     public Check run() {
-        program(Programs.band(), "band");
-        program(Programs.spool(), "spool");
-        program(Programs.mini("example:panel", "example:item/panel_base", "", "{\"model\": \"example:item/panel_lit\"}"), "constant");
-        program(Programs.mini("example:panel", "example:item/panel_base", "", ""), "empty");
+        program(Programs.tool(), "tool");
+        program(Programs.dial(), "dial");
+        program(Programs.mini("example:lamp", "example:item/lamp_base", "", "{\"model\": \"example:item/lamp_lit\"}"), "constant");
+        program(Programs.mini("example:lamp", "example:item/lamp_base", "", ""), "empty");
         stableCodes();
         projection();
         bounded();
@@ -236,8 +236,8 @@ public final class SigilContractTests {
     // --- S3: the lock ------------------------------------------------------------------------------------------------
 
     private void stableCodes() {
-        Program p1 = Programs.band();
-        Program p2 = Programs.bandExtended();
+        Program p1 = Programs.tool();
+        Program p2 = Programs.toolExtended();
         String item = p1.item();
         Lock l1 = lockFor(p1);
         Compilation.Compiled first = compiled(p1, l1, LEGACY, "S3 first");
@@ -294,7 +294,7 @@ public final class SigilContractTests {
             }
         }
         // a selection the program stops producing keeps its code, and the code draws the base
-        Program p3 = Programs.bandReduced();
+        Program p3 = Programs.toolReduced();
         Compilation.Compiled reduced = compiled(p3, l1, LEGACY, "S2 retired");
         Compilation.Compiled reducedModern = compiled(p3, l1, MODERN, "S2 retired");
         if (reduced != null && reducedModern != null) {
@@ -332,7 +332,7 @@ public final class SigilContractTests {
         expectRejected(secret, Diagnostic.Kind.SERVER_PRIVATE, "S5:server-private-rejected");
         // an input declared but never read is still an input over a component the client does not have
         Program unread = Programs.mini("example:probe", "example:item/probe", leaked
-                + ", \"mood\": {\"component\": \"example:spool\", \"field\": \"thread\", \"domain\": {\"enum\": [\"a\", \"b\"]}}",
+                + ", \"mood\": {\"component\": \"example:dial\", \"field\": \"mode\", \"domain\": {\"enum\": [\"a\", \"b\"]}}",
                 "{\"when\": {\"mood\": \"a\"}, \"model\": \"example:item/a\"}");
         expectRejected(unread, Diagnostic.Kind.SERVER_PRIVATE, "S5:server-private-rejected");
 
@@ -343,7 +343,7 @@ public final class SigilContractTests {
                 "\"x\": {\"component\": \"example:tool_state\", \"field\": \"nope\", \"domain\": \"bool\"}", "{\"when\": {\"x\": true}, \"model\": \"example:item/a\"}"),
                 Diagnostic.Kind.CATALOG, "S5:unknown-component-rejected");
         expectRejected(Programs.mini("example:probe", "example:item/probe",
-                "\"x\": {\"component\": \"example:tool_state\", \"field\": \"seams\", \"domain\": \"bool\"}", "{\"when\": {\"x\": true}, \"model\": \"example:item/a\"}"),
+                "\"x\": {\"component\": \"example:tool_state\", \"field\": \"charge\", \"domain\": \"bool\"}", "{\"when\": {\"x\": true}, \"model\": \"example:item/a\"}"),
                 Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
         expectRejected(Programs.mini("example:probe", "example:item/probe",
                 "\"x\": {\"component\": \"example:tool_state\", \"domain\": \"present\"}", "{\"when\": {\"x\": true}, \"model\": \"example:item/a\"}"),
@@ -353,14 +353,14 @@ public final class SigilContractTests {
                 Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
 
         // the catalog is held to the registry it describes
-        record Keep(int seams, boolean broken) {
+        record Keep(int charge, boolean broken) {
         }
-        RecordCodec.Field<Keep, Integer> seams = RecordCodec.field("seams", ComponentCodec.INT, Keep::seams);
+        RecordCodec.Field<Keep, Integer> charge = RecordCodec.field("charge", ComponentCodec.INT, Keep::charge);
         RecordCodec.Field<Keep, Boolean> broken = RecordCodec.field("broken", ComponentCodec.BOOLEAN, Keep::broken);
-        RecordCodec<Keep> codec = RecordCodec.of(r -> new Keep(r.get(seams), r.get(broken)), seams, broken);
+        RecordCodec<Keep> codec = RecordCodec.of(r -> new Keep(r.get(charge), r.get(broken)), charge, broken);
         ComponentId id = ComponentId.of("example:tool_state");
         ComponentDefinition<Keep> visible = codec.definition(id, new Keep(0, false));
-        String claim = "{\"schema\": 1, \"components\": {\"example:tool_state\": {\"networkSynced\": true, \"fields\": {\"seams\": \"int\", \"broken\": \"bool\"}}}}";
+        String claim = "{\"schema\": 1, \"components\": {\"example:tool_state\": {\"networkSynced\": true, \"fields\": {\"charge\": \"int\", \"broken\": \"bool\"}}}}";
         ComponentCatalog claimed = ((Result.Ok<ComponentCatalog>) ComponentCatalog.parse(claim)).value();
         ComponentRegistry honest = ComponentRegistry.builder().register(visible).build();
         ComponentRegistry hidden = ComponentRegistry.builder().register(visible.withNetworkSynced(false)).build();
@@ -391,8 +391,8 @@ public final class SigilContractTests {
     // --- S7: bounded -------------------------------------------------------------------------------------------------
 
     private void bounded() {
-        String huge = "\"a\": {\"component\": \"example:tool_state\", \"field\": \"seams\", \"domain\": {\"int\": [0, 2000000000]}},"
-                + "\"b\": {\"component\": \"example:tool_state\", \"field\": \"cracks\", \"domain\": {\"int\": [0, 2000000000]}}";
+        String huge = "\"a\": {\"component\": \"example:tool_state\", \"field\": \"charge\", \"domain\": {\"int\": [0, 2000000000]}},"
+                + "\"b\": {\"component\": \"example:tool_state\", \"field\": \"wear\", \"domain\": {\"int\": [0, 2000000000]}}";
         Program big = Programs.mini("example:probe", "example:item/probe", huge,
                 "{\"when\": {\"a\": {\"min\": 1}, \"b\": {\"min\": 1}}, \"model\": \"example:item/a\"}");
         Compilation result;
@@ -409,7 +409,7 @@ public final class SigilContractTests {
         }
 
         int cap = compiler.maxTuples();
-        String ranged = "\"n\": {\"component\": \"example:tool_state\", \"field\": \"seams\", \"domain\": {\"int\": [0, " + (cap - 1) + "]}}";
+        String ranged = "\"n\": {\"component\": \"example:tool_state\", \"field\": \"charge\", \"domain\": {\"int\": [0, " + (cap - 1) + "]}}";
         String one = "{\"when\": {\"n\": 7}, \"model\": \"example:item/seven\"}";
         Program atCap = Programs.mini("example:probe", "example:item/probe", ranged, one);
         Compilation ok = compiler.compile(atCap, lockFor(atCap), catalog, MODERN);
@@ -423,12 +423,12 @@ public final class SigilContractTests {
     // --- S6: determinism ---------------------------------------------------------------------------------------------
 
     private void determinism() {
-        Program p = Programs.band();
+        Program p = Programs.tool();
         Lock lock = lockFor(p);
         Compilation.Compiled base = compiled(p, lock, MODERN, "S6");
         Compilation.Compiled baseLegacy = compiled(p, lock, LEGACY, "S6");
-        Compilation.Compiled reordered = compiled(Programs.bandReordered(), lock, MODERN, "S6 reordered");
-        Compilation.Compiled reorderedLegacy = compiled(Programs.bandReordered(), lock, LEGACY, "S6 reordered");
+        Compilation.Compiled reordered = compiled(Programs.toolReordered(), lock, MODERN, "S6 reordered");
+        Compilation.Compiled reorderedLegacy = compiled(Programs.toolReordered(), lock, LEGACY, "S6 reordered");
         if (base != null && reordered != null && baseLegacy != null && reorderedLegacy != null) {
             ok(base.artefacts().equals(reordered.artefacts()) && baseLegacy.artefacts().equals(reorderedLegacy.artefacts()),
                     "S6:declaration-order-independent", () -> "a program written with its inputs in another order compiles to other bytes");
@@ -453,43 +453,43 @@ public final class SigilContractTests {
     // --- evaluation: what the cases mean -----------------------------------------------------------------------------
 
     private void evaluation() {
-        Program spool = Programs.spool();
+        Program dial = Programs.dial();
         Map<String, Object> tuple = new LinkedHashMap<>();
         tuple.put("lit", Boolean.TRUE);
-        tuple.put("thread", "taut");
-        ok(Evaluator.evaluate(spool, tuple).equals("example:item/spool_lit_taut"), "S1:first-match-wins",
-                () -> "a stack matching two cases drew " + Evaluator.evaluate(spool, tuple));
+        tuple.put("mode", "active");
+        ok(Evaluator.evaluate(dial, tuple).equals("example:item/dial_lit_active"), "S1:first-match-wins",
+                () -> "a stack matching two cases drew " + Evaluator.evaluate(dial, tuple));
         tuple.put("lit", Boolean.FALSE);
-        ok(Evaluator.evaluate(spool, tuple).equals("example:item/spool_taut"), "S1:first-match-wins", () -> "the second case was not reached");
-        tuple.put("thread", "none");
-        ok(Evaluator.evaluate(spool, tuple).equals(spool.base()), "S1:base-when-no-case", () -> "no case applies, and " + Evaluator.evaluate(spool, tuple) + " was drawn");
+        ok(Evaluator.evaluate(dial, tuple).equals("example:item/dial_active"), "S1:first-match-wins", () -> "the second case was not reached");
+        tuple.put("mode", "none");
+        ok(Evaluator.evaluate(dial, tuple).equals(dial.base()), "S1:base-when-no-case", () -> "no case applies, and " + Evaluator.evaluate(dial, tuple) + " was drawn");
 
-        ok(spool.pruned().inputs().size() == 2 && spool.input("tension") != null && !spool.readNames().contains("tension"),
-                "S1:unread-input-dropped", () -> "the input no case reads stayed in the plan: " + spool.pruned().inputs());
-        Compilation.Compiled done = compiled(spool, lockFor(spool), LEGACY, "unread");
+        ok(dial.pruned().inputs().size() == 2 && dial.input("unused_level") != null && !dial.readNames().contains("unused_level"),
+                "S1:unread-input-dropped", () -> "the input no case reads stayed in the plan: " + dial.pruned().inputs());
+        Compilation.Compiled done = compiled(dial, lockFor(dial), LEGACY, "unread");
         if (done != null) {
             ok(done.plan().program().inputs().size() == 2, "S1:unread-input-dropped", () -> "the plan keeps inputs " + done.plan().program().inputs());
             // the plan, not only the oracle, takes the first matching case and falls to the base when none matches
             Map<String, Object> both = new LinkedHashMap<>();
             both.put("lit", Boolean.TRUE);
-            both.put("thread", "taut");
-            ok(done.plan().select(both).model().equals("example:item/spool_lit_taut"), "S1:first-match-wins",
+            both.put("mode", "active");
+            ok(done.plan().select(both).model().equals("example:item/dial_lit_active"), "S1:first-match-wins",
                     () -> "the plan drew " + done.plan().select(both).model() + " for a stack matching two cases");
             both.put("lit", Boolean.FALSE);
-            ok(done.plan().select(both).model().equals("example:item/spool_taut"), "S1:first-match-wins",
+            ok(done.plan().select(both).model().equals("example:item/dial_active"), "S1:first-match-wins",
                     () -> "the plan did not reach the second case: " + done.plan().select(both).model());
-            both.put("thread", "none");
+            both.put("mode", "none");
             Selection noCase = done.plan().select(both);
-            ok(noCase.isBase() && noCase.model().equals(spool.base()) && noCase.inDomain(), "S1:base-when-no-case",
+            ok(noCase.isBase() && noCase.model().equals(dial.base()) && noCase.inDomain(), "S1:base-when-no-case",
                     () -> "the plan drew " + noCase + " for a tuple no case matches");
-            Selection noCaseRead = done.plan().select(new Programs.MapView().with("example:spool", "thread", "none"));
+            Selection noCaseRead = done.plan().select(new Programs.MapView().with("example:dial", "mode", "none"));
             ok(noCaseRead.isBase() && noCaseRead.inDomain(), "S1:base-when-no-case", () -> "a stack no case matches drew " + noCaseRead);
-            Programs.MapView stale = new Programs.MapView().with("example:spool", "thread", "taut").with("example:spool", "tension", Long.valueOf(999999));
-            ok(done.plan().select(stale).model().equals("example:item/spool_taut"), "S1:unread-input-dropped", () -> "an unread input changed the selection");
-            Programs.MapView bogus = new Programs.MapView().with("example:spool", "thread", "frayed");
+            Programs.MapView stale = new Programs.MapView().with("example:dial", "mode", "active").with("example:dial", "unused_level", Long.valueOf(999999));
+            ok(done.plan().select(stale).model().equals("example:item/dial_active"), "S1:unread-input-dropped", () -> "an unread input changed the selection");
+            Programs.MapView bogus = new Programs.MapView().with("example:dial", "mode", "unknown");
             Selection out = done.plan().select(bogus);
             ok(out.isBase() && !out.inDomain(), "S1:out-of-domain-draws-base", () -> "a state outside the domain drew " + out);
-            Programs.MapView wrongKind = new Programs.MapView().with("example:spool", "thread", Long.valueOf(3));
+            Programs.MapView wrongKind = new Programs.MapView().with("example:dial", "mode", Long.valueOf(3));
             Selection kind = done.plan().select(wrongKind);
             ok(kind.isBase() && !kind.inDomain(), "S1:out-of-domain-draws-base", () -> "a value of the wrong kind drew " + kind);
             Selection nothing = done.plan().select(new Programs.MapView());
@@ -500,7 +500,7 @@ public final class SigilContractTests {
     // --- the target --------------------------------------------------------------------------------------------------
 
     private void realization() {
-        Program p = Programs.band();
+        Program p = Programs.tool();
         Compilation none = compiler.compile(p, lockFor(p), catalog, new Target("1.12.2", Realization.NONE));
         ok(none instanceof Compilation.Rejected r && r.diagnostics().get(0).kind() == Diagnostic.Kind.NO_REALIZATION
                 && r.diagnostics().get(0).message().contains("1.12.2"), "R1:no-realization-rejected", () -> "a version with no mechanism gave " + none);
@@ -562,18 +562,18 @@ public final class SigilContractTests {
     // --- an adapter over real components -----------------------------------------------------------------------------
 
     private void adapter() {
-        record Keep(int seams, boolean broken) {
+        record Keep(int charge, boolean broken) {
         }
-        RecordCodec.Field<Keep, Integer> seams = RecordCodec.field("seams", ComponentCodec.INT, Keep::seams);
+        RecordCodec.Field<Keep, Integer> charge = RecordCodec.field("charge", ComponentCodec.INT, Keep::charge);
         RecordCodec.Field<Keep, Boolean> broken = RecordCodec.field("broken", ComponentCodec.BOOLEAN, Keep::broken);
-        RecordCodec<Keep> codec = RecordCodec.of(r -> new Keep(r.get(seams), r.get(broken)), seams, broken);
+        RecordCodec<Keep> codec = RecordCodec.of(r -> new Keep(r.get(charge), r.get(broken)), charge, broken);
         ComponentDefinition<Keep> definition = codec.definition(ComponentId.of("example:tool_state"), new Keep(0, false));
         ComponentRegistry registry = ComponentRegistry.builder().register(definition).build();
         Program p = Programs.mini("example:keep", "example:item/keep_base",
-                "\"seams\": {\"component\": \"example:tool_state\", \"field\": \"seams\", \"domain\": {\"int\": [0, 3]}},"
+                "\"charge\": {\"component\": \"example:tool_state\", \"field\": \"charge\", \"domain\": {\"int\": [0, 3]}},"
                         + "\"broken\": {\"component\": \"example:tool_state\", \"field\": \"broken\", \"domain\": \"bool\"}",
                 "{\"when\": {\"broken\": true}, \"model\": \"example:item/keep_broken\"},"
-                        + "{\"when\": {\"seams\": {\"min\": 1}}, \"model\": \"example:item/keep_{seams}\"}");
+                        + "{\"when\": {\"charge\": {\"min\": 1}}, \"model\": \"example:item/keep_{charge}\"}");
         Compilation.Compiled done = compiled(p, lockFor(p), LEGACY, "adapter");
         if (done == null) {
             return;
@@ -584,12 +584,12 @@ public final class SigilContractTests {
                 Selection sel = done.plan().select(new CarrierView(snapshot, registry, catalog));
                 Map<String, Object> tuple = new LinkedHashMap<>();
                 tuple.put("broken", Boolean.valueOf(b));
-                tuple.put("seams", Long.valueOf(s));
+                tuple.put("charge", Long.valueOf(s));
                 String expected = Evaluator.evaluate(p, tuple);
-                final int seamsNow = s;
+                final int chargeNow = s;
                 final boolean brokenNow = b;
                 ok(sel.model().equals(expected) && sel.inDomain(), "S2:carrier-view-agrees",
-                        () -> "seams " + seamsNow + ", broken " + brokenNow + " read from a carrier snapshot drew " + sel + ", not " + expected);
+                        () -> "charge " + chargeNow + ", broken " + brokenNow + " read from a carrier snapshot drew " + sel + ", not " + expected);
             }
         }
         Selection plain = done.plan().select(new CarrierView(CarrierSnapshot.empty(), registry, catalog));
@@ -600,17 +600,17 @@ public final class SigilContractTests {
 
     /** A component that is one string (Rosetta's {@code withoutDefault}) is read with no field, and held to its kind. */
     private void scalars() {
-        ComponentDefinition<String> worn = ComponentDefinition.withoutDefault(ComponentId.of("example:worn"), ComponentCodec.STRING);
+        ComponentDefinition<String> worn = ComponentDefinition.withoutDefault(ComponentId.of("example:display_part"), ComponentCodec.STRING);
         ComponentRegistry registry = ComponentRegistry.builder().register(worn).build();
-        Program p = Programs.mini("example:spool", "example:item/spool_base",
-                "\"part\": {\"component\": \"example:worn\", \"domain\": {\"enum\": [\"spool\", \"thread\", \"thread_end\"]}}",
-                "{\"when\": {\"part\": \"thread\"}, \"model\": \"example:item/thread\"},"
-                        + "{\"when\": {\"part\": \"thread_end\"}, \"model\": \"example:item/thread_end\"}");
+        Program p = Programs.mini("example:dial", "example:item/dial_base",
+                "\"part\": {\"component\": \"example:display_part\", \"domain\": {\"enum\": [\"dial\", \"mode\", \"indicator\"]}}",
+                "{\"when\": {\"part\": \"mode\"}, \"model\": \"example:item/mode\"},"
+                        + "{\"when\": {\"part\": \"indicator\"}, \"model\": \"example:item/indicator\"}");
         Compilation.Compiled done = compiled(p, lockFor(p), MODERN, "scalar");
         if (done == null) {
             return;
         }
-        for (String part : new String[] {"spool", "thread", "thread_end"}) {
+        for (String part : new String[] {"dial", "mode", "indicator"}) {
             CarrierSnapshot snapshot = CarrierSnapshot.builder().with(worn, part).build();
             Selection sel = done.plan().select(new CarrierView(snapshot, registry, catalog));
             Map<String, Object> tuple = new LinkedHashMap<>();
@@ -621,44 +621,44 @@ public final class SigilContractTests {
         }
         Selection plain = done.plan().select(new CarrierView(CarrierSnapshot.empty(), registry, catalog));
         ok(plain.isBase() && plain.inDomain(), "S1:absent-component-reads-default", () -> "a stack without the scalar read as " + plain);
-        Selection stray = done.plan().select(new CarrierView(CarrierSnapshot.builder().with(worn, "band").build(), registry, catalog));
+        Selection stray = done.plan().select(new CarrierView(CarrierSnapshot.builder().with(worn, "tool").build(), registry, catalog));
         ok(stray.isBase() && !stray.inDomain(), "S1:out-of-domain-draws-base", () -> "a scalar outside its domain read as " + stray);
 
         expectRejected(Programs.mini("example:probe", "example:item/probe",
-                "\"x\": {\"component\": \"example:worn\", \"domain\": {\"int\": [0, 2]}}", "{\"when\": {\"x\": 1}, \"model\": \"example:item/a\"}"),
+                "\"x\": {\"component\": \"example:display_part\", \"domain\": {\"int\": [0, 2]}}", "{\"when\": {\"x\": 1}, \"model\": \"example:item/a\"}"),
                 Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
         expectRejected(Programs.mini("example:probe", "example:item/probe",
-                "\"x\": {\"component\": \"example:worn\", \"field\": \"f\", \"domain\": {\"enum\": [\"a\"]}}", "{\"when\": {\"x\": \"a\"}, \"model\": \"example:item/a\"}"),
+                "\"x\": {\"component\": \"example:display_part\", \"field\": \"f\", \"domain\": {\"enum\": [\"a\"]}}", "{\"when\": {\"x\": \"a\"}, \"model\": \"example:item/a\"}"),
                 Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
         expectRejected(Programs.mini("example:probe", "example:item/probe",
                 "\"x\": {\"component\": \"example:tool_state\", \"domain\": \"bool\"}", "{\"when\": {\"x\": true}, \"model\": \"example:item/a\"}"),
                 Diagnostic.Kind.TYPE, "S5:type-mismatch-rejected");
         // the catalog is held to the registry's codec: a scalar of another kind, or a scalar listed as a record
         ComponentCatalog honest = ((Result.Ok<ComponentCatalog>) ComponentCatalog.parse(
-                "{\"schema\": 1, \"components\": {\"example:worn\": {\"networkSynced\": true, \"value\": \"string\"}}}")).value();
+                "{\"schema\": 1, \"components\": {\"example:display_part\": {\"networkSynced\": true, \"value\": \"string\"}}}")).value();
         ok(honest.disagreements(registry).isEmpty(), "S5:catalog-agrees-with-registry", () -> "an honest scalar catalog disagrees: " + honest.disagreements(registry));
         ComponentCatalog wrong = ((Result.Ok<ComponentCatalog>) ComponentCatalog.parse(
-                "{\"schema\": 1, \"components\": {\"example:worn\": {\"networkSynced\": true, \"value\": \"int\"}}}")).value();
+                "{\"schema\": 1, \"components\": {\"example:display_part\": {\"networkSynced\": true, \"value\": \"int\"}}}")).value();
         ok(wrong.disagreements(registry).size() == 1, "S5:catalog-agrees-with-registry", () -> "a scalar of the wrong kind gave " + wrong.disagreements(registry));
         ComponentCatalog asRecord = ((Result.Ok<ComponentCatalog>) ComponentCatalog.parse(
-                "{\"schema\": 1, \"components\": {\"example:worn\": {\"networkSynced\": true, \"fields\": {\"slot\": \"string\"}}}}")).value();
+                "{\"schema\": 1, \"components\": {\"example:display_part\": {\"networkSynced\": true, \"fields\": {\"slot\": \"string\"}}}}")).value();
         ok(!asRecord.disagreements(registry).isEmpty(), "S5:catalog-agrees-with-registry", () -> "a scalar listed with fields gave none");
     }
 
     // --- display contexts (S8) -------------------------------------------------------------------------------------
 
     /**
-     * A program with display context rules (the panel: lit in the hand, flat in the inventory, a first-person knot). The
+     * A program with display context rules (the lamp: lit in the hand, flat in the inventory, a first-person handle). The
      * item definition draws the rule's model in the contexts it names and the selected model elsewhere, in every display
      * context; the item model with overrides has no contexts and draws the selected model; a rule for a model the program
      * never draws is refused.
      */
     private void contexts() {
         String inputs = "\"up\": {\"component\": \"minecraft:glider\", \"domain\": \"present\"}";
-        String cases = "{\"when\": {\"up\": true}, \"model\": \"example:item/panel_knot\"}";
-        String first = "{\"only\": [\"firstperson_righthand\", \"firstperson_lefthand\"], \"model\": \"example:item/panel_knot\", \"draw\": \"example:item/panel_knot_first\"}";
-        String lit = "{\"except\": [\"gui\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/panel_lit\"}";
-        Program p = panel(inputs, cases, first + "," + lit);
+        String cases = "{\"when\": {\"up\": true}, \"model\": \"example:item/lamp_handle\"}";
+        String first = "{\"only\": [\"firstperson_righthand\", \"firstperson_lefthand\"], \"model\": \"example:item/lamp_handle\", \"draw\": \"example:item/lamp_handle_first\"}";
+        String lit = "{\"except\": [\"gui\"], \"model\": \"example:item/lamp_flat\", \"draw\": \"example:item/lamp_lit\"}";
+        Program p = lamp(inputs, cases, first + "," + lit);
         Compilation.Compiled modern = compiled(p, lockFor(p), MODERN, "contexts");
         Compilation.Compiled legacy = compiled(p, lockFor(p), LEGACY, "contexts");
         if (modern == null || legacy == null) {
@@ -682,47 +682,47 @@ public final class SigilContractTests {
             String legacyDrawn = Simulators.legacy(model, legacy.plan().selectorOf(legacy.plan().select(tuple)));
             ok(selected.equals(legacyDrawn), "S8:legacy-ignores-contexts", () -> tuple + ": the item model draws " + legacyDrawn + ", not " + selected);
         }
-        ok(Evaluator.draw(p, "example:item/panel_flat", "gui").equals("example:item/panel_flat")
-                        && Evaluator.draw(p, "example:item/panel_flat", "ground").equals("example:item/panel_lit")
-                        && Evaluator.draw(p, "example:item/panel_knot", "firstperson_lefthand").equals("example:item/panel_knot_first")
-                        && Evaluator.draw(p, "example:item/panel_knot", "head").equals("example:item/panel_knot"),
+        ok(Evaluator.draw(p, "example:item/lamp_flat", "gui").equals("example:item/lamp_flat")
+                        && Evaluator.draw(p, "example:item/lamp_flat", "ground").equals("example:item/lamp_lit")
+                        && Evaluator.draw(p, "example:item/lamp_handle", "firstperson_lefthand").equals("example:item/lamp_handle_first")
+                        && Evaluator.draw(p, "example:item/lamp_handle", "head").equals("example:item/lamp_handle"),
                 "S8:rules-mean-only-and-except", () -> "the oracle misreads only/except");
 
         // the rules survive the plan resource, and a bad rule is refused by kind
         Result<Plan> reread = ReferencePlan.parse(modern.artefacts().get(Layout.plan(p.item())));
         ok(reread instanceof Result.Ok<Plan> good && good.value().program().contexts().equals(p.pruned().contexts()), "S8:plan-keeps-rules",
                 () -> "the plan resource lost the rules: " + reread);
-        Program stray = panel(inputs, cases, "{\"only\": [\"gui\"], \"model\": \"example:item/never_drawn\", \"draw\": \"example:item/a\"}");
+        Program stray = lamp(inputs, cases, "{\"only\": [\"gui\"], \"model\": \"example:item/never_drawn\", \"draw\": \"example:item/a\"}");
         Compilation refused = compiler.compile(stray, lockFor(stray), catalog, MODERN);
         ok(refused instanceof Compilation.Rejected r && r.diagnostics().stream().anyMatch(d -> d.kind() == Diagnostic.Kind.CONTEXT), "S8:rule-for-undrawn-model-rejected",
                 () -> "a rule for a model the program never draws gave " + refused);
-        ok(Program.parse(panelText(inputs, cases, "{\"only\": [\"gui\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/a\"},"
-                + "{\"except\": [\"gui\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/b\"}")) instanceof Result.Failed,
+        ok(Program.parse(lampText(inputs, cases, "{\"only\": [\"gui\"], \"model\": \"example:item/lamp_flat\", \"draw\": \"example:item/a\"},"
+                + "{\"except\": [\"gui\"], \"model\": \"example:item/lamp_flat\", \"draw\": \"example:item/b\"}")) instanceof Result.Failed,
                 "S8:one-rule-per-model", () -> "two rules for one model were accepted");
-        ok(Program.parse(panelText(inputs, cases, "{\"only\": [\"first_person\"], \"model\": \"example:item/panel_flat\", \"draw\": \"example:item/a\"}")) instanceof Result.Failed,
+        ok(Program.parse(lampText(inputs, cases, "{\"only\": [\"first_person\"], \"model\": \"example:item/lamp_flat\", \"draw\": \"example:item/a\"}")) instanceof Result.Failed,
                 "S8:unknown-context-rejected", () -> "a misspelt display context was accepted");
         // a program built in code, not parsed, is held to the same rules by the compiler
-        Context flat = new Context(false, List.of("gui"), "example:item/panel_flat", "example:item/a");
+        Context flat = new Context(false, List.of("gui"), "example:item/lamp_flat", "example:item/a");
         Program twice = new Program(p.item(), p.base(), p.inputs(), p.cases(),
-                List.of(flat, new Context(true, List.of("gui"), "example:item/panel_flat", "example:item/b")));
+                List.of(flat, new Context(true, List.of("gui"), "example:item/lamp_flat", "example:item/b")));
         Compilation twoRules = compiler.compile(twice, lockFor(twice), catalog, MODERN);
         ok(twoRules instanceof Compilation.Rejected, "S8:one-rule-per-model", () -> "a compiler handed two rules for one model gave " + brief(twoRules));
         Program misspelt = new Program(p.item(), p.base(), p.inputs(), p.cases(),
-                List.of(new Context(false, List.of("first_person"), "example:item/panel_flat", "example:item/a")));
+                List.of(new Context(false, List.of("first_person"), "example:item/lamp_flat", "example:item/a")));
         Compilation unknown = compiler.compile(misspelt, lockFor(misspelt), catalog, MODERN);
         ok(unknown instanceof Compilation.Rejected, "S8:unknown-context-rejected", () -> "a compiler handed a misspelt display context gave " + brief(unknown));
         // the rules are in no order: written the other way round they compile to the same bytes
-        Program turned = panel(inputs, cases, lit + "," + first);
+        Program turned = lamp(inputs, cases, lit + "," + first);
         Compilation.Compiled again = compiled(turned, lockFor(turned), MODERN, "contexts-turned");
         ok(again != null && again.artefacts().equals(modern.artefacts()), "S6:declaration-order-independent", () -> "rules written in another order compiled to other bytes");
     }
 
-    private static Program panel(String inputs, String cases, String rules) {
-        return Programs.parse(panelText(inputs, cases, rules));
+    private static Program lamp(String inputs, String cases, String rules) {
+        return Programs.parse(lampText(inputs, cases, rules));
     }
 
-    private static String panelText(String inputs, String cases, String rules) {
-        return "{\"item\": \"example:panel\", \"base\": \"example:item/panel_flat\", \"inputs\": {" + inputs + "}, \"cases\": [" + cases
+    private static String lampText(String inputs, String cases, String rules) {
+        return "{\"item\": \"example:lamp\", \"base\": \"example:item/lamp_flat\", \"inputs\": {" + inputs + "}, \"cases\": [" + cases
                 + "], \"contexts\": [" + rules + "]}";
     }
 
@@ -730,8 +730,8 @@ public final class SigilContractTests {
 
     private void tool() {
         Map<String, String> programs = new TreeMap<>();
-        programs.put("band.json", bandJson());
-        programs.put("spool.json", spoolJson());
+        programs.put("tool.json", toolJson());
+        programs.put("dial.json", dialJson());
         try {
             String empty = Lock.empty().toJson();
             Map<?, ?> first = report(SigilTool.compile("1.21.4", "item-definition", programs, Programs.CATALOG_JSON, empty));
@@ -752,7 +752,7 @@ public final class SigilContractTests {
             }
             Map<?, ?> none = report(SigilTool.compile("1.12.2", "none", programs, Programs.CATALOG_JSON, lock));
             ok(Boolean.FALSE.equals(none.get("ok")) && none.toString().contains("NO_REALIZATION"), "R1:no-realization-rejected", () -> "none gave " + none);
-            programs.put("clone.json", bandJson());
+            programs.put("clone.json", toolJson());
             Map<?, ?> twice = report(SigilTool.compile("1.21.4", "item-definition", programs, Programs.CATALOG_JSON, lock));
             ok(Boolean.FALSE.equals(twice.get("ok")), "T1:tool-one-program-per-item", () -> "two programs for one item gave " + twice);
         } catch (RuntimeException e) {
@@ -760,12 +760,12 @@ public final class SigilContractTests {
         }
     }
 
-    private static String bandJson() {
-        return Json.write(Programs.band().toTree());
+    private static String toolJson() {
+        return Json.write(Programs.tool().toTree());
     }
 
-    private static String spoolJson() {
-        return Json.write(Programs.spool().toTree());
+    private static String dialJson() {
+        return Json.write(Programs.dial().toTree());
     }
 
     private static Map<?, ?> report(String text) {

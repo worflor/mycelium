@@ -34,7 +34,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The portability surface (docs/eras.md, "Not yet built" 2): per package of the artifact's own main sources, how many
+ * The portability surface (docs/plugin.md, "The portability surface"): per package of the artifact's own main sources, how many
  * references it makes to a platform package (every root {@code eras/loaders.json} names, the game's own included),
  * split into packages the consumer declares as its ports ({@code mycelium.ports}) and everything else. The second
  * number is the cost the next rung would have to eat, and the point is to make it visible and watch it fall, not to

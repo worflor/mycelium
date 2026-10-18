@@ -11,7 +11,7 @@ import java.util.Set;
 
 /**
  * Broken: the engine alone. Every hold takes the ticket and every release drops it, so the first holder to let go takes
- * everyone's hold with it. This is what Somnium did until a copy session ending unloaded a room's chunks (E163).
+ * everyone's hold with it. Found in Somnium when one subsystem's release invalidated another subsystem's hold.
  */
 public final class EngineDirectKeeper implements Keeper<Integer, Integer> {
     private final Tickets<Integer> engine;

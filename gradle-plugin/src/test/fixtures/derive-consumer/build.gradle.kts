@@ -4,7 +4,7 @@ import java.util.zip.ZipFile
 //   src/main/java            a fully qualified reference with no import (random.seeded@1)
 //   kernel (the pure layer)  a fully qualified reference (world.clock@1)
 //   stonecutterGenerate      a task of that name writes a source directory nothing declares as its producer, as Stonecutter
-//                            does, with an import and a static import (data.catalog@1)
+//                            does, with an import and a static import (inventory.transfer@1)
 //   generateCatalog          a task whose output is declared a source directory (data.catalog@1)
 // None of the generated sources exist when the build is configured, so a list derived then finds only the first two.
 plugins {
@@ -35,9 +35,9 @@ val stonecutterGenerate = tasks.register("stonecutterGenerate") {
         dir.resolve("Swapped.java").writeText(
             """
             package fixture.derive;
-            import fixture.derive.mycelium.data_catalog.v1.model.Catalog;
-            import static fixture.derive.mycelium.data_catalog.v1.model.DataCatalog.*;
-            class Swapped { Weather w; }
+            import fixture.derive.mycelium.flow.v1.model.FlowTransaction;
+            import static fixture.derive.mycelium.flow.v1.model.Transfer.*;
+            class Swapped { FlowTransaction tx; }
             """.trimIndent()
         )
     }
@@ -66,7 +66,7 @@ val verifyDerive = tasks.register("verifyDerive") {
             val json = groovy.json.JsonSlurper().parseText(evidence) as Map<*, *>
             check((json["contractSelection"] as Map<*, *>)["mode"] == "derived") { "not derived: ${json["contractSelection"]}" }
             val ids = (json["contracts"] as List<*>).map { (it as Map<*, *>)["id"] as String }.sorted()
-            val want = listOf("data.catalog@1", "random.seeded@1", "data.catalog@1", "world.clock@1")
+            val want = listOf("data.catalog@1", "inventory.transfer@1", "random.seeded@1", "world.clock@1")
             check(ids == want) { "derived $ids, wanted $want" }
         }
     }

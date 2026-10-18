@@ -3,8 +3,8 @@
     "fixture:tool_state": {
       "fields": {
         "broken": "bool",
-        "cracks": "int",
-        "seams": "int"
+        "wear": "int",
+        "charge": "int"
       },
       "networkSynced": true
     },

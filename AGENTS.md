@@ -1,28 +1,34 @@
 # AGENTS.md: Mycelium
 
-How to work in this repository. It is written for AI agents and human contributors alike, and it orients and routes:
-the depth lives in the documents it points to. There is no `CLAUDE.md`.
+Repository rules and navigation for contributors and agents. Start with [README.md](README.md); use the map below
+to find the technical detail needed for a change.
 
 ## What Mycelium is
 
-**NAML: Not A Mod Loader.** Mycelium is a compatibility compiler a Minecraft mod builds with. It ships no runtime and
-replaces no loader; it lives between versions and loaders, at development time. A divide (something true on one version
+**NAML: Not A Mod Loader.** Mycelium is a build-time compatibility compiler developed alongside a Minecraft mod. It
+introduces no shared runtime and replaces no loader. A divide (something true on one version
 or loader and different on another) becomes a declaration, laws with a rejection matrix, era data, build-time compilers
 that emit per-target artefacts, gates, and evidence in the jar. Everything a mod imports becomes that mod's own private
 code. The model of it is `docs/architecture.md`.
 
 ## The posture: build with it
 
-Mycelium is live and grows with the mods that use it. `contracts/` holds worked examples, not a catalogue to choose from.
+The mod's author structures the mod around Mycelium and defines the contracts its features need; the compiler
+supplies the shared compatibility machinery (`docs/building-with-mycelium.md`).
+Existing contracts are optional reuse and worked examples. A missing contract or realization is developed with the
+feature in the Mycelium checkout the mod builds with, which may be a private fork. Upstream issues and pull requests
+are ways to contribute that work, not prerequisites for doing it.
+
 When the mod you are working on meets a divide (a `//? if` that carries meaning, a fact written twice, a lifecycle the
 loaders expose differently), do not hand-write the split in the mod and do not bend the mod to fit a package that models
-something else. Cross it here: declare it, state the laws, write the broken implementations, put version knowledge in
-`eras/`, compile the artefacts, and use the result in the mod in the same piece of work. One mod is enough to start.
+something else. Cross it in that Mycelium checkout: declare it, state the laws, write the broken implementations,
+put version knowledge in `eras/`, compile the artefacts, and use the result in the mod in the same piece of work.
+One mod is enough to start.
 The playbook is `docs/building-with-mycelium.md`. The decision behind it is
 `docs/decisions/0015-a-compiler-you-build-with.md`.
 
-Several mods, by different people and agents, build on Mycelium at once. The gates are what make a change safe, so run
-them and trust them; a change to an existing package's meaning in place is the one thing that reaches every consumer.
+Consumers pin their own contract versions. Preserve an existing major's meaning and run the gates before handing
+off a change.
 
 ## Where knowledge lives
 
@@ -221,9 +227,20 @@ Ask first, because these are irreversible or reach another consumer:
 
 ## Commands
 
+```bash
+./gradlew check
+./gradlew myceliumRepository
+./gradlew myceliumBridgeLinkage
+./gradlew myceliumVerify -Pmycelium.contracts=world.copy@1
+./gradlew -p gradle-plugin selfTest
+bash run-contracts.sh flow world-copy
+./gradlew myceliumRefreshVersions
+./gradlew myceliumRefreshNames --namespace=mojang --versions=1.21.2
+```
 
-On a machine shared with other JVMs (a game server, say), keep Gradle's heap small (`GRADLE_OPTS=-Xmx512m`), run one
-Gradle build at a time, and never stop a daemon that is not yours.
+On a machine shared with other JVMs (a game server, say), keep the daemon's heap small
+(`./gradlew check -Dorg.gradle.jvmargs=-Xmx512m --max-workers=1`), run one Gradle build at a time, and never stop a daemon
+that is not yours. `GRADLE_OPTS` alone limits the launcher, not the daemon heap set in `gradle.properties`.
 
 ---
 

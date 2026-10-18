@@ -1,23 +1,23 @@
 # item.component@1
 
 A deterministic, bidirectional translation and carrier model bridging modern Minecraft Data Components
-(1.20.5+) and legacy item NBT compounds (pre-1.20.5, specifically 1.20.1). Written for Cartomancy and any
-Mycelium mod bridging the Data Component era divide without compromising pure Java 21 flyweight designs.
+(1.20.5+) and legacy item NBT compounds (pre-1.20.5). Written for Cartomancy, with first consumer adoption in Somnium.
+The model uses Java 17 and imports no Minecraft types.
 
-## 0. What is proven, and what is only designed
+## 0. Evidence boundaries
 
-This contract was written for Cartomancy and first used by Somnium. The marks below say what a consumer has actually used, so a new consumer knows what
-stands on evidence and what stands on design alone. The laws of both kinds are checked by the harness; the difference is
-whether a mod has put the part to work.
+The harness checks all parts of the model. Consumer adoption supplies additional evidence for the paths it exercises;
+it does not establish every target or optional projection. Decision 0011 records the original translator evidence and
+decision 0016 records the native bridge work.
 
 | Part | Status |
 |---|---|
-| `TagNode`, `ComponentCodec`, `RecordCodec`, `ComponentDefinition`, `ComponentRegistry`, `CarrierSnapshot`, `Unit` | **Proven by a consumer.** Somnium (2026-10) declares its whole item state with them: record components, marks, values with no default. |
-| `RosettaTranslator` / `StandardRosettaTranslator` (fenced read and write: T1 to T6, T9, T12) | **Proven by a consumer.** Somnium reads and writes every stack through it, on every version and loader it builds. |
-| Quarantine and recovery records (T5) | **Proven by a consumer.** Somnium relies on an unreadable entry reading as absent and surviving later writes. |
-| Presence components, `FencedCarrier`, `WriteOutcome`, `ComponentRead`, `LegacyKeyMigration` (T13 to T20) | **Designed from Somnium's adapter, not yet used by a consumer.** Written to replace what its `Carrier` had to build around the translator (hand-written marks, a separate single-component decode, a legacy-key reader and stripper). Their first real use is the evidence they still need. |
-| `StackCarrier` (S1 to S6, section 5.7) and its bridge `item-carrier` | **Designed from Somnium's adapter; first used by Somnium (2026-10).** The port a platform stack satisfies; Mycelium's bridge implements it for `ItemStack` on every version it covers (decision 0016), and its conformance game tests are what keep S1 to S6. |
-| `TranslationPlan`, `ItemPrototype` (T7), `ChannelPolicy` (T11), `NativeProjectionRecipe` (T10), `LogicalNbtBridge` | **Design only.** Checked by the harness and its adversarial probes; no consumer has used them yet (Somnium keeps `minecraft:custom_data` as its only carrier and uses the bridge only for list encoding). Treat their shapes as provisional until one does. |
+| `TagNode`, `ComponentCodec`, `RecordCodec`, `ComponentDefinition`, `ComponentRegistry`, `CarrierSnapshot`, `Unit` | **Proven by a consumer.** Consumer adoption recorded in October 2026: record components, marks, and values with no default. |
+| `RosettaTranslator` / `StandardRosettaTranslator` (fenced read and write: T1 to T6, T9, T12) | **Proven by a consumer.** Used for consumer stack translation; native behavior still needs evidence for each target. |
+| Quarantine and recovery records (T5) | **Proven by a consumer.** Consumer adoption exercised unreadable entries surviving later writes. |
+| Presence components, `FencedCarrier`, `WriteOutcome`, `ComponentRead`, `LegacyKeyMigration` (T13 to T20) | **Harness evidence.** Added from consumer adapter requirements: presence, typed outcomes, consistent single-component reads, and old-key migration. Each consumer must test the migration and quarantine paths its adapters use. |
+| `StackCarrier` (S1 to S6, section 5.7) and its bridge `item-carrier` | **Consumer adoption recorded in October 2026.** The bridge implements the port for `ItemStack`; conformance cases test S1 to S6 on the consumer's targets. See decision 0016 for linkage coverage and limits. |
+| `TranslationPlan`, `ItemPrototype` (T7), `ChannelPolicy` (T11), `NativeProjectionRecipe` (T10), `LogicalNbtBridge` | **Harness evidence.** The adopted fenced carrier does not establish the optional prototype, channel, native-projection, or integrated-plan paths. Those need independent consumer evidence. |
 
 ## 1. Problem & Architecture
 
@@ -34,7 +34,7 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
 
 ## 2. Model
 
-- `ComponentId(namespace, path)`: A validated identifier token (e.g. `example:card_instance`).
+- `ComponentId(namespace, path)`: A validated identifier token (e.g. `example:item_state`).
 - `TagNode`: Pure algebraic data type for hierarchical NBT data:
   - Primitives: `TagByte`, `TagShort`, `TagInt`, `TagLong`, `TagFloat`, `TagDouble`, `TagString`
   - Arrays: `TagByteArray`, `TagIntArray`, `TagLongArray`
@@ -160,7 +160,7 @@ A mark's meaning is that it is there. Declare it as one, so it is never elided a
 ```java
 ComponentDefinition<Unit> GLOWING = ComponentDefinition.presence(ComponentId.of("mymod:glowing"));
 ComponentDefinition<Integer> RIG = ComponentDefinition.withoutDefault(ComponentId.of("mymod:rig"), ComponentCodec.INT);
-// a record with no default: RECORD_CODEC.definition(ComponentId.of("mymod:tool_state"))
+// a record with no default: RECORD_CODEC.definition(ComponentId.of("mymod:registration"))
 
 ComponentRegistry registry = ComponentRegistry.builder().register(GLOWING).register(RIG).build();
 ```
@@ -201,8 +201,8 @@ Every mod adopting Rosetta has item state under keys of its own. Declare where e
 LegacyKeyMigration MIGRATION = LegacyKeyMigration.builder()
         .key("mymod_rig", RIG, ComponentCodec.INT)                      // one key, the whole value, old shape = a codec
         .mark("mymod_glowing", GLOWING)                                 // a key that was a flag
-        .keys(List.of(Key.of("mymod_owner"), Key.of("mymod_issue")), OWNERSHIP,   // several keys, the fields of one value
-                v -> new Ownership(v.string("mymod_owner", ""), v.integer("mymod_issue", 0)))
+        .keys(List.of(Key.of("mymod_owner"), Key.of("mymod_issue")), REGISTRATION,   // several keys, the fields of one value
+                v -> new Registration(v.string("mymod_owner", ""), v.integer("mymod_issue", 0)))
         .key(Key.of("mymod", "name"), NAME, ComponentCodec.STRING)      // a key inside an old compound
         .drop("mymod_dye")                                              // retired: read nowhere, stripped on write
         .build();

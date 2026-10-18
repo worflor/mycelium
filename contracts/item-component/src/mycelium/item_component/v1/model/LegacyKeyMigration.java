@@ -9,8 +9,8 @@ import java.util.*;
  * already-migrated root to the same snapshot (T18), quarantines an old value it cannot read instead of dropping it
  * (T19), and touches no key the table does not name (T20).
  *
- * <p>A rule has one or more old keys and one target component. A key is a root key ({@code "somnium_rig"}) or a key
- * inside an old compound ({@code Key.of("somnium", "rig")}). When one key becomes a whole component, give the old shape
+ * <p>A rule has one or more old keys and one target component. A key is a root key ({@code "example_rig"}) or a key
+ * inside an old compound ({@code Key.of("example", "rig")}). When one key becomes a whole component, give the old shape
  * as a {@link ComponentCodec}; when several keys are the fields of one component (or a key is only part of a value), give a
  * {@link Reader} that builds the value from those present. {@link Builder#drop} retires a key whose value is read nowhere.
  *

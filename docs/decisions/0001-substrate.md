@@ -1,10 +1,15 @@
 # 0001 — Build substrate for multi-loader, multi-version consumers
 
+| | |
+|---|---|
+| Date | 2026-09-22 |
+| Status | Accepted; Gate B preflight recorded in Somnium |
+| Resolves | `DESIGN.md` §15 open item "First substrate (Unimined vs Stonecutter + Modstitch)" |
 
 ## Context
 
 A Mycelium consumer must build one intent for Fabric and NeoForge across at least two Minecraft versions
-(currently 26.3 and 1.21.1) with replaceable build-tool providers (`DESIGN.md` §14 "Substrate").
+(26.3 and 1.21.1 in the preflight) with replaceable build-tool providers (`DESIGN.md` §14 "Substrate").
 
 ## Options considered
 

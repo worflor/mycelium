@@ -1,5 +1,10 @@
 # 0018 — world.clock@1: the 26.1 clock model, on every version
 
+| | |
+|---|---|
+| Date | 2026-10-12 |
+| Status | Accepted. Pure half built (2026-10-12); bridges `native-clock` and `emulated-clock` built and proven in Somnium (2026-10-13); `emulated-clock-takeover` declared here and not built. Written for Cartomancy and Somnium. |
+| Ground truth | the 26.3, 1.21.1 and 1.20.1 game jars read with `javap` (2026-10-12), and for the bridges the jars of 26.1 to 26.3 and of 1.14.4 to 1.21.11 (2026-10-13); https://minecraft.wiki/w/World_clock; https://minecraft.wiki/w/Commands/time |
 
 ## Context
 
@@ -29,6 +34,9 @@ it: one clock, rate one, a 24000-tick `day` timeline and a 192000-tick `moon` ti
 
 ### The model (pure)
 
+`ClockModel` evaluates immutable clock declarations and state; `ClockPort` supplies the platform operations. Timelines,
+markers, rates, and synchronization are defined by `contracts/world-clock/SPEC.md`. Native and emulated bridges implement
+the same port, with realizations selected from `eras/minecraft.json`.
 
 ### Laws
 
@@ -65,6 +73,7 @@ sky colours, light, mob burning) are not emulated by this contract.
 
 ## First proofs
 
+Further consumer game evidence is required for the targets and behaviors not exercised here.
 
 ## Evidence (pure half, 2026-10-12)
 
@@ -142,6 +151,21 @@ overworld's, a wake marker other than tick 0 of a 24000-tick day: the takeover's
 
 ### Evidence (2026-10-13)
 
+- **Linkage** (`myceliumBridgeLinkage`, inside `./gradlew check`): `native-clock` is compiled against 26.3 and its references linked on
+  26.1, 26.1.1, 26.1.2, 26.2 and 26.3; with the `26.1` overlay it is compiled and linked for 26.1 to 26.2. `emulated-clock` and each overlay
+  are compiled against the newest pinned version of their group and linked on every pinned version of it: 1.14.4 and 1.15.2 (overlay 1.14),
+  1.16.5 (1.16), 1.17.1, 1.18.2, 1.19.2, 1.19.4, 1.20.1 (1.17), 1.20.4 (1.20.3), 1.20.5, 1.20.6, 1.21, 1.21.1, 1.21.3, 1.21.4 (base),
+  1.21.5, 1.21.8, 1.21.10 (1.21.5), 1.21.11 (1.21.11). 1.20.2 has no name data: its overlay was compiled by hand against the 1.20.2 jar, as
+  were the 1.14 and 1.16 overlays before their data was pinned.
+- **Conformance in Somnium** (`world_clock_conformance`, `_follows_the_loop`, `_declaration`, `_dawn_edge`): pass on `fabric-26.3` (native, the
+  game's own manager, packet and period code) and on `fabric-1.21.1` (emulated: `dayTime`, the daylight rule, saved data and the bridge's
+  payload). The first run found one fault in the rig, a `RuntimeException` where it expected `ClassNotFoundException` from Fabric's loader when
+  asked for a client class on a server; the catch now covers it. Those runs establish the listed targets only; no broader matrix is reproducible from this repository.
+- **Not run in a game**: 26.1 and 26.2 (linked, and their overlay's game calls read from the jars), every pre-26.1 version except 1.21.1, and
+  `ClockConformance.sleeping`, the case that puts a real sleeper in a bed. In Somnium a mock player in a bed did not make the server skip the
+  night on 26.3 or on 1.21.1 (the clock was at 85140 after 140 ticks, from 85000): a gametest's mock player is not what the server counts
+  as sleeping, so the rig is written and its failure is the rig's, not the game's. `sleep_moves_the_default_clock`, which sleeps the clock
+  through the port, is proven. A consumer with a real harness can use `sleeping`; none has yet.
 
 ### Not built
 
@@ -149,5 +173,4 @@ overworld's, a wake marker other than tick 0 of a 24000-tick day: the takeover's
 that were not here: machinery for a variant a contract row does not bring (0016's "offer, never police" has no `offered` marking yet in
 `bridge.json`), mixin targets that the linkage gate can see (Mixin annotations are not stubbed; a target written as a string is
 invisible to it), and a proof in a real game harness for the hooks it would add. The design stands: the 1.21.1 sleep skip is
-`ServerLevel.tick`'s `setDayTime(l - l % 24000L)`, which a `@ModifyArg` could move to the next occurrence of the declared wake marker. Somnium
-does not take it (the shared dawn is a design rule), so nothing waits on it.
+`ServerLevel.tick`'s `setDayTime(l - l % 24000L)`, which a `@ModifyArg` could move to the next occurrence of the declared wake marker. The adopting consumer did not require takeover, so it was left for work with a consumer and a game harness.

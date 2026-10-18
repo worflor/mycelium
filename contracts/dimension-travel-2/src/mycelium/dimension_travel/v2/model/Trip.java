@@ -4,7 +4,12 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** Compatibility behavior is defined by this contract and its SPEC. */
+/**
+ * Reference executor for {@code dimension.travel@2}: a trip is journaled before it moves anyone, struck when the
+ * traveller comes home, and recovered (brought home, settled once) if the process died in between. Promoted from
+ * Somnium's crash recovery for interrupted return trips, because every "go somewhere and come
+ * back" provider has the same hole.
+ */
 public final class Trip {
     public static final Set<Trait> REQUIRED_TRAITS = Set.of(Trait.POSITION_EXACT, Trait.INVENTORY_PRESERVING, Trait.JOURNALED);
 

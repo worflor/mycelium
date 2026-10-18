@@ -321,7 +321,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.onlyIf(spec -> !ext.getPure().getSources().isEmpty());
         });
 
-        // Shipping downgraded jars (docs/eras.md, "Not yet built" 1): puts the pure layer's classes into this target's
+        // Shipping downgraded jars (docs/plugin.md, "Shipping downgraded jars"): puts the pure layer's classes into this target's
         // jar, downgraded and shaded when the era needs it, or unmodified when it does not (docs/decisions/0006).
         TaskProvider<PureShipTask> pureShip = project.getTasks().register("myceliumPureShip", PureShipTask.class, t -> {
             t.setGroup("mycelium");
@@ -454,7 +454,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getEraTable().set(ext.getRoot().map(dir -> dir.file("eras/minecraft.json")));
                 t.getOutputDir().set(project.getLayout().getBuildDirectory().dir("generated/resources/mycelium/pack"));
             });
-            // The portability surface (docs/eras.md, "Not yet built" 2): never the generated imports, which are
+            // The portability surface (docs/plugin.md, "The portability surface"): never the generated imports, which are
             // proven pure already and would only report as zero-reference noise.
             TaskProvider<SurfaceTask> surfaceTask = project.getTasks().register("myceliumSurface", SurfaceTask.class, t -> {
                 t.setGroup("mycelium");

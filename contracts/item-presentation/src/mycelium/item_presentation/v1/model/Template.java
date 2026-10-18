@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A model reference that may name input values: {@code example:item/band_mended_{seams}_cracked_{cracks}}. A value
+ * A model reference that may name input values: {@code example:item/status_tool_charged_{charge}_worn_{wear}}. A value
  * is written as a flag's {@code true} or {@code false}, a number's decimal digits, or the enum text itself.
  */
 public final class Template {

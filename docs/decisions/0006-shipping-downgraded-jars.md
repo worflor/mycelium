@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-09-26 |
 | Status | Accepted (`./gradlew check` green; self-tests; end-to-end proof below) |
-| Resolves | `docs/eras.md` "Not yet built" 1 and 2; requested by Recon's `docs/decisions/0002-every-version.md` |
+| Resolves | Shipping and surface measurement gaps in the era gates; requested by Recon's Java 8 port |
 
 ## Context
 
@@ -108,8 +108,8 @@ into `check`. `MyceliumExtension` gains `ports(...)` / `getPorts()`, `getSurface
 
 ## Consequences
 
-- A rung whose era is older than the pure layer's release now has a real jar to test with a real server, not
-  only a gate that says it would work — Recon's ladder (`0002-every-version.md` §2) can start.
+- A rung whose era is older than the pure layer's release has a jar to test on a real server, alongside the era-gate
+  evidence. That unblocked Recon's server test ladder.
 - The claim shipped bytes carry is exactly "these are the unmodified bytes `myceliumEraJava<N>` downgraded,
   shaded and checked for this bundle" (`ship.json`'s `eraGate` block) — never a fresh, independent check of the
   shipped subset alone. That is honest, and narrower than "this jar works on a real server": that evidence is

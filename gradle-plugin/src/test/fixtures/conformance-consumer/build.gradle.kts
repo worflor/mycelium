@@ -1,6 +1,6 @@
 import java.util.zip.ZipFile
 
-// Fixture for the bridges' conformance cases: a mod whose game tests live in `main` (Somnium's do) must not ship the cases' data
+// Fixture for the bridges' conformance cases: a mod whose game tests live in `main`  must not ship the cases' data
 // files. `check` builds the jar and proves it: by default the datapack the world-clock bridge's cases need on 26.1 and later is
 // not in the jar, though it is in the compiled resources (the game-test run reads those); `-PshipConformance=true` keeps it in
 // (`bridges { shipConformanceResources() }`); `-PclassesOut=true` also keeps the cases' classes out

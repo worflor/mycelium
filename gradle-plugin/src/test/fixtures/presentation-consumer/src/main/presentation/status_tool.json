@@ -3,12 +3,12 @@
   "base": "fixture:item/status_tool_base",
   "inputs": {
     "broken": {"component": "fixture:tool_state", "field": "broken", "domain": "bool"},
-    "cracks": {"component": "fixture:tool_state", "field": "cracks", "domain": {"int": [0, 2]}},
-    "seams": {"component": "fixture:tool_state", "field": "seams", "domain": {"int": [0, 3]}}
+    "wear": {"component": "fixture:tool_state", "field": "wear", "domain": {"int": [0, 2]}},
+    "charge": {"component": "fixture:tool_state", "field": "charge", "domain": {"int": [0, 3]}}
   },
   "cases": [
     {"when": {"broken": true}, "model": "fixture:item/status_tool_broken"},
-    {"when": {"seams": {"min": 1}}, "model": "fixture:item/status_tool_mended_{seams}_cracked_{cracks}"},
-    {"when": {"cracks": {"min": 1}}, "model": "fixture:item/status_tool_cracked_{cracks}"}
+    {"when": {"charge": {"min": 1}}, "model": "fixture:item/status_tool_charged_{charge}_worn_{wear}"},
+    {"when": {"wear": {"min": 1}}, "model": "fixture:item/status_tool_worn_{wear}"}
   ]
 }

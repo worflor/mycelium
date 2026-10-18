@@ -8,7 +8,7 @@ A mod built on Mycelium has two layers, and they reach back in time differently.
 
 | Layer | What it is | How it reaches another version |
 |---|---|---|
-| **Pure** | Contract models and a mod's kernels: plain Java, no Minecraft | Written once in modern Java. It holds on every era by law (below) and runs there as downgraded bytecode. It reaches every version for free. |
+| **Pure** | Contract models and a mod's kernels: plain Java, no Minecraft | Written once in modern Java. It holds on every era by law (below) and runs there as downgraded bytecode. Its Java compatibility is checked independently of the platform port. |
 | **Platform** | The code that touches Minecraft and a loader | Ported where the game changed: Stonecutter across neighbouring versions, a provider per loader. Native, with the platform's full power. |
 
 The architecture has one goal: **make the platform layer small and the pure layer large**, and prove the pure layer
@@ -69,8 +69,7 @@ ranges (`from`, `to`, bounds as an era's are) and the realization a version draw
 compiler; `item.carrier` (`custom-data`, `root-tag` or `none`) is read by the `item-carrier` bridge, `world.clock` (`native-clock`, `emulated-clock` or `none`) by the `world-clock` bridge; `item.presentation` (`item-definition`, `model-overrides` or `none`) by the `item-presentation` bridge; `state.lifecycle` (`loader-events` or `none`) by the `lifecycle` bridge, whose loader halves are overlays of one realization (decision 0016, "Loader halves"), and whose `none` rows say the versions between 1.21.1 and 26.3 were not read; a bridge names its own divide
 in its `bridge.json`. The old top-level `presentation` key is refused. Every table is held to the same rules. The `item.presentation` table: ranges of versions (`from`, `to`, bounds as an era's are) and the
 mechanism a version draws an item's state with, `item-definition` (an item definition selecting a model on the custom model data
-strings), `model-overrides` (one item model with `overrides` on the custom model data float) or `none`. It is its own table because the
-ranges cross the eras: model overrides run through four of them. The `item.presentation@1` compiler reads the row for the
+strings), `model-overrides` (one item model with `overrides` on the custom model data float) or `none`. It is a separate table because its ranges cross era boundaries. The `item.presentation@1` compiler reads the row for the
 target and holds no version number of its own (`Eras.presentationFor`, `docs/decisions/0012-sigil-item-presentation.md`). The
 repository check proves every real version falls in exactly one range, each bound is a real version, and no range runs backwards.
 
@@ -88,8 +87,8 @@ version with no entry has no name data and is never reported as linked. Pins are
 hash. The repository check holds every entry to a real version some loader runs under that naming.
 
 **Keeping it true.**
-- When Mojang ships a version, run `./gradlew myceliumRefreshVersions`. Builds stay offline; this is the one task that
-  reads the network. If the new version opens a new line, the check says which era it falls outside.
+- When Mojang ships a version, run `./gradlew myceliumRefreshVersions`. Ordinary builds use the committed version list. Dependency, toolchain, and pinned-name resolution may still use
+  the network; they do not refresh that list. If the new version opens a new line, the check says which era it falls outside.
 - When a release should be linked too, run `./gradlew myceliumRefreshNames --namespace=<name> --versions=<v>`; it pins
   that version's files, and without versions it reports any pinned file that has changed.
 - When a loader appears, write its packages into `eras/loaders.json` with their source. From then on law P1 guards
@@ -191,7 +190,7 @@ What a mod must change between versions. The same table drives the gates (`eras/
 | 26.x | 25 | Fabric, Quilt, NeoForge, Forge | Spigot, Paper, Purpur, Folia | unobfuscated | The game ships unobfuscated: mappings are gone. Forge runs on EventBus 7. |
 | 1.20.5 – 1.21.x | 21 | Fabric, Quilt, NeoForge, Forge | Spigot, Paper, Purpur, Folia | Mojang | **Data components replace item NBT** (1.20.5; Forge runs Mojang names from 1.20.6); registry-backed API for plugins (1.21); holder and item-model reworks (1.21.2, 1.21.4); click and hover events change shape (1.21.5); Forge's EventBus 7 (1.21.6); value input and output (1.21.9); `Identifier` (1.21.11). |
 | 1.20.2 – 1.20.4 | 17 | Fabric, Quilt, NeoForge, Forge | Spigot, Paper, Purpur, Folia | Mojang (Forge runs SRG) | The configuration network phase; NeoForge splits from Forge (1.20.2) and runs Mojang names; Forge 48 and 49 still run SRG; components travel as NBT (1.20.3). |
-| 1.18 – 1.20.1 | 17 | Fabric, Quilt, Forge, NeoForge (1.20.1) | Spigot, Paper, Purpur, Folia (1.19.4) | Mojang | World height -64..320 (1.18); join packet data (1.18.2); signed chat (1.19, 1.19.1, 1.19.3); damage types (1.19.4). 1.20.1 is the largest modded population of its time. |
+| 1.18 – 1.20.1 | 17 | Fabric, Quilt, Forge, NeoForge (1.20.1) | Spigot, Paper, Purpur, Folia (1.19.4) | Mojang | World height -64..320 (1.18); join packet data (1.18.2); signed chat (1.19, 1.19.1, 1.19.3); damage types (1.19.4). Registry and API changes still need a platform port. |
 | 1.17.x | 16 | Fabric, Quilt, Forge | Spigot, Paper, Purpur | Mojang | Java 16. |
 | 1.14 – 1.16.5 | 8 | Fabric, Quilt (1.14.4), Forge (1.14.2) | Spigot, Paper, Purpur (1.14.1) | Mojang from 1.14.4 | Fabric exists. Official mappings (1.14.4). 1.16 adds data-driven dimensions; 1.16.2 puts them in the join packet. |
 | 1.13 | 8 | Forge (1.13.2), Legacy Fabric, Ornithe | Spigot, Paper | MCP | **The Flattening**: numeric ids become named blocks and states; data packs begin. |

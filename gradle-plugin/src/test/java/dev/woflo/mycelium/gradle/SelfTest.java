@@ -1244,7 +1244,7 @@ public final class SelfTest {
             that(!Files.exists(lock), "presentation:the build never writes the lock");
             Presentation.Outcome completed = Presentation.complete(root, work, sources, components, lock);
             that(completed.ok() && completed.added().size() == 12 && completed.lock() != null,
-                    "presentation:the lock task adds the 12 selections of the band: " + completed.diagnostics());
+                    "presentation:the lock task adds the 12 selections of the tool: " + completed.diagnostics());
             Files.writeString(lock, completed.lock(), StandardCharsets.UTF_8);
             that(Presentation.complete(root, work, sources, components, lock).added().isEmpty(), "presentation:completing a complete lock adds nothing");
 
@@ -1259,15 +1259,15 @@ public final class SelfTest {
                     "presentation:the same inputs give the same files");
             // programs may be grouped in folders, and the catalog and the lock are told apart by the file, not by how its path was written
             Path nested = scratch.resolve("nested/src/main/presentation");
-            mkdirs(nested.resolve("bands/gold"));
+            mkdirs(nested.resolve("tools/charged"));
             Files.copy(components, nested.resolve("components.json"));
             Files.copy(lock, nested.resolve("presentation.lock.json"));
-            Files.copy(sources.resolve("status_tool.json"), nested.resolve("bands/gold/status_tool.json"));
-            Presentation.Outcome deep = Presentation.compile(root, work, "1.21.4", nested, nested.resolve("./components.json"), nested.resolve("bands/../presentation.lock.json"));
+            Files.copy(sources.resolve("status_tool.json"), nested.resolve("tools/charged/status_tool.json"));
+            Presentation.Outcome deep = Presentation.compile(root, work, "1.21.4", nested, nested.resolve("./components.json"), nested.resolve("tools/../presentation.lock.json"));
             that(deep.ok() && deep.files().equals(modern.files()),
                     "presentation:a program in a folder is compiled, and a catalog or lock named by an unnormalized path is not taken for a program: "
                             + deep.diagnostics() + deep.files().keySet());
-            Presentation.Outcome flat = Presentation.compile(root, work, "1.21.4", sources, sources.resolve("./components.json"), sources.resolve("bands/../presentation.lock.json"));
+            Presentation.Outcome flat = Presentation.compile(root, work, "1.21.4", sources, sources.resolve("./components.json"), sources.resolve("tools/../presentation.lock.json"));
             that(flat.ok() && Presentation.programs(sources, sources.resolve("./components.json"), sources.resolve("./presentation.lock.json")) == 1,
                     "presentation:the program count leaves out the catalog and the lock: " + flat.diagnostics());
             Presentation.Outcome none = Presentation.compile(root, work, "1.12.2", sources, components, lock);
@@ -1301,7 +1301,7 @@ public final class SelfTest {
             // the lock is only ever appended to
             String before = Files.readString(lock, StandardCharsets.UTF_8);
             Files.writeString(sources.resolve("status_tool.json"), Files.readString(sources.resolve("status_tool.json"), StandardCharsets.UTF_8)
-                    .replace("\"cases\": [", "\"cases\": [\n    {\"when\": {\"seams\": 3, \"cracks\": 2, \"broken\": false}, \"model\": \"fixture:item/aaa_prime\"},"),
+                    .replace("\"cases\": [", "\"cases\": [\n    {\"when\": {\"charge\": 3, \"wear\": 2, \"broken\": false}, \"model\": \"fixture:item/aaa_prime\"},"),
                     StandardCharsets.UTF_8);
             Presentation.Outcome grown = Presentation.complete(root, work, sources, components, lock);
             String oldEntries = before.substring(before.indexOf("\"fixture:status_tool\""), before.indexOf("\n    ]\n"));

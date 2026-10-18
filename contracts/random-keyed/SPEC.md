@@ -8,12 +8,12 @@ the shape of `contracts/random-seeded/SPEC.md`.
 
 ## The problem
 
-- **Derivation with domain separation.** A pure layer derives many values from a few public inputs: a salt from a seed, a
-  year's eclipses from the salt and the year, a deal's seed from the salt and a reroll count. Each kind of derivation must
+- **Derivation with domain separation.** A pure layer derives values for terrain, weather, or loot from a few public
+  inputs. Each kind of derivation must
   be its own domain, so no two kinds share a value and adding one never moves another. The encoding of the inputs must be
   injective, so `("ab", "c")` and `("a", "bc")` never collide. And it must be one-way where it is published, so a salt
   sent to every client does not hand them the seed: a SplitMix-style 64-bit mix is invertible.
-- **A keyed draw.** Some chance must be unforecastable by whoever knows every public input: a reversal, a nonce. That is
+- **A keyed draw.** Some values must be unforecastable by whoever knows every public input, such as a challenge nonce. That is
   a MAC over the inputs under a secret the platform makes once, with a secure generator the pure layer may not call, and
   passes in.
 
@@ -102,6 +102,12 @@ All in `model/`, plain Java, no Minecraft, no JCA lookup.
 does nothing must fail one of its laws (`CONTRACT-PACKAGE.md`), and K1 says what a hash must compute.
 
 ## Using it
+
+- Keep domains in one versioned list, such as `example:terrain:1` and `example:loot:1`. A change to input encoding or
+  interpretation gets a new domain, so existing saved outcomes retain their meaning.
+- Derive public values from framed, explicit inputs. Use keyed draws when knowing those inputs must not reveal the
+  answer. The platform supplies and stores the secret; the pure model never generates one.
+- Use a separate `random.seeded@1` stream when a feature needs a reproducible sequence rather than one keyed result.
 
 
 ## Not covered

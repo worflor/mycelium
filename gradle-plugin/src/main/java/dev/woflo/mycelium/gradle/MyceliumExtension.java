@@ -18,7 +18,7 @@ import java.util.List;
  * mycelium {
  *     root = rootProject.file("../../mycelium")
  *     namespace = "com.example.mymod.mycelium"
- *     contracts("world.copy@1", "world.copy@1")
+ *     contracts("inventory.transfer@1", "world.copy@1")
  *     targetProfile = "26.3-fabric"
  * }
  * </pre>

@@ -2,7 +2,7 @@ package mycelium.item_component.v1.model;
 
 import java.util.Objects;
 
-/** An immutable, validated identifier token for an item component (e.g. {@code "example:card_instance"}). */
+/** An immutable, validated identifier token for an item component (e.g. {@code "example:item_state"}). */
 public record ComponentId(String namespace, String path) implements Comparable<ComponentId> {
     public ComponentId {
         Objects.requireNonNull(namespace, "namespace");

@@ -1,54 +1,42 @@
 # 0019 — The Mosaic: block presentation composed from component data
 
+| | |
+|---|---|
+| Date | 2026-10-13 |
+| Status | Accepted; reference and rejection matrix implemented |
+| Builds on | item.presentation@1 and declared contract requirements (decision 0014) |
 
 ## Context
 
+Item presentation chooses one model. A block can need several independently selected parts, each with its own rotation.
+Enumerating every combination couples independent fields and makes resource generation unnecessarily expensive. The
+compiler also needs to tell the client exactly which models it must load.
 
-Written the vanilla way that is `28^4` = 614,656 blockstate variants (or a multipart list with a case per side per design, written by hand
-and kept in step with the Java that stores the choice). Block states cannot hold it, and a block entity has to, so the look follows from block
-**entity data** that the block state does not carry. Mod loaders each have a way to draw a block from such data (Fabric's renderer API
-from 1.14; model data on Forge and NeoForge), none to say which models the data may name, and nothing that proves the set of models loaded
-is the set drawn: the usual failure is a model a state names that was never loaded, which draws as the missing-texture cube, in one
-configuration out of thousands.
+## Options
+
+- Add multiple-match behavior to item programs: changes their first-match meaning.
+- Enumerate complete block states: multiplies independent domains and reaches the compilation cap unnecessarily.
+- Compile each model part over the inputs it reads: preserves independence and gives an exact model manifest.
 
 ## Decision
 
-`block.presentation@1`: a block's picture declared once as a **mosaic**: the Sigil's inputs over component fields, and an ordered list of
-**parts**, each a guard, a model (or a template over input values) and a quarter-turn. Every part whose guard holds is drawn, in order.
+`block.presentation@1` declares an ordered list of guarded model parts. It reuses the Sigil's inputs, guards, templates,
+and component catalog through a declared requirement. Every matching part draws, with its stated quarter-turn.
 
-- **Read through the Sigil.** A mosaic is parsed by the Sigil's own `Program` reader (the inputs, guards and templates are checked by the
-  code that checks them for items), so there is one guard language. The contract `requires` `item.presentation@1`.
-- **Per-part enumeration (M7).** The compiler computes the **manifest**, every model any state can draw, by enumerating each part over only the inputs
-  that part reads. Its cost is the sum of the parts' spans; the cap (4096, as the Sigil's) applies to each part's span, checked from the domain
-  sizes before anything is enumerated. A panel of four 28-valued inputs spans 614,656 states and costs 28 tuples a side.
-- **The manifest is a law (M4).** It lists exactly the models any state can draw: none missing, none extra. An adapter loads those models and no
-  others, and a plan whose manifest is stale is refused when read.
-- **No new realization of the models.** The models are the consumer's assets and the compiler writes none; it writes the plan. The era table
-  gains a `block.presentation` table among its `realizations` (`dynamic-model` from 1.14, `none` before) rather than a column on `item.presentation`'s, because the two tables'
-  ranges and realizations differ and each is proven to cover every real version exactly once.
-- **Block state is not an input.** A mosaic reads components. What follows from facing or a property stays in ordinary blockstate models, and
-  the mosaic composes on top of it.
-- **No lock.** A mosaic has no legacy codes, so no lock and no ascending-order law. The plan names models, never numbers.
+Enumeration and the span cap apply per part. The manifest is exactly the union of models those parts can draw, sorted
+and deduplicated; a plan with a stale manifest is rejected. Consumer-authored models remain assets, not compiler output.
+Blockstate properties remain in ordinary blockstate models. Components supply the block entity data.
 
-### The plugin
+myceliumPresentation compiles *.mosaic.json beside item programs, using the separate `block.presentation` realization
+table in `eras/minecraft.json`. Mosaics need no legacy numeric-code lock.
 
-`myceliumPresentation` compiles `*.mosaic.json` in the presentation sources through `MosaicTool` (the contract's own text entry), beside the
-item programs it already compiles, with the block table's realization. A `*.mosaic.json` is never an item program. The two contracts' compiled
-models are kept apart, the task tracks both contracts' models as inputs, a problem in either is the same `PR1` finding, and a build with no mosaics behaves exactly as before.
+## Evidence
 
-## Alternatives
-
-- **A second case semantic in the Sigil** (draw every matching case). Rejected: it changes the Sigil's first-match law (S1), and an item
-  presentation that draws several models is a different promise from one that picks one.
-- **Enumerate every state.** Rejected: 614,656 states for one block, and `27^4` more for every extra side-like input. The per-part rule is what
-  makes the contract usable for the case it was written for.
-- **Block states as inputs.** Rejected for this version: it needs a catalog of block state properties and a reader for them, which
-  is a second input kind. Components carry the data the block entity holds; state stays vanilla.
-- **Generate the block models.** Rejected: designs are authored, and a generator that wrote them would hide the one thing a mod's artist decides.
+The pure reference and rejection matrix test assembly, ordering, projection, manifest completeness, determinism, and
+per-part bounds. Plugin self-tests exercise compilation and task inputs. These establish model and build evidence;
+client rendering, rotation, and model loading still require a consumer's game tests.
 
 ## Consequences
 
-- The consumer declares the picture once; adding a design is a value in the domains and a model in the manifest, and nothing is renumbered.
-- A model named by a state but missing from the manifest is impossible by M4, so a missing-model cube cannot come from the mosaic.
-- The contract proves the plan and the manifest, not the pixels: whether the loader composes the models, rotates them as the turns say and
-  draws them in order is the consumer's client lane (SPEC §7).
+Independent parts scale with the sum of their spans. Item program semantics stay unchanged. Native rendering belongs to
+the consumer adapter; the plan and its manifest provide the checked boundary.

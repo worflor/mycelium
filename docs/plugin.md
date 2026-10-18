@@ -8,6 +8,10 @@ This page is the consumer's reference. The plugin's own classes are mapped in `A
 
 ## Using it in a mod
 
+The mod and Mycelium are separate projects developed together. Point the build at an upstream checkout or your own
+private fork. Define the mod's contracts there as its features need them; existing contracts are optional reuse.
+The full authoring loop is in `docs/building-with-mycelium.md`.
+
 `settings.gradle.kts`:
 
 ```kotlin
@@ -20,6 +24,7 @@ pluginManagement {
 
 ```kotlin
 plugins {
+    java // omit if the loader build plugin already applies it
     id("dev.woflo.mycelium")
 }
 
@@ -30,7 +35,8 @@ mycelium {
 }
 ```
 
-That is a whole declaration. The rest is derived, and a declaration overrides what is derived (below). Imported models
+That connects the builds. The plugin derives the selections and defaults described below; explicit configuration
+overrides derivation. Feature declarations live in the Mycelium checkout this build includes. Imported models
 become the mod's own private code under `namespace`. Two mods that pin different majors carry different code and cannot
 conflict. No shared runtime is introduced.
 
@@ -42,6 +48,7 @@ to write down.
 
 | Fact | Derived from | Override |
 |---|---|---|
+| The contracts to import and verify | References under `namespace` in compiled Java, Kotlin, Scala, and pure-layer sources; comments do not count. Import includes each selected contract's declared requirements. A project without the Java plugin imports none and verifies all. | `contracts("world.copy@1", ...)`, or `-Pmycelium.contracts=a@1,b@1` for one run. An explicit non-empty list replaces derivation; `evidence.json` records the selection. |
 | An integration's gates | Every source outside the integration's home package that references the home is a gate, reported in `isolation.json` (`gates: derived`). I1, the law that the other mod's API stays in the home, is still checked in full. | The fourth argument of `integration(...)`, a closed list of gate paths: I2 then reports a reference from anywhere else. |
 | The jar that ships | The project's `jar` task: the code and evidence go in it, and a loader's remap or repackaging step takes it from there. | `artifactJars("jar", "otherJar")`, or `artifactJars("*")` for every Jar task. |
 | The pack format, mixin level and Minecraft range | `eras/`, for the target version (below). | write your own. |
@@ -76,6 +83,11 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
   merged development mappings but absent from the server jar. A consumer opts in with `serverRuntimeArchive.set(...)`,
   `serverRuntimeNamespace.set("intermediary")` (or its actual runtime namespace) and
   `serverRuntimeOwns.set(listOf("net/minecraft/"))`.
+- `bridges { }`: bridge selection, overrides, and conformance sources (below).
+- `presentation { }`: presentation programs, component catalog, and lock; defaults use
+  `src/main/presentation` with `components.json` and `presentation.lock.json`.
+- `capsule { }`: runtime archives, nested jars, class-file ceilings, and mappings for `myceliumCapsule`
+  (`docs/decisions/0008-capsule-runtime-linkage.md`).
 - `privateLibrary("library.api", "my.mod.privateapi")`: carries a feature library privately (below).
 - `artifactJars("jar")`: selects the Jar tasks that receive the artifact's private pure classes and evidence, which
   keeps independent probes and source archives separate. The default is the `jar` task, the jar that ships;
@@ -86,6 +98,7 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 
 | Task | Effect |
 |---|---|
+| `myceliumDeriveContracts` | Scans consumer sources at task execution time and writes the selected contracts and bridges for import, verification, and evidence. Explicit selections override derivation. |
 | `myceliumImport` | Copies each selected contract's `model` (and its requirements') into `build/generated/sources/mycelium/java` under the mod's namespace, and adds it to `main`. A model that reaches the harness is refused. |
 | `myceliumBridgeImport` | Copies the bridges the mod takes (the ones its sources reference as `<namespace>.bridges.<slug>`, or the ones `bridges { use(...) }` names; never one merely because its contract is imported) into `build/generated/sources/mycelium/bridges/java`, as the realization table's variant and overlays for the target Minecraft version, rewritten under the mod's namespace, and adds them to `main`. With `bridges { conformance() }` the bridge's conformance cases go to `build/generated/sources/mycelium/conformance/java`, added to the `gametest` source set (else `main`; `conformance("name")` picks one). A bridge with no realization on the target, or a build with no `minecraft`, is not imported (B2, not an error). An overridden bridge still gets its conformance cases with `conformance()`. Skipped in a verification project. |
 | `myceliumBridges` | Checks the mod's bridge choices (B1, B2) and writes `build/mycelium/bridges/bridges.json`, which the evidence manifest records. In `check`. |
@@ -105,7 +118,7 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 | `myceliumLinkage` | When `mycelium.range { linkage { } }` is declared, holds every class, method and field the finished artifact references to the game's published names (`eras/names.json`: Searge, intermediary, Mojang's mappings, the game's own jar, an API's jar, each pinned by SHA-256 and cached) on each version of the claimed range that has name data. The build fails naming a reference and version when a member is absent. With the optional server inputs it also holds the target version to an exact dedicated-server game inventory, and records that archive's hash. In `check`. |
 | `myceliumPresentation` | Compiles the mod's item presentation programs (`item.presentation@1`) and block mosaics (`*.mosaic.json`, `block.presentation@1`: the era table chooses `dynamic-model` or `none`, and the task writes the plan with its manifest of models) for the target Minecraft version: the era table chooses an item definition or an item model with overrides, and the task writes it, with the plan the runtime adapter reads, into generated resources. A law the programs break, or a selection the committed lock lacks, fails the build with the diagnostic and the lines to add. Runs before `processResources`; skipped when there is no presentation source directory. |
 | `myceliumPresentationLock` | Appends the legacy codes the presentation programs need to the committed lock in the mod's sources, on request; never part of a build, and never changes an existing line. |
-| `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (every Jar by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
+| `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (the standard `jar` task by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
 | `myceliumRecordProofs` | This repository only: after every harness and every era gate has passed, writes `contracts/proofs.json` (a fingerprint of each contract's sources and the Javas the gates ran on) so a mod need not run them again. In `check`. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |
@@ -159,8 +172,8 @@ refactor can always compile.
 ## Bridges
 
 A bridge is the native half of a divide: source that touches Minecraft, kept in `bridges/<slug>/` here and imported as source
-under the mod's namespace (`BRIDGE-PACKAGE.md`, `docs/decisions/0016-bridges.md`). Nothing runs at runtime; the mod gets the
-source for its target.
+under the mod's namespace (`BRIDGE-PACKAGE.md`, `docs/decisions/0016-bridges.md`). The mod compiles and runs the imported
+source for its target; there is no shared Mycelium runtime.
 
 - **Selection.** A mod gets a bridge when its sources reference `<namespace>.bridges.<slug>` (or `bridges { use("slug") }`),
   which also brings the bridge's contract. The realization table (`eras/minecraft.json`, one table per divide) says which
@@ -179,7 +192,7 @@ source for its target.
   them) and, with `conformanceClassesOutOfJar()`, the conformance classes; the `conformance-consumer` fixture proves the four modes.
 - **Evidence.** The manifest's `bridges` section records the variant and overlays chosen for the target, or the override.
 
-The default `namespace` is the group plus the artifact id (`com.acme.dream_mod.mycelium`), so two mods in a group do not share one; with no group it is `mycelium.imported.<id>` and the build warns. A namespace the mod writes always wins.
+The default `namespace` is the group plus the artifact id (`com.acme.example_mod.mycelium`), so two mods in a group do not share one; with no group it is `mycelium.imported.<id>` and the build warns. A namespace the mod writes always wins.
 
 ## Declaring once (`myceliumDefaults`)
 
@@ -278,7 +291,7 @@ is recompiled or re-downgraded for shipping: the bytes are exactly the ones the 
 A target whose era is at least the pure layer's release needs no downgrade: `myceliumPureShip` is a no-op and says
 so (`ship.json`'s `why`). The artifact's jar adds the ship task's classes and, only when a downgrade actually
 happened, excludes the same packages from wherever `main` already compiled them (a consumer may add its pure
-sources to `main` directly, as `docs/decisions/0001-substrate.md` does for Somnium's kernels) — one path, never two, and never
+sources to `main` directly, as described in `docs/decisions/0001-substrate.md`) — one path, never two, and never
 touched when there is nothing to ship.
 
 `myceliumPureShip` works on the standard `jar` task; a loader's remap or repackaging step (Loom's `remapJar`,
@@ -336,4 +349,3 @@ baseline of the same shape, opt-in and off by default.
 It is a textual count (the same reference used three times on one line counts three), not a distinct-type or
 call-graph count, and it does not itself cross a wall: Stonecutter bridges neighbouring versions within a port, and
 a provider directory per era still crosses the walls the era table (`docs/eras.md`) names.
-

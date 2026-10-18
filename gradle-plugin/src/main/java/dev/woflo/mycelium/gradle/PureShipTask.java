@@ -32,7 +32,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /**
- * Puts the pure layer's classes into this target's jar (docs/eras.md, "Not yet built" 1): the same bytes
+ * Puts the pure layer's classes into this target's jar (docs/plugin.md, "Shipping downgraded jars"): the same bytes
  * {@code myceliumEraJava<N>} already downgraded, shaded and checked (stubs, linkage, behaviour) for this target's era,
  * when the era's Java is older than the pure layer's release; otherwise a no-op, because the classes as compiled
  * already run there (docs/decisions/0006).

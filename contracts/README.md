@@ -1,56 +1,52 @@
 # Contracts: worked examples
 
-Each package here crossed one divide for one mod, when that mod met the divide. They are what Mycelium's machine
-produced, not the product. Read the ones near your problem to see how a divide was modelled: what the declaration is,
-which laws were stated, what the rejection matrix makes wrong on purpose. Reuse one when it already says what your mod
-means. Extend it when it nearly does. When nothing fits, cross the divide yourself
-(`docs/building-with-mycelium.md`).
+Each package models a divide encountered by a mod. Read its SPEC for the meaning, laws, limits, and rejection matrix.
+Reuse a package when it fits and helps, or author the contract your mod needs in its own Mycelium checkout or fork. The
+[building guide](../docs/building-with-mycelium.md) explains the process.
 
-`contracts/registry.json` is the complete, checked list: id, directory, package, status, supersedes, provenance. This
-index is prose, kept by review; add a row when you add a package. `CONTRACT-PACKAGE.md` is what every package is made
-of. Two kinds are worth copying: an **operation** contract governs an outcome (`contracts/flow`), a **model** contract
-governs a type over any sequence of calls (`contracts/chunk-hold`).
+[registry.json](registry.json) is the checked source for ids, packages, dependencies, status, and provenance.
+This index is maintained by review. The [package guide](../CONTRACT-PACKAGE.md) distinguishes operation contracts
+(outcomes and receipts) from model contracts (laws over sequences of calls).
 
-| Contract | Directory | The divide | Written for |
-|---|---|---|---|
-| `item.component@1` | `contracts/item-component` | Item state as typed data components from 1.20.5 and as NBT before, one fenced grammar for both (Rosetta) | Cartomancy |
-| `item.presentation@1` | `contracts/item-presentation` | How an item looks from its state: a modern item definition from 1.21.4, a model with overrides before; one program compiled to both, with stable legacy codes (the Sigil). Requires `item.component@1`. Bridge `item-presentation` | Somnium |
-| `block.presentation@1` | `contracts/block-presentation` | How a block looks from its block entity's data: a core and parts chosen by independent fields, each turned a quarter-turn, drawn in order; the manifest of every model the data can name is exact, and a part is enumerated apart from the others so a panel of 614,656 states costs 28 tuples a side (the Mosaic). Requires `item.presentation@1` | Cartomancy |
-| `state.lifecycle@1` | `contracts/state-lifecycle` | What state does at each crossing (save, login, death, respawn, clone, dimension change, unload, stop, and a mod's own), with hosts no stale work can reach (the Threshold). Requires `item.component@1`. Bridge `lifecycle` | Somnium |
-| `chunk.hold@1` | `contracts/chunk-hold` | Several holders keeping chunks loaded over an engine whose tickets are not counted per holder | Somnium |
-| `dimension.travel@2` | `contracts/dimension-travel-2` | A trip between levels and back that survives the process dying in between | Somnium |
-| `dimension.travel@1` | `contracts/dimension-travel` | Moving a player between levels, confirming arrival before reporting success (superseded by `@2`) | Somnium |
-| `storage.access@1` | `contracts/storage-access` | Another block's storage, found by level, position and face however each loader keeps it (Fabric's transfer API, NeoForge's and Forge's capabilities, vanilla's sided containers): items and fluids simulated, then committed or released in one nested scope of an `inventory.transfer@1` transaction, so a move goes from one store to the other or not at all; fluids in thousandths of a bucket, converted exactly to each loader's unit (`eras/loaders.json`) with a remainder refused; a face reaches only what its side allows; a store that vanishes inside a move releases it. Requires `inventory.transfer@1` | Cartomancy |
-| `inventory.transfer@1` | `contracts/flow` | Transactional item transfer where loaders' handlers differ; the model for operation contracts | Osmosis |
-| `world.copy@1` | `contracts/world-copy` | A bounded read of a block region, planned then written within a per-call budget | Somnium |
-| `rule.effects@1` | `contracts/rule-effects` | Applying and removing a rule's effects on a bounded set of entities, with stable ids and scope | Somnium |
-| `world.clock@1` | `contracts/world-clock` | Time as 26.1 models it, on every version: clocks with a rate, a pause and a fractional carry, timelines with periods and markers, edges between samples, the sleep skip; the game before 26.1 is the one clock at rate one. Bridge `world-clock` (decision 0018) | Cartomancy, Somnium |
-| `persistence.player-state@1` | `contracts/player-state` | Durable per-player state with an explicit schema and a walk-verified migration chain | Somnium |
-| `presentation.particle-cue@1` | `contracts/cue` | A particle or sound cue scheduled against a profile-resolved key, emitted at the outermost commit | Somnium |
-| `data.catalog@1` | `contracts/data-catalog` | A reloadable, validated set of named data entries: what a datapack folder becomes | Somnium |
-| `data.generation@1` | `contracts/data-generation` | Several catalogs that name one another, published as one view or not at all: every entry accounted for, references resolved across catalogs (a required kind's break refuses, an optional entry leaves with what named it), one name by a fixed canonical hash of the contents and the interpreter, the live view serving meanwhile. Requires `data.catalog@1` | Cartomancy |
-| `random.seeded@1` | `contracts/random-seeded` | A seed that means the same stream on every Java and after every refactor | Somnium |
-| `random.keyed@1` | `contracts/random-keyed` | A value derived from public inputs that does not run back to them, and a draw no one can forecast without the world's key: owned SHA-256 and HMAC-SHA-256 over an injective, domain-separated message, compared with odds exactly | Cartomancy |
-| `agent.link@1` | `contracts/agent-link` | A mod answering an out-of-process agent over a connection that drops: who may ask, at-most-once | Recon |
-| `chat.invocation@1` | `contracts/chat-invocation` | Turning public chat into private requests without listening to it or recording it | Recon |
-| `chat.coverage@1` | `contracts/chat-coverage` | Retired: tracking whether an owned chat stream is complete. Kept so older builds resolve it | Recon |
+| Contract | Meaning |
+|---|---|
+| [`item.component@1`](item-component/SPEC.md) | Typed item state across data components and legacy NBT, with preservation and quarantine rules (Rosetta) |
+| [`item.presentation@1`](item-presentation/SPEC.md) | State-driven item assets and selectors, with stable legacy codes (the Sigil); requires `item.component@1` |
+| [`block.presentation@1`](block-presentation/SPEC.md) | Independent model parts compiled from component fields, with an exact model manifest (the Mosaic) |
+| [`state.lifecycle@1`](state-lifecycle/SPEC.md) | Slot policies across host transitions, stale-reference rejection, and release callbacks (the Threshold); requires `item.component@1` |
+| [`chunk.hold@1`](chunk-hold/SPEC.md) | Independent holders over an engine that deduplicates chunk tickets |
+| [`dimension.travel@2`](dimension-travel-2/SPEC.md) | Journaled return trips that recover after the process stops |
+| [`dimension.travel@1`](dimension-travel/SPEC.md) | Confirmed movement between levels; superseded by `@2` |
+| [`inventory.transfer@1`](flow/SPEC.md) | Transactional item transfer and its commit boundary |
+| [`storage.access@1`](storage-access/SPEC.md) | Sided block storage, exact fluid units, and transactional moves; requires `inventory.transfer@1` |
+| [`world.copy@1`](world-copy/SPEC.md) | Planned region copies within a write budget, including sealed copies |
+| [`rule.effects@1`](rule-effects/SPEC.md) | Apply and remove scoped effects with stable identities |
+| [`world.clock@1`](world-clock/SPEC.md) | Clocks, rates, timelines, markers, sync, and sleep skip; the older game is a special case |
+| [`persistence.player-state@1`](player-state/SPEC.md) | Durable player state and verified schema migration chains |
+| [`presentation.particle-cue@1`](cue/SPEC.md) | Particle or sound cues emitted after the outermost commit |
+| [`data.catalog@1`](data-catalog/SPEC.md) | Reloadable, validated named data entries |
+| [`data.generation@1`](data-generation/SPEC.md) | Atomic publication of related catalogs, with validated cross-references and stable fingerprints |
+| [`random.seeded@1`](random-seeded/SPEC.md) | A seed with a stable stream across Java versions and refactors |
+| [`random.keyed@1`](random-keyed/SPEC.md) | Domain-separated SHA-256 derivations and keyed HMAC draws with owned, reproducible algorithms |
+| [`agent.link@1`](agent-link/SPEC.md) | Authorized requests over reconnecting external-agent links, with at-most-once handling |
+| [`chat.invocation@1`](chat-invocation/SPEC.md) | Explicit chat invocations without recording the surrounding stream |
+| [`chat.coverage@1`](chat-coverage/SPEC.md) | Retired stream-coverage model, retained so older builds resolve |
 
-Proposals not yet packages are decision records: the Sigil (item presentation compiled from component state,
-`docs/decisions/0012-sigil-item-presentation.md`) and the Threshold (state declares how it crosses,
-`docs/decisions/0013-threshold-state-lifecycle.md`). The board is `docs/STATUS.md`.
+A reference harness passing establishes model evidence. Game behavior requires a consumer's native implementation and
+game tests. [Decisions](../docs/decisions/) record rationale and observed evidence; the [status board](../docs/STATUS.md)
+lists remaining work.
 
-## Bridges
+## Native bridges
 
-A contract whose divide is Minecraft itself has a native half, a bridge (`BRIDGE-PACKAGE.md`). `item-component` has
-`item-carrier`: its `StackCarrier` port is how a stack keeps the fenced root, implemented as `custom-data` (1.20.5 and later)
-and `root-tag` (1.14 to 1.20.4) and proven on real stacks by conformance cases.
+Bridges implement contract ports as target-selected source. Selection and packaging are described in the
+[plugin reference](../docs/plugin.md#bridges); the [bridge guide](../BRIDGE-PACKAGE.md) defines their format.
 
-`world-clock`: its `ClockPort` is how a mod reads and moves time. `native-clock` (26.1 and later) maps it onto the game's own world
-clocks, timelines and time packet, and writes a mod's clocks and timelines as datapack JSON; `emulated-clock` (1.17 to 1.21.11)
-makes the overworld clock vanilla's `dayTime` and keeps a mod's own clocks in saved data, advanced from the mod's server-tick hook and
-synced by a payload the mod delivers. Conformance cases hold the pure model to the running game on both.
+| Bridge | Port | Realizations |
+|---|---|---|
+| [`item-carrier`](../bridges/item-carrier/bridge.json) | `StackCarrier` | Native custom data or root item NBT |
+| [`item-presentation`](../bridges/item-presentation/bridge.json) | `StackPresenter` | String selectors or legacy numeric model overrides |
+| [`world-clock`](../bridges/world-clock/bridge.json) | `ClockPort` | Native world clocks or emulation over day time and saved data |
+| [`lifecycle`](../bridges/lifecycle/bridge.json) | `LifecyclePort` | Player and server state, bound through loader event overlays |
 
-`state-lifecycle`: its `LifecyclePort` is how a mod holds its state across a login, a logout, a respawn, a death, a dimension change, a save and
-the server's stop. `lifecycle` (`loader-events`, 1.21 to 1.21.1 and 26.3 on) turns Fabric's, NeoForge's and Forge's events into the contract's
-crossings (each loader's listeners are an overlay written for it), keeps a `HostStore` for players and one for the server, and keeps durable slots
-in the overworld's saved data. Its conformance cases drive the game's own server paths with mock players, so the loader's events fire for real.
+`eras/minecraft.json` owns the version ranges. Linkage covers pinned game data; loader APIs and game conformance are
+checked by consumers. A realization row and a compiled conformance case do not establish a successful game run.

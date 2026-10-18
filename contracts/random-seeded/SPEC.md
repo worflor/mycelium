@@ -1,5 +1,8 @@
 # random.seeded@1
 
+A deterministic random stream whose algorithm belongs to the mod. The same seed reproduces the same draws across Java
+versions and refactors, without a runtime provider lookup. Features compose independent streams by choosing their seeds.
+
 
 ## Model
 

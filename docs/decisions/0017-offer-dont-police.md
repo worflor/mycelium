@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | Date | 2026-10-12 |
-| Status | Accepted (Wolf, 2026-10-12: building with Mycelium "should feel as flexible and powerful for the mod... we don't really want mycelium to be enforcing stuff that isn't overly necessary"). |
-| Evidence | A friction audit of every constraint the plugin places on a consumer, against Somnium (the one consumer of the plugin; Osmosis does not apply it). |
+| Status | Accepted. |
+| Evidence | A friction audit of every constraint the plugin places on a consumer, against Somnium as the proof consumer. |
 
 ## Context
 
@@ -49,8 +49,7 @@ home that references it, reported rather than refused, unless the mod declares a
 plugin cannot see test runs), so a range with no keystone warns and its versions stay interpolated; the contract list is derived
 only in a project with the Java plugin; the recorded proofs are `contracts/proofs.json`, written by `myceliumRecordProofs` in
 this repository's `check`, and cover the Javas the era gates ran on; `artifactJars` defaults to `jar`; the root declares once
-with `myceliumDefaults { }` (`dev.woflo.mycelium.defaults`); and Somnium is the proof consumer (its patch is reported with the
-build). Not built: overlays inside one jar (`docs/STATUS.md`).
+with `myceliumDefaults { }` (`dev.woflo.mycelium.defaults`); and a Somnium consumer build supplied independent verification. Not built: overlays inside one jar (`docs/STATUS.md`).
 
 ## Consequences
 

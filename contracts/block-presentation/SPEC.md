@@ -1,11 +1,19 @@
 # block.presentation@1 - the Mosaic
 
+| | |
+|---|---|
+| Contract id | `block.presentation@1` (implementation namespace `mycelium.block_presentation.v1`) |
+| Kind | Model contract (`CONTRACT-PACKAGE.md`): laws over a compiler and the plan it hands an adapter |
+| Requires | `item.presentation@1` (its inputs, guards, templates, catalog and `Json`), and through it `item.component@1`: declared in `contracts/registry.json`, `docs/decisions/0014-contracts-compose-by-declared-requirement.md` |
+| Origin | Cartomancy. The general compilation decision is `docs/decisions/0019-mosaic-block-presentation.md`; examples here are synthetic |
+| Reference model | `src/`: pure Java 17, no Minecraft or loader imports, no dependency but `item.presentation@1`'s model |
+| Claims discipline | Everything here is design-time. A passing harness proves the reference compiler and the matrix; it says nothing about how a game composes or draws a baked model. That evidence is a consumer's own client lane |
 
 ## 1. The problem
 
 A block's look follows from its block state: one model (or a multipart list) per property combination, written out by hand. That
-stops working when the look follows from **data**: which of twenty-seven designs each of a panel's four sides wears is
-`27^4` = 531,441 combinations, far too many for properties, and it lives in a block entity.
+stops working when the look follows from **data**. A configurable display with four independent 32-valued fields has
+`32^4` = 1,048,576 combinations. Its parts can read block entity data without representing every combination as a property.
 
 The Sigil (`item.presentation@1`) solves the item half of this by choosing **one** model from a stack's component state. A
 block that wears a different design on each side needs to draw **several** models, turned to face four ways, chosen by four
@@ -13,8 +21,8 @@ independent fields. The Mosaic states that picture once, as a list of **parts** 
 platform adapter a plan and a **manifest**: the exact set of models its client has to have loaded.
 
 The cost of a naive reading is the whole point of the contract. A Sigil program is compiled by enumerating every tuple of the
-inputs it reads (capped at 4096). A mosaic of four 28-valued inputs spans 614,656 tuples, but each part reads only one of them
-and spans 28. The Mosaic enumerates **per part**, so the cost is the sum of the parts' spans and not the product of every
+inputs it reads (capped at 4096). A mosaic of four 32-valued inputs spans 1,048,576 tuples, but each part reads only one of them
+and spans 32. The Mosaic enumerates **per part**, so the cost is the sum of the parts' spans and not the product of every
 domain, and a picture whose parts are independent costs nothing like its combinations.
 
 ## 2. The model
@@ -43,8 +51,8 @@ the rule that every part whose guard holds is drawn.
 {
   "block": "example:display_panel",
   "inputs": {
-    "north": {"component": "example:panel", "field": "north", "domain": {"enum": ["none", "angler", "archer", "..."]}},
-    "east":  {"component": "example:panel", "field": "east",  "domain": {"enum": ["none", "angler", "archer", "..."]}}
+    "north": {"component": "example:panel", "field": "north", "domain": {"enum": ["none", "stripe", "grid"]}},
+    "east":  {"component": "example:panel", "field": "east",  "domain": {"enum": ["none", "stripe", "grid"]}}
   },
   "parts": [
     {"model": "example:block/panel/core"},

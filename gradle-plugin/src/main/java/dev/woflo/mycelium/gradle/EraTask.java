@@ -190,7 +190,7 @@ public abstract class EraTask extends DefaultTask {
         }
     }
 
-    /** {@code com.example.mymod.kernel.noise.Run} → {@code noise}; a contract's {@code ...v1.harness.Run} → {@code harness}. */
+    /** {@code woflo.oneiric.kernel.noise.Run} → {@code noise}; a contract's {@code ...v1.harness.Run} → {@code harness}. */
     static String area(String main) {
         String[] p = main.split("\\.");
         return p.length >= 2 ? p[p.length - 2] : main;

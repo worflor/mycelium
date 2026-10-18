@@ -3,17 +3,15 @@
 | | |
 |---|---|
 | Date | 2026-10-12 |
-| Status | Accepted as direction (Wolf, 2026-10-12: "the mod is the pure intent. Mycelium takes that intent and weaves it into both game loaders and all those things... supporting earlier versions should be as easy as saying, well, it just maps here now. Or it should be as easy as saying, well, it just objectively cannot work"). First bridge: the item carrier for `item.component@1`. |
+| Status | Accepted; implemented, beginning with the item carrier for `item.component@1`. |
 | Goes beyond | `DESIGN.md` §5 (the tower puts every provider in the consumer) and decision 0015 |
 
 ## Context
 
 The founding design gives Mycelium the pure half of a divide (models, laws, era data, compilers) and leaves the native half,
-the providers, to each mod. Building with Rosetta showed what that costs. Somnium's `Carrier` is 359 lines of which none are
-about dreams: converting Mojang tags to Rosetta's model per version, reading and writing the fenced compound in
-`custom_data`, keeping other mods' keys, migrating old keys. Cartomancy will write the same class; so will every mod after
-it. And every new Minecraft version means editing every one of them. Supporting an older version is a port of each mod,
-not a fact about the game.
+the providers, to each mod. Building with Rosetta exposed repeated adapter work: converting native tags per version,
+reading and writing fenced `custom_data`, keeping foreign keys, and migrating legacy keys. That work is platform
+knowledge rather than consumer content. Keeping it in each mod repeats the porting work whenever the native API changes.
 
 The native half of a divide is usually as general as the pure half. The part of a provider that is truly the mod's own is
 small; the rest is "how this version does that thing", which is knowledge about the game, and belongs with the era data
@@ -22,7 +20,7 @@ that already describes the game.
 ## Decision
 
 Mycelium ships **bridges**: native adapters, as source, one variant per realization of a divide, imported into the mod like
-models (private, under the mod's namespace, no runtime), chosen by the target's version from data, and proven against the
+models (private, under the mod's namespace, no shared runtime), chosen by the target's version from data, and proven against the
 real game. The mod states its intent through the contract; the bridge carries it onto whatever the target is.
 
 ### Shape
@@ -51,7 +49,7 @@ The only things enforced are the things that prevent silent breakage: a variant'
 
 ### Minecraft as the checker
 
-Every bridge is proven in three places:
+Bridge verification has separate levels:
 
 1. **Linkage, in Mycelium's own gate.** Each variant's every class, method and field reference is resolved against the
    published names of every version its realization row covers (`myceliumLinkage`'s machinery, `eras/names.json`). A
@@ -71,13 +69,12 @@ for versions the mod claims in `range { }`.
 
 ## Consequences
 
-- Somnium's `Carrier` moves to `bridges/item-carrier/` (variants `custom-data` from 1.20.5, `root-tag` before) and shrinks in
-  the mod to its component list. Adding 1.20.1 to a Rosetta mod becomes a build target, not a rewrite.
+- The repeated carrier adapter moves to `bridges/item-carrier/` (variants `custom-data` from 1.20.5, `root-tag` before).
+  Consumers retain their component declarations and native extensions.
 - The next contracts are written with their bridges from the start: `world.clock@1` (`native-clock` from 26.1,
   `emulated-clock` before), the Sigil's runtime selector (strings from 1.21.4, floats before), the Threshold's lifecycle
   bridge (each loader's events into transitions).
-- `docs/architecture.md`'s tower gains the bridge layer between contracts and the mod's own providers; `docs/building-with-
-  mycelium.md` adds "write the bridge" as a step; `CONTRACT-PACKAGE.md` gains the bridge package shape.
+- `docs/architecture.md`'s tower gains the bridge layer between contracts and the mod's own providers; `docs/building-with-mycelium.md` adds "write the bridge" as a step; `BRIDGE-PACKAGE.md` defines the bridge package shape.
 - Bridges are code that touches Minecraft, so the purity rules stay with the models; bridges have their own rules: Mojang
   names, a port to implement, linkage on their whole range, conformance tests shipped beside them.
 
@@ -130,7 +127,7 @@ for versions the mod claims in `range { }`.
 - Conformance data is test data: the jar a mod ships leaves out the files the import laid under `.../mycelium/conformance`
   (they still reach the game-test run, which reads the compiled output directories). `bridges { shipConformanceResources() }` keeps
   them; `conformanceClassesOutOfJar()` also leaves the conformance classes out, for a mod whose tests are not in the main source
-  set. `item-presentation` (decision 0012, "Somnium, adopted") is the second bridge with cases; Somnium's shipping jar no longer
+  set. `item-presentation` (decision 0012) is the second bridge with cases; Somnium's shipping jar no longer
   holds the clock's datapack files.
 
 ## Loader halves (2026-10-13)

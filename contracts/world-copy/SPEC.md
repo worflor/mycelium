@@ -84,7 +84,7 @@
 
 - **L8 (a sealed copy has no way out)** — `ExitPolicy` names the tokens that are exits (portals, gateways) and what
   replaces them; `WorldCopy.executeSealed` forgets them **after** the transform, so neither the source's exits nor
-  one a transform makes survive into the copy (`T13`). Added 2026-09-23 from Somnium (a copied exit bypassed a region boundary). Additive: `execute` is unchanged; the sealed overload is new.
+  one a transform makes survive into the copy (`T13`). Added 2026-09-23 from Somnium (a copied portal allowed an unintended exit from an isolated region). Additive: `execute` is unchanged; the sealed overload is new.
 
 ## 5. Positive obligations
 

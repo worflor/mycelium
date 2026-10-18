@@ -1,11 +1,10 @@
 # Optional integrations, isolated
 
 A mod that works *with* another mod when it is installed and *without* it when it is not keeps that promise only if the
-other mod's classes are never loaded when it is absent. One stray `import` in the wrong class and the artifact crashes
-on every server that doesn't have the other mod. That is a property of the source's shape, so Mycelium checks it at
-build time instead of hoping.
+other mod's classes are never loaded when it is absent. A direct API reference outside the guarded integration can cause class loading to fail when that mod is absent.
+Mycelium checks source references at build time; runtime loading behavior still needs consumer tests.
 
-## The law (`myceliumIsolation`, runs before `compileJava` and in `check`)
+## The law (`myceliumIsolation`, runs in `check`)
 
 | Law | Statement |
 |---|---|
@@ -14,6 +13,8 @@ build time instead of hoping.
 
 Comments are ignored (a doc comment may name anything). The report is `build/mycelium/isolation/isolation.json`, and a
 violation is reported with the file and the package: I1 fails the build, I2 warns by default (`mycelium { checks { } }` sets either).
+The task does not precede `compileJava`. The scan checks textual references; it does not prove reflective loading or
+every possible runtime path safe.
 
 ```kotlin
 mycelium {
@@ -44,6 +45,6 @@ With Stonecutter, an integration is declared per version and compiled only where
 5. **The gate.** The gate calls in under the same guard, after the loader says the mod is loaded.
 
 The integration is written once. It builds for every loader of every version the other mod supports, and isolation
-proves each of those builds loads nothing it shouldn't. Two shapes cover most integrations: a plugin API the other
+checks that each build keeps API references within the declared boundary. Two shapes cover most integrations: a plugin API the other
 mod discovers (it calls you; the loader's entrypoint or annotation finds the home package), and a runtime check behind
 a gate (you call it, only after the loader says it is present). `CHANGELOG.md` records where these were first proven.

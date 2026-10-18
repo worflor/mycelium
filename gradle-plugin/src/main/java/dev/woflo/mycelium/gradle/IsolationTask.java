@@ -43,8 +43,8 @@ import java.util.regex.Pattern;
  *
  * <pre>
  * mycelium {
- *     integration("voicechat", "com.example.mymod.voice", "de.maxhenkel.voicechat")
- *     integration("cobblemon", "com.example.mymod.compat.cobblemon", "com.cobblemon", "woflo/oneiric/compat/Integrations.java")
+ *     integration("voicechat", "woflo.oneiric.voice", "de.maxhenkel.voicechat")
+ *     integration("cobblemon", "woflo.oneiric.compat.cobblemon", "com.cobblemon", "woflo/oneiric/compat/Integrations.java")
  * }
  * </pre>
  */

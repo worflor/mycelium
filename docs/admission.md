@@ -2,11 +2,16 @@
 
 Mycelium grows with the mods that use it. A contract, a task, an era row or a harness rule is added by the work that
 needs it, in the same piece of work, and one mod is enough to start (`docs/decisions/0015-a-compiler-you-build-with.md`).
-This page is not a gate against that. It says what a good addition looks like, so that what grows stays correct for
-every mod that builds on it. The invariants every addition keeps are in `docs/architecture.md`; the loop for crossing a
-divide is `docs/building-with-mycelium.md`.
+That work can happen in the mod's own Mycelium checkout or private fork. Existing contracts are optional reuse;
+issues and pull requests are ways to bring work upstream. The shared compiler machinery remains available throughout.
+These criteria keep an addition useful to every mod that builds on it. The invariants are in `docs/architecture.md`;
+the loop for crossing a divide is `docs/building-with-mycelium.md`.
 
 ## A contract
+
+A public contract is an intentional contribution for others to reuse. Keep unpublished feature definitions in the
+consumer's Mycelium checkout; a compiler contribution does not require contributing those definitions. See
+`docs/decisions/0022-publishing-reusable-contracts.md`.
 
 A contract is a good one when each answer is yes:
 
@@ -50,8 +55,8 @@ the mistake, caught by the harness. It stays in `@N` when no label or required m
 
 ## An era, a loader, a version
 
-- **Versions** come from Mojang's launcher manifest into `eras/versions.json` (`myceliumRefreshVersions`, by hand;
-  builds stay offline). The repository check proves every version falls in exactly one era.
+- **Versions** come from Mojang's launcher manifest into `eras/versions.json` (`myceliumRefreshVersions`, by hand).
+  Ordinary builds use the committed list. The repository check proves every version falls in exactly one era.
 - **An era** is a row of `eras/minecraft.json`: its Java, loaders, names and walls. Each bound is a version the manifest
   names, or `<line>.x` for a whole line.
 - **A loader** gets its package roots in `eras/loaders.json`, with where they were read. From then on the pure layer may
@@ -68,14 +73,21 @@ main that exits 0 when it holds, and every runner runs them before any package.
 
 ## A document
 
-- **Living documents describe the present, timelessly**: `README.md`, `AGENTS.md`, `CONTRACT-PACKAGE.md`, `docs/`.
-  They carry no "as of" state and no history. A count appears only on `README.md`'s status line, where the repository
-  check derives it. Every path they name is in this repository.
+- **Living documents describe the present, timelessly**: `README.md`, `AGENTS.md`, the package guides, and the guides in
+  `docs/`. The status board holds open work; decision records and the changelog hold dated evidence and history.
+  A count appears only on `README.md`'s status line, where the repository check derives it. Every path they name is in
+  this repository.
 - **Each fact has one home** and everything else links to it. The homes are in `AGENTS.md`, "Where knowledge lives".
 - **A proposal says it is a proposal**, in its decision record's status and wherever a living document mentions it.
 - **History** goes to `CHANGELOG.md` and `docs/decisions/`: what changed, what was run, what was found, dated.
   `DESIGN.md` and `archive/` are the founding record and are not rewritten.
-- **Consumers are named in words, as provenance**: who a contract was written for, where a law was learned. Mycelium
-  serves every mod that builds on it, so no document depends on one of them, and none points into another repository.
+- **Consumer provenance stays brief.** Name the consumer and explain the general failure or requirement it exposed.
+  Use synthetic identifiers and examples. Private feature designs, internal class inventories, conversation transcripts,
+  local evidence ids, and paths into other repositories do not belong here. A reader must be able to use the document
+  without private context.
+- **Write for the document's reader.** Lead with the purpose or decision, state limits alongside evidence, and link to
+  the canonical detail. Remove completed work from the status board and implementation narration from reference guides.
+- **A publication review includes history.** Editing a file does not remove older copies from Git. Review the tree,
+  reachable history, and generated artifacts before publishing; history rewriting and publication require owner approval.
 - **Do not add a document because information exists.** Ask what kind of understanding it gives and whether a home
   already fits.
