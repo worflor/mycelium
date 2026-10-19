@@ -9,6 +9,10 @@ invalidate a previously saved binding. This also preserves caller-supplied entry
 Added paired direct, forwarded, known-null and guarded witnesses, plus an exhaustive reference-snapshot join-law check.
 All 55 fresh-state runtime witnesses passed on Java 8, 17 and 25.
 The focused suites passed 773 assertions on Java 25 and 540 on Java 17.
+The public aggregate `check` passed in 13m 2s: 1,766 plugin assertions, 55 source-wrapper assertions, 19 consumer-hook
+assertions, bridge linkage and all 24 contracts on Java 8, 16, 17, 21 and 25. Independent consumers rebuilt Java 8,
+17 and 25 artifacts on Java 17 and 25 hosts. All seven pinned Modrinth experiments passed with the final analyzer;
+an independent audit checked all 21 worker reports, their recorded hashes and the original and mutated archive hashes.
 
 ## 2026-10-19 - Retain paired corpus worker evidence
 

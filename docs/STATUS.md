@@ -18,6 +18,11 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
 
 ## Build tooling
 
+- **External downgrader concurrency:** JvmDowngrader 2.0.1 can fail intermittently with a `HashMap$Node` / `TreeNode`
+  `ClassCastException` in `PathDowngrader` parallel work. Observed again on the Java 16 `random.seeded@1` gate on
+  2026-10-19. The existing single retry retains the first failure log, and successful output still needs linkage and
+  suite checks. Replace that mitigation with a verified upstream fix or deterministic execution; retry success does
+  not repair the underlying race.
 - **Slot registry validation at build time:** `SlotRegistry.of` validates declarations when constructed. A Gradle task
   that runs the check on a consumer's declarations is not implemented.
 - **Presentation fixture automation:** `gradle-plugin/src/test/fixtures/presentation-consumer` checks task wiring and
