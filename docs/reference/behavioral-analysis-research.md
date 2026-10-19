@@ -37,6 +37,11 @@ normal return values, outcome effects, reads within helpers and callback exposur
 dependency. A later field overwrite does not change an earlier captured reference. Missing dependency facts are not
 a non-null proof.
 
+Dereferences need the binding facts captured with that origin as well. A local copy of a static read keeps its binding
+and invalidation facts after another write to the field. Paired runtime controls save a nullable value before repair,
+or a ready value before clearing the field. Entry-binding and saved-value guard controls separate those cases from an
+unknown incoming value. Reference-snapshot joins intersect binding guarantees and union invalidations and dependencies.
+
 Reference-dependency joins use Boolean disjunction and parameter-set union. State joins intersect must-bindings and
 union may-effects within their exception environments. Tests check associativity, commutativity, idempotence and
 snapshot immutability, including an exhaustive two-parameter reference domain. These laws do not establish that every

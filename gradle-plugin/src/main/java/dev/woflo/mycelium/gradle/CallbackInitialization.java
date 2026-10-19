@@ -88,6 +88,13 @@ final class CallbackInitialization {
             return new ReferenceDependencies(nullable || other.nullable, joined);
         }
     }
+    /** Binding facts belong to the produced reference, even after its source field changes. */
+    record ReferenceSnapshot(ReferenceDependencies dependencies, boolean bound, boolean cleared) {
+        ReferenceSnapshot join(ReferenceSnapshot other) {
+            if (equals(other)) return this;
+            return new ReferenceSnapshot(dependencies.join(other.dependencies), bound && other.bound, cleared || other.cleared);
+        }
+    }
     record ExitEffects(Set<Field> bound, Set<Field> clears, BitSet initialized, Map<Field, Set<Parameter>> conditional) {
         ExitEffects(Set<Field> bound, Set<Field> clears, BitSet initialized) { this(bound, clears, initialized, Map.of()); }
         ExitEffects {
@@ -127,7 +134,7 @@ final class CallbackInitialization {
     }
     record State(Set<Field> bound, Set<Value> nonnull, BitSet initialized, Set<Field> cleared,
                  Map<AbstractInsnNode, Set<Thrown>> caught, Map<Field, Set<Parameter>> conditional,
-                 Map<AbstractInsnNode, ReferenceDependencies> references) {
+                 Map<AbstractInsnNode, ReferenceSnapshot> references) {
         State(Set<Field> bound, Set<Value> nonnull, BitSet initialized, Set<Field> cleared) {
             this(bound, nonnull, initialized, cleared, Map.of(), Map.of(), Map.of());
         }
@@ -644,16 +651,21 @@ final class CallbackInitialization {
     }
     void requireReceiver(Map<Field, String> needs, Set<Field> bound, SourceValue receiver, Set<Value> nonnull,
                          Set<Field> clears, Set<Field> invalidatedNeeds, Map<Field, Set<Parameter>> conditional,
-                         Set<ConditionalRead> conditionalReads, String where) {
+                         Set<ConditionalRead> conditionalReads, Map<AbstractInsnNode, ReferenceSnapshot> references, String where) {
         if (nonnull.contains(Value.of(receiver))) return;
-        Set<Field> fields = origins(receiver);
-        require(needs, bound, fields, where);
-        for (Field field : fields) {
-            Set<Parameter> parameters = conditional.getOrDefault(field, Set.of());
-            if (bound.contains(field) && !parameters.isEmpty())
-                conditionalReads.add(new ConditionalRead(field, where, parameters));
+        for (AbstractInsnNode origin : receiver.insns) {
+            if (!(origin instanceof FieldInsnNode read) || read.getOpcode() != Opcodes.GETSTATIC
+                    || !referenceFields.contains(field(read))) continue;
+            Field field = field(read);
+            ReferenceSnapshot snapshot = references.get(origin);
+            boolean established = snapshot == null ? bound.contains(field) : snapshot.bound;
+            boolean invalidated = snapshot == null ? clears.contains(field) : snapshot.cleared;
+            Set<Parameter> parameters = snapshot == null ? conditional.getOrDefault(field, Set.of()) : snapshot.dependencies.parameters;
+            if (!established) {
+                need(needs, field, where);
+                if (invalidated) invalidatedNeeds.add(field);
+            } else if (!parameters.isEmpty()) conditionalReads.add(new ConditionalRead(field, where, parameters));
         }
-        for (Field field : fields) if (!bound.contains(field) && clears.contains(field)) invalidatedNeeds.add(field);
     }
 
     boolean currentRead(Method method, AbstractInsnNode origin, int guard, Field field) {
@@ -741,7 +753,7 @@ final class CallbackInitialization {
             Set<Field> bound = new HashSet<>(before.bound), clears = new HashSet<>(before.cleared);
             Set<Value> nonnull = new HashSet<>(before.nonnull);
             Map<Field, Set<Parameter>> conditional = new HashMap<>(before.conditional);
-            Map<AbstractInsnNode, ReferenceDependencies> references = new HashMap<>(before.references);
+            Map<AbstractInsnNode, ReferenceSnapshot> references = new HashMap<>(before.references);
             BitSet initialized = before.initialized;
             AbstractInsnNode n=ins[i];
             nonnull.removeIf(value -> value.origins.contains(n));
@@ -761,7 +773,8 @@ final class CallbackInitialization {
                     Field field = field(fi);
                     boolean nil = !bound.contains(field) && (clears.contains(field)
                             || nullable(new SourceValue(1, n), new HashSet<>()));
-                    references.put(n, new ReferenceDependencies(nil, conditional.getOrDefault(field, Set.of())));
+                    references.put(n, new ReferenceSnapshot(new ReferenceDependencies(nil, conditional.getOrDefault(field, Set.of())),
+                            bound.contains(field), !bound.contains(field) && clears.contains(field)));
                 }
                 if (op==Opcodes.PUTSTATIC && referenceFields.contains(field(fi))) {
                     SourceValue v=top(f);
@@ -776,13 +789,13 @@ final class CallbackInitialization {
                         if (!value.parameters.isEmpty() && !nonnull.contains(Value.of(v))) conditional.put(field(fi), value.parameters);
                     }
                 }
-                if (op==Opcodes.GETFIELD)requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
-                if (op==Opcodes.PUTFIELD)requireReceiver(needs, bound, f.getStack(f.getStackSize()-2), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
+                if (op==Opcodes.GETFIELD)requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, references, site(k, i));
+                if (op==Opcodes.PUTFIELD)requireReceiver(needs, bound, f.getStack(f.getStackSize()-2), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, references, site(k, i));
             }
             if (n instanceof MethodInsnNode call) {
                 Type[] args=Type.getArgumentTypes(call.desc);
                 int first=f.getStackSize()-args.length;
-                if (op!=Opcodes.INVOKESTATIC)requireReceiver(needs, bound, f.getStack(first-1), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
+                if (op!=Opcodes.INVOKESTATIC)requireReceiver(needs, bound, f.getStack(first-1), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, references, site(k, i));
                 if (op == Opcodes.INVOKEINTERFACE || op == Opcodes.INVOKEVIRTUAL) {
                     // A call through a formal receiver executes the selected method synchronously.
                     // Keep its signature until a caller supplies the concrete callback value.
@@ -862,14 +875,14 @@ final class CallbackInitialization {
                     for (Field field : effects.bound) conditional.remove(field);
                     conditional.putAll(effects.conditional);
                     if (reference(Type.getReturnType(call.desc).getDescriptor()))
-                        references.put(n, substitute(s.returnedReference, call, f, callState));
+                        references.put(n, new ReferenceSnapshot(substitute(s.returnedReference, call, f, callState), false, false));
                     if (emit) {
                         initialized = union(initialized, s.initializedClasses);
                         touchedClasses.or(s.initializedClasses);
                     }
                 } else {
                     thrown.put(new Thrown("java/lang/Throwable", false), new State(bound, nonnull, initialized, clears, before.caught, conditional, references));
-                    if (reference(Type.getReturnType(call.desc).getDescriptor())) references.put(n, ReferenceDependencies.NONE);
+                    if (reference(Type.getReturnType(call.desc).getDescriptor())) references.put(n, new ReferenceSnapshot(ReferenceDependencies.NONE, false, false));
                     for (int a=first;a<f.getStackSize();a++) {
                         SourceValue actual = f.getStack(a);
                         for (Method target : targets(actual)) callback(needs, bound, clears, escapes, initialized, conditional, k, site(k, i), target, emit);
@@ -883,13 +896,13 @@ final class CallbackInitialization {
                 }
             }
             if (op == Opcodes.ARRAYLENGTH || op == Opcodes.MONITORENTER || op == Opcodes.MONITOREXIT) {
-                requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
+                requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, references, site(k, i));
             }
             if (op >= Opcodes.IALOAD && op <= Opcodes.SALOAD) {
-                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 2), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
+                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 2), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, references, site(k, i));
             }
             if (op >= Opcodes.IASTORE && op <= Opcodes.SASTORE) {
-                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 3), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
+                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 3), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, references, site(k, i));
             }
             if (op>=Opcodes.IRETURN&&op<=Opcodes.RETURN) {
                 if (exits==null)exits=new HashSet<>(bound);
@@ -968,7 +981,7 @@ final class CallbackInitialization {
         for (AbstractInsnNode origin : value.insns) {
             Parameter parameter = parameters.get(origin);
             if (parameter != null) result = result.join(new ReferenceDependencies(false, Set.of(parameter)));
-            else if (state.references.containsKey(origin)) result = result.join(state.references.get(origin));
+            else if (state.references.containsKey(origin)) result = result.join(state.references.get(origin).dependencies);
             else if (!(origin instanceof MethodInsnNode) && !(origin instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC))
                 result = result.join(new ReferenceDependencies(nullable(new SourceValue(value.size, origin), new HashSet<>()), Set.of()));
         }
@@ -1130,8 +1143,8 @@ final class CallbackInitialization {
         Map<Field, Set<Parameter>> conditional = new HashMap<>(old.conditional);
         joinConditional(conditional, incoming.conditional);
         conditional.keySet().retainAll(bound);
-        Map<AbstractInsnNode, ReferenceDependencies> references = new HashMap<>(old.references);
-        incoming.references.forEach((origin, value) -> references.merge(origin, value, ReferenceDependencies::join));
+        Map<AbstractInsnNode, ReferenceSnapshot> references = new HashMap<>(old.references);
+        incoming.references.forEach((origin, value) -> references.merge(origin, value, ReferenceSnapshot::join));
         return new State(bound, values, initialized, cleared, caught, conditional, references);
     }
     List<Method> initialOrder() {

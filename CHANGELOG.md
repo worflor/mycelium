@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-19 - Preserve binding facts on captured references
+
+Static reads now capture binding and invalidation facts alongside their reference dependencies. Dereferences use those
+origin facts after later field writes. Repairing a field cannot repair an older saved null, and clearing a field cannot
+invalidate a previously saved binding. This also preserves caller-supplied entry bindings and guards on the saved value.
+
+Added paired direct, forwarded, known-null and guarded witnesses, plus an exhaustive reference-snapshot join-law check.
+All 55 fresh-state runtime witnesses passed on Java 8, 17 and 25.
+The focused suites passed 773 assertions on Java 25 and 540 on Java 17.
+
 ## 2026-10-19 - Retain paired corpus worker evidence
 
 Corpus aggregates now retain the control and mutant summaries alongside the baseline, including each full report's

@@ -53,6 +53,20 @@ final class ExceptionBehaviorOracle {
                         static void exposeArgument(Runnable value) { service = value; Api.register(Entry::read); }
                         static void readArgument(Runnable value) { service = value; service.run(); }
                         static void relayRead(Runnable value) { readArgument(value); }
+                        static void snapshotRead(Runnable value) { service = value; Runnable saved = service; service = READY; saved.run(); }
+                        static void snapshotReady() { service = READY; Runnable saved = service; service = null; saved.run(); }
+                        static void entrySaved() { Runnable saved = service; service = null; saved.run(); }
+                        static void nullSaved() { service = null; Runnable saved = service; service = READY; saved.run(); }
+                        static void guardedSaved(Runnable value) { service = value; Runnable saved = service; service = READY; if (saved != null) saved.run(); }
+                        static void relaySnapshot(Runnable value) { snapshotRead(value); }
+                        public static void snapshotReadUnsafe() { bind(); Api.register(() -> snapshotRead(null)); }
+                        public static void snapshotReadSafe() { bind(); Api.register(() -> snapshotRead(READY)); }
+                        public static void snapshotReadySafe() { bind(); Api.register(Entry::snapshotReady); }
+                        public static void entrySavedSafe() { bind(); Api.register(Entry::entrySaved); }
+                        public static void nullSavedUnsafe() { bind(); Api.register(Entry::nullSaved); }
+                        public static void guardedSavedSafe() { bind(); Api.register(() -> guardedSaved(null)); }
+                        public static void relaySnapshotUnsafe() { bind(); Api.register(() -> relaySnapshot(null)); }
+                        public static void relaySnapshotSafe() { bind(); Api.register(() -> relaySnapshot(READY)); }
                         public static void conditionalReadUnsafe() { bind(); Api.register(() -> readArgument(null)); }
                         public static void conditionalReadSafe() { bind(); Api.register(() -> readArgument(READY)); }
                         public static void relayedReadUnsafe() { bind(); Api.register(() -> relayRead(null)); }
@@ -118,7 +132,9 @@ final class ExceptionBehaviorOracle {
                     "argumentUnsafe", "argumentSafe", "argumentRelayUnsafe", "argumentIdentityUnsafe", "argumentSnapshotUnsafe",
                     "argumentSnapshotSafe", "exposedArgumentUnsafe", "exposedArgumentSafe", "forwardedArgumentUnsafe", "forwardedArgumentSafe",
                     "normalArgumentUnsafe", "normalArgumentSafe", "wideArgumentUnsafe", "wideArgumentSafe", "recursiveArgumentUnsafe", "recursiveArgumentSafe",
-                    "conditionalReadUnsafe", "conditionalReadSafe", "relayedReadUnsafe", "relayedReadSafe");
+                    "conditionalReadUnsafe", "conditionalReadSafe", "relayedReadUnsafe", "relayedReadSafe",
+                    "snapshotReadUnsafe", "snapshotReadSafe", "snapshotReadySafe", "entrySavedSafe", "nullSavedUnsafe",
+                    "guardedSavedSafe", "relaySnapshotUnsafe", "relaySnapshotSafe");
             Set<String> expected = entries.stream().filter(name -> name.endsWith("Unsafe")).collect(Collectors.toSet());
             for (int release : List.of(8, 17, 25)) {
                 if (release > Runtime.version().feature()) continue;
@@ -195,11 +211,11 @@ final class ExceptionBehaviorOracle {
                 "exception domain: mutable construction inputs cannot change a published state");
         var states = List.of(snapshot,
                 new CallbackInitialization.State(Set.of(field), Set.of(), new java.util.BitSet(), Set.of(), java.util.Map.of(),
-                        java.util.Map.of(field, Set.of(second)), java.util.Map.of(origin, new CallbackInitialization.ReferenceDependencies(true, Set.of()))),
+                        java.util.Map.of(field, Set.of(second)), java.util.Map.of(origin, new CallbackInitialization.ReferenceSnapshot(new CallbackInitialization.ReferenceDependencies(true, Set.of()), false, true))),
                 new CallbackInitialization.State(Set.of(), Set.of(), new java.util.BitSet(), Set.of(field)),
                 new CallbackInitialization.State(Set.of(field), Set.of(), new java.util.BitSet(), Set.of(),
                         java.util.Map.of(marker, Set.of(new CallbackInitialization.Thrown("java/lang/RuntimeException", false))),
-                        java.util.Map.of(), java.util.Map.of(origin, CallbackInitialization.ReferenceDependencies.NONE)));
+                        java.util.Map.of(), java.util.Map.of(origin, new CallbackInitialization.ReferenceSnapshot(CallbackInitialization.ReferenceDependencies.NONE, true, false))));
         boolean commutative = true, associative = true, idempotent = true;
         for (var a : states) {
             idempotent &= CallbackInitialization.joinState(a, a).equals(a);
@@ -223,6 +239,13 @@ final class ExceptionBehaviorOracle {
             laws &= a.join(a).equals(a) && a.join(b).equals(b.join(a)) && a.join(b).join(c).equals(a.join(b.join(c)))
                     && a.join(CallbackInitialization.ReferenceDependencies.NONE).equals(a);
         SelfTest.that(laws, "exception domain: exhaustive two-parameter reference joins obey semilattice laws");
+        var snapshots = new java.util.ArrayList<CallbackInitialization.ReferenceSnapshot>();
+        for (var dependency : references) for (int flags = 0; flags < 4; flags++)
+            snapshots.add(new CallbackInitialization.ReferenceSnapshot(dependency, (flags & 1) != 0, (flags & 2) != 0));
+        boolean snapshotLaws = true;
+        for (var a : snapshots) for (var b : snapshots) for (var c : snapshots)
+            snapshotLaws &= a.join(a).equals(a) && a.join(b).equals(b.join(a)) && a.join(b).join(c).equals(a.join(b.join(c)));
+        SelfTest.that(snapshotLaws, "exception domain: exhaustive reference-snapshot joins obey semilattice laws");
         var analyzer = new CallbackInitialization();
         var left = new CallbackInitialization.Method("Domain", "left", "()V");
         var right = new CallbackInitialization.Method("Domain", "right", "()V");

@@ -81,6 +81,10 @@ dependencies through normal returns, exceptional effects, reads within helpers a
 earlier reads across later overwrites, and return facts allow argument forwarding. Call-site substitution uses the
 same mechanism for each outcome. Join-law and immutability controls check this domain independently of fixture output.
 
+Saved reads also retain their binding and invalidation facts. A dereference cannot consult the source field's later
+state: repairing it does not repair a saved null, and clearing it does not invalidate a saved binding. Direct and
+forwarded JVM witnesses, entry-binding controls and saved-value guards check that distinction.
+
 `ExceptionBehaviorOracle` exercises normal-only clears, exceptional repair, typed handler order, shared and multi-catch
 rethrows, callbacks, recursion, implicit arithmetic faults, finally overrides and resource closure. Each entry executes
 with a fresh class loader and checks whether the callback ran. These experiments validate the supported fragment;

@@ -414,7 +414,9 @@ selected input; platform exception headers come from the analysis host without i
 field effects are incomplete, so these paths remain diagnostics rather than feasible-witness or safety proofs.
 Binding dependencies on reference arguments are substituted at calls, for reads within helpers, on normal and
 exceptional exits and at callback exposures. Reference-origin snapshots preserve captured values across later field
-overwrites; return dependencies can forward an argument through an identity helper. These are known-null and dependency facts, not complete alias or
+overwrites, including binding and invalidation facts used by later dereferences of a saved read. Repairing the field
+does not repair an older saved null, and clearing the field does not invalidate an older saved binding.
+Return dependencies can forward an argument through an identity helper. These are known-null and dependency facts, not complete alias or
 non-nullness proofs.
 The analysis host runtime version and module image are task inputs, so changing the platform ancestry source invalidates
 cached results. The report records the image hash. A host without an available module image reruns the task rather than
