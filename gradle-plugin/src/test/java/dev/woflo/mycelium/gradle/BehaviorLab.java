@@ -109,6 +109,8 @@ public final class BehaviorLab {
         environment.addProperty("vendor", System.getProperty("java.vendor"));
         Path image = Path.of(System.getProperty("java.home"), "lib", "modules");
         if (Files.isRegularFile(image)) environment.addProperty("platformRuntimeSha256", digest(image, "SHA-256"));
+        Path releaseSymbols = Path.of(System.getProperty("java.home"), "lib", "ct.sym");
+        if (Files.isRegularFile(releaseSymbols)) environment.addProperty("platformReleaseSymbolsSha256", digest(releaseSymbols, "SHA-256"));
         JsonObject libraries = new JsonObject();
         for (Class<?> library : List.of(ClassReader.class, ClassNode.class, Analyzer.class)) {
             Path location = Path.of(library.getProtectionDomain().getCodeSource().getLocation().toURI());
@@ -203,7 +205,8 @@ public final class BehaviorLab {
         try (var files = Files.list(code.resolve("dev/woflo/mycelium/gradle"))) {
             var implementation = files.filter(file -> {
                 String name = file.getFileName().toString();
-                return name.equals("CallbackInitialization.class") || (name.startsWith("CallbackInitialization$") && name.endsWith(".class"));
+                return List.of("CallbackInitialization", "PlatformHierarchy").stream()
+                        .anyMatch(base -> name.equals(base + ".class") || (name.startsWith(base + "$" ) && name.endsWith(".class")));
             }).sorted().toList();
             if (implementation.isEmpty()) throw new IllegalArgumentException("No analyzer classes at " + code);
             return Fingerprint.ofDirectories(implementation);

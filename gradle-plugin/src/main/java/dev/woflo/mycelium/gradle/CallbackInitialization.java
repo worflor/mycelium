@@ -50,7 +50,12 @@ import java.util.zip.ZipFile;
  * Callback dependency flow over the consumer's compiled classes. It follows field bindings and callback escapes,
  * without a loader rule table. A finding is a potential ordering risk, not a proof of native event order.
  */
-final class CallbackInitialization {
+final class CallbackInitialization implements AutoCloseable {
+    private final PlatformHierarchy platform;
+
+    CallbackInitialization() { this(Runtime.version().feature()); }
+    CallbackInitialization(int targetJava) { platform = new PlatformHierarchy(targetJava); }
+    @Override public void close() throws java.io.IOException { platform.close(); }
     record Method(String owner, String name, String desc) {
         public String toString() {
             return owner + "#" + name + desc;
@@ -1041,11 +1046,9 @@ final class CallbackInitialization {
             ClassNode owned = classes.get(type);
             if (owned != null) { type = owned.superName; continue; }
             if (!exceptionParents.containsKey(type) && !missingExceptionTypes.contains(type)) {
-                // Platform headers are read without loading or initializing consumer code.
-                try (var stream = ClassLoader.getPlatformClassLoader().getResourceAsStream(type + ".class")) {
-                    if (stream == null) missingExceptionTypes.add(type);
-                    else exceptionParents.put(type, new ClassReader(stream).getSuperName());
-                } catch (java.io.IOException | IllegalArgumentException | SecurityException unavailable) { missingExceptionTypes.add(type); }
+                var header = platform.header(type);
+                if (header.known()) exceptionParents.put(type, header.parent());
+                else missingExceptionTypes.add(type);
             }
             if (missingExceptionTypes.contains(type)) return Relation.UNKNOWN;
             type = exceptionParents.get(type);
@@ -1269,7 +1272,8 @@ final class CallbackInitialization {
         }
     }
     record Result(int classes, int methods, int analyzedBodies, List<Method> roots, List<Finding> findings, List<String> analysisErrors,
-                  long summaryEvaluations, int callbackContexts, long dataflowSteps, long initializationPropagations, List<Dependency> dependencies) {
+                  long summaryEvaluations, int callbackContexts, long dataflowSteps, long initializationPropagations, List<Dependency> dependencies,
+                  PlatformHierarchy.Description platformHierarchy) {
         int dependencyEdges() { return dependencies.size(); }
     }
 
@@ -1393,35 +1397,37 @@ final class CallbackInitialization {
         return inspect(roots, targetJava, null);
     }
     static Result inspect(List<Path> roots, int targetJava, java.util.function.Consumer<Progress> progress) throws Exception {
-        CallbackInitialization analysis = new CallbackInitialization();
-        analysis.progress = progress;
-        for (Path root : roots) {
-            if (Files.isDirectory(root)) {
-                try (var walk = Files.walk(root)) {
-                    for (Path file : walk.filter(p -> p.toString().endsWith(".class")).sorted().toList()) {
-                        analysis.readClass(Files.readAllBytes(file), root.relativize(file).toString());
+        try (CallbackInitialization analysis = new CallbackInitialization(targetJava)) {
+            analysis.progress = progress;
+            for (Path root : roots) {
+                if (Files.isDirectory(root)) {
+                    try (var walk = Files.walk(root)) {
+                        for (Path file : walk.filter(p -> p.toString().endsWith(".class")).sorted().toList()) {
+                            analysis.readClass(Files.readAllBytes(file), root.relativize(file).toString());
+                        }
                     }
-                }
-            } else if (Files.isRegularFile(root)) {
-                try (JarFile archive = new JarFile(root.toFile(), false, ZipFile.OPEN_READ,
-                        Runtime.Version.parse(Integer.toString(Math.max(8, targetJava))))) {
-                    for (var entry : archive.versionedStream().sorted(Comparator.comparing(java.util.jar.JarEntry::getName)).toList()) {
-                        if (!entry.getName().endsWith(".class") || entry.getName().startsWith("META-INF/versions/")) continue;
-                        try (var stream = archive.getInputStream(entry)) {
-                            analysis.readClass(stream.readAllBytes(), entry.getName());
+                } else if (Files.isRegularFile(root)) {
+                    try (JarFile archive = new JarFile(root.toFile(), false, ZipFile.OPEN_READ,
+                            Runtime.Version.parse(Integer.toString(Math.max(8, targetJava))))) {
+                        for (var entry : archive.versionedStream().sorted(Comparator.comparing(java.util.jar.JarEntry::getName)).toList()) {
+                            if (!entry.getName().endsWith(".class") || entry.getName().startsWith("META-INF/versions/")) continue;
+                            try (var stream = archive.getInputStream(entry)) {
+                                analysis.readClass(stream.readAllBytes(), entry.getName());
+                            }
                         }
                     }
                 }
             }
+            analysis.prepare();
+            analysis.analyze();
+            var findings = new LinkedHashSet<>(analysis.findings).stream()
+                    .sorted(Comparator.comparing((Finding f) -> f.root().toString()).thenComparing(Finding::registration)
+                            .thenComparing(f -> f.dependency().toString()).thenComparing(Finding::read)).toList();
+            return new Result(analysis.classes.size(), analysis.methods.size(), analysis.sourceFrames.size(),
+                    analysis.entryRoots.stream().sorted(Comparator.comparing(Method::toString)).toList(), findings,
+                    analysis.analysisErrors.stream().distinct().sorted().toList(), analysis.summaryEvaluations,
+                    analysis.contextSummaries.size(), analysis.dataflowSteps, analysis.initializationPropagations, analysis.dependencyGraph(),
+                    analysis.platform.description());
         }
-        analysis.prepare();
-        analysis.analyze();
-        var findings = new LinkedHashSet<>(analysis.findings).stream()
-                .sorted(Comparator.comparing((Finding f) -> f.root().toString()).thenComparing(Finding::registration)
-                        .thenComparing(f -> f.dependency().toString()).thenComparing(Finding::read)).toList();
-        return new Result(analysis.classes.size(), analysis.methods.size(), analysis.sourceFrames.size(),
-                analysis.entryRoots.stream().sorted(Comparator.comparing(Method::toString)).toList(), findings,
-                analysis.analysisErrors.stream().distinct().sorted().toList(), analysis.summaryEvaluations,
-                analysis.contextSummaries.size(), analysis.dataflowSteps, analysis.initializationPropagations, analysis.dependencyGraph());
     }
 }

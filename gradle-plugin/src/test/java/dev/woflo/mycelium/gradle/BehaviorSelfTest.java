@@ -427,6 +427,7 @@ final class BehaviorSelfTest {
         NativeBehaviorOracle.run();
         ClassInitializationOracle.run();
         ExceptionBehaviorOracle.run();
+        PlatformHierarchySelfTest.run();
         BehaviorLabSelfTest.run();
         var empty = CallbackInitialization.inspect(List.of(scratch.resolve("absent")));
         SelfTest.that(empty.analyzedBodies() == 0 && empty.classes() == 0,

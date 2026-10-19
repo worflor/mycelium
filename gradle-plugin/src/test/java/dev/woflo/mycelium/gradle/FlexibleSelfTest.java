@@ -585,6 +585,8 @@ final class FlexibleSelfTest {
                 "behavior: C1 defaults to a warning in the consumer task");
         that(behavior.getInputs().getFiles().getFiles().contains(new java.io.File(System.getProperty("java.home"), "lib/modules")),
                 "behavior: platform ancestry bytes are tracked task inputs");
+        that(behavior.getInputs().getFiles().getFiles().contains(new java.io.File(System.getProperty("java.home"), "lib/ct.sym")),
+                "behavior: target release API signatures are tracked task inputs");
         that(behavior.getInputs().getProperties().get("analysisRuntime").equals(((BehaviorTask) behavior).getAnalysisRuntime()),
                 "behavior: the analysis runtime identity is an explicit input");
     }

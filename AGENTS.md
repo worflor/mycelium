@@ -140,7 +140,8 @@ the tasks do is `docs/plugin.md`.
   game has under one naming on one version), `Inventory.java` (the game's own classes, resolving a member through its
   hierarchy as the JVM does).
 - **Behavioural diagnostics.** `BehaviorTask.java` (`myceliumBehavior`, opt-in), `CallbackInitialization.java`
-  (callback targets, reference provenance and initialization flow; potential risks, not native event-order proofs).
+  (callback targets, reference provenance and initialization flow; potential risks, not native event-order proofs),
+  `PlatformHierarchy.java` (lazy exception ancestry from javac's requested release API model).
 - **Presentation.** `Presentation.java` (what `myceliumPresentation` and `myceliumPresentationLock` do apart from
   Gradle: reads a consumer's programs and mosaics, compiles `item.presentation@1`'s and `block.presentation@1`'s models with what they require, runs their tools),
   `PresentationSpec.java` (`mycelium { presentation { } }`), `PresentationTask.java` (`myceliumPresentation`: the
@@ -161,6 +162,8 @@ the tasks do is `docs/plugin.md`.
   `NameRefresh.java` (what the refresh does apart from the task).
 
 The maintainer corpus collector and its offline tests live in `tools/`; the bytecode lab is a plugin test tool.
+`tools/behavior_initialization_phases.py` runs the standalone initializer fixtures in fresh JVMs; its observations and
+limits are in [the research notes](docs/reference/behavioral-analysis-research.md#initialization-is-state-not-reachability).
 See [inspection checks](docs/plugin.md#inspecting-an-existing-mod) for its pinned inputs and limits.
 
 The self-tests, `gradle-plugin/src/test/java/dev/woflo/mycelium/gradle/SelfTest.java`, break a scratch copy of the

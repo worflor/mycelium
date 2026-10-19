@@ -52,9 +52,13 @@ whichever dispatch target is visited first. A permutation control checks that co
 same summary in either order. Witness choices participate in summary equality, so incidental traversal order must not
 manufacture a new analysis fact.
 
-Implicit fault conditions remain conservative. Missing exception ancestry is unknown. Platform exception headers come
-from the analysis host, without initializing consumer code; this does not establish another target JVM's complete
-platform hierarchy. External bodies and their arbitrary field effects remain unresolved.
+Implicit fault conditions remain conservative. Missing exception ancestry is unknown. Platform ancestry uses javac's
+requested `--release` API model, with an empty classpath and annotation processing disabled. Older releases use the
+JDK's release signatures; unsupported releases and missing headers remain unknown without a host fallback.
+The [javac documentation](https://docs.oracle.com/en/java/javase/25/docs/specs/man/javac.html#compiling-for-earlier-releases-of-the-platform)
+describes this supported API boundary. It is not a complete target JVM implementation model. The module image and
+`ct.sym` signatures participate in task and corpus evidence identity. External bodies and arbitrary field effects
+remain unresolved.
 
 ## Initialization is state, not reachability
 
@@ -76,6 +80,24 @@ Next experiment: model may/must initialization states and partial stores on a tw
 initialization, an initializer clearing another class's field, and a failed initialization followed by another active use.
 Preserve the distinction between activation and completion. Independent JVM witnesses already expose failures in the
 current reachability-based approximation.
+
+The [initializer phase probe](../../tools/behavior_initialization_phases.py) retains six independent JVM witnesses in
+[Cases.java](../../tools/fixtures/initialization-phases/Cases.java): normal initialization that clears or binds,
+failed initialization that clears or binds, and a second active use after failure. Each entry runs in a fresh process
+and checks both null dereference and callback count. Run it with a compiler supporting `--release 8`:
+
+```bash
+python tools/behavior_initialization_phases.py --javac javac --java java --output build/initialization-phases
+```
+
+Repeat `--java` for additional runtime executables. The output directory must be new so an old receipt cannot satisfy
+a failed run. To compare diagnostics, also supply `--analysis-java` and `--analyzer-classpath` with the plugin's compiled
+main/test classes, ASM and Gson. The eager scheduler is excluded from analyzer input; runtime runs execute it.
+The receipt records fixture and class hashes, runtime versions and optional analyzer classpath and platform hashes.
+Diagnostic comparisons require all six entry roots; unavailable platform input files are recorded explicitly.
+Candidate counts are observations of the current analyzer, not assertions that its initialization model is complete. In the 2026-10-19
+run, the analyzer missed the normal-clear and failed-clear null dereferences and diagnosed the failed-bind safe control.
+All six runtime outcomes agreed on Java 8, 17 and 25. Those gaps require phase/store semantics before a safety claim.
 
 ## Fixed points and selective context
 

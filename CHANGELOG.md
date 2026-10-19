@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-10-19 - Resolve exception ancestry against the target release
+
+Behavioural analysis now reads platform ancestry through javac's requested `--release` model instead of the build
+host's class loader. Unsupported releases, missing headers and runtimes without a compiler retain unknown ancestry.
+The lazy compiler session has an empty classpath, disables annotation processing and closes after each analysis.
+Reports identify the model and its availability; task inputs and corpus receipts include `ct.sym` release signatures.
+Corpus analyzer fingerprints include the platform resolver and its nested implementation.
+
+Release-boundary controls cover Java 8, 17 and 21 API differences, unsupported releases and a subprocess without
+`jdk.compiler`. Independent consumers built Java 8, 17 and 25 artifacts on Java 17 and 25 hosts, checking handler
+controls and report metadata. C1 remains experimental and its overall conclusion remains undetermined.
+The standalone initializer probe preserves six phase/store witnesses and optional diagnostic comparisons, with
+source, class and runtime provenance. Its known missed effects remain documented in the research notes.
+
+The aggregate `check` passed in 12m 16s: 1,786 plugin assertions, 55 source-wrapper assertions, 19 consumer-hook
+assertions and all 24 contracts on Java 8, 16, 17, 21 and 25. Focused suites passed 792 assertions on Java 25 and 558
+on Java 17. All 55 exception/reference runtime witnesses passed on actual Java 8, 17 and 25. The seven pinned mod
+experiments passed, with all 21 worker reports and archive hashes independently audited. Fresh compilation matched
+all 31 analyzer classes used by the corpus. The initializer probe passed 18 fresh-process runs and rejected a fake
+complete analyzer report that omitted five required roots; its platform hashes match the analysis JVM's actual files.
+
 ## 2026-10-19 - Preserve binding facts on captured references
 
 Static reads now capture binding and invalidation facts alongside their reference dependencies. Dereferences use those

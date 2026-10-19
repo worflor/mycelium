@@ -176,23 +176,24 @@ final class ExceptionBehaviorOracle {
         } finally { SelfTest.delete(scratch); }
     }
 
-    static void relations() {
-        var analyzer = new CallbackInitialization();
-        var unknown = new org.objectweb.asm.tree.ClassNode();
-        unknown.name = "fixture/Unknown"; unknown.superName = "absent/Parent";
-        analyzer.classes.put(unknown.name, unknown);
-        SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown("java/lang/IllegalStateException", true),
-                        "java/lang/RuntimeException") == CallbackInitialization.Coverage.COVERS,
-                "exception relation: an exact subtype is wholly handled");
-        SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown("java/lang/Error", false),
-                        "java/lang/RuntimeException") == CallbackInitialization.Coverage.DISJOINT,
-                "exception relation: disjoint class ancestry stays disjoint");
-        SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown("java/lang/RuntimeException", false),
-                        "java/lang/IllegalStateException") == CallbackInitialization.Coverage.POSSIBLE,
-                "exception relation: a narrow catch covers only part of an abstract superclass");
-        SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown(unknown.name, true),
-                        "java/lang/RuntimeException") == CallbackInitialization.Coverage.POSSIBLE,
-                "exception relation: missing ancestry cannot prove a catch impossible");
+    static void relations() throws Exception {
+        try (var analyzer = new CallbackInitialization()) {
+            var unknown = new org.objectweb.asm.tree.ClassNode();
+            unknown.name = "fixture/Unknown"; unknown.superName = "absent/Parent";
+            analyzer.classes.put(unknown.name, unknown);
+            SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown("java/lang/IllegalStateException", true),
+                            "java/lang/RuntimeException") == CallbackInitialization.Coverage.COVERS,
+                    "exception relation: an exact subtype is wholly handled");
+            SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown("java/lang/Error", false),
+                            "java/lang/RuntimeException") == CallbackInitialization.Coverage.DISJOINT,
+                    "exception relation: disjoint class ancestry stays disjoint");
+            SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown("java/lang/RuntimeException", false),
+                            "java/lang/IllegalStateException") == CallbackInitialization.Coverage.POSSIBLE,
+                    "exception relation: a narrow catch covers only part of an abstract superclass");
+            SelfTest.that(analyzer.catches(new CallbackInitialization.Thrown(unknown.name, true),
+                            "java/lang/RuntimeException") == CallbackInitialization.Coverage.POSSIBLE,
+                    "exception relation: missing ancestry cannot prove a catch impossible");
+        }
     }
 
     static void domainLaws() {

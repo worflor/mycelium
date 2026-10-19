@@ -32,7 +32,7 @@ public abstract class BehaviorTask extends DefaultTask {
     @InputFiles
     @PathSensitive(PathSensitivity.NONE)
     public java.util.List<java.io.File> getPlatformRuntimeImages() {
-        return java.util.List.of(new java.io.File(System.getProperty("java.home"), "lib/modules"));
+        return PlatformHierarchy.inputs().stream().map(java.nio.file.Path::toFile).toList();
     }
 
     @InputFiles
@@ -97,10 +97,15 @@ public abstract class BehaviorTask extends DefaultTask {
         exceptions.addProperty("rethrowPartitions", "caught exception origins and types");
         exceptions.addProperty("argumentDependentBindings", true);
         exceptions.addProperty("referenceOriginSnapshots", true);
-        exceptions.addProperty("platformAncestryJava", Runtime.version().feature());
+        exceptions.addProperty("platformAncestryJava", result.platformHierarchy().targetJava());
+        exceptions.addProperty("platformAncestryModel", result.platformHierarchy().model());
+        exceptions.addProperty("platformAncestryStatus", result.platformHierarchy().status());
+        exceptions.addProperty("platformAncestryReason", result.platformHierarchy().reason());
         exceptions.addProperty("analysisRuntime", getAnalysisRuntime());
         var image = getPlatformRuntimeImages().get(0);
         if (image.isFile()) exceptions.addProperty("platformRuntimeSha256", Fingerprint.ofFile(image.toPath()));
+        var releaseSymbols = getPlatformRuntimeImages().get(1);
+        if (releaseSymbols.isFile()) exceptions.addProperty("platformReleaseSymbolsSha256", Fingerprint.ofFile(releaseSymbols.toPath()));
         exceptions.addProperty("implicitFaultConditionsProven", false);
         exceptions.addProperty("externalFieldEffectsKnown", false);
         report.add("exceptionFlow", exceptions);
@@ -109,7 +114,7 @@ public abstract class BehaviorTask extends DefaultTask {
                 "complete runtime dispatch targets", "native method bodies", "unknown callback targets and effects",
                 "implicit initializer cross-owner effects and reentrant initialization",
                 "complete implicit fault conditions and asynchronous exceptions",
-                "target platform ancestry differences from the analysis host", "native event ordering")) limits.add(limit);
+                "platform headers absent from the requested javac release API model", "native event ordering")) limits.add(limit);
         report.add("unmodeled", limits);
         report.addProperty("rootSelection", "public methods, plus class initializers that expose callbacks");
         JsonArray roots = new JsonArray();

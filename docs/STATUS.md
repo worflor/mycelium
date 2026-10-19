@@ -37,8 +37,8 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
   that clears another class's service can currently escape diagnosis. Reentrant initialization also needs that model;
   inherited member resolution alone does not establish initializer completion. Exceptional effects now have separate
   outcome summaries and typed handler routing. Complete fault preconditions, external field effects, exception-argument
-  specialization and target-specific platform exception ancestry remain open; host platform headers are not a complete
-  target JVM model.
+  specialization remain open. Target platform ancestry uses javac's requested release API model; implementation-only
+  classes, unsupported releases and absent headers still need evidence and remain unknown.
   The must-binding lattice loses
   correlations between factory returns and later branches; executable controls retain that precision limit.
   Large content-mod inputs need continued scaling validation. Investigate convergence through worklist telemetry

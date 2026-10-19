@@ -409,8 +409,11 @@ Calls carry separate normal and exceptional field effects. Explicit throws and c
 through the class file's exception table in order; a possible partial type match retains an unhandled possibility.
 Caught values that can be rethrown retain type/effect partitions, including shared multi-catch handlers. Normal-return
 writes do not become exceptional guarantees. Missing ancestry remains unknown. Consumer exception headers come from the
-selected input; platform exception headers come from the analysis host without initializing consumer code. The report's
-`exceptionFlow` records that host Java version and the supported separation. Fault predicates and arbitrary external
+selected input; platform exception ancestry comes from javac's `--release` API model for the requested target Java.
+The compiler runs with an empty classpath and annotation processing disabled, without loading consumer classes.
+Unsupported releases and headers absent from that API model remain unknown; the analyzer never substitutes the host
+hierarchy. The report's `exceptionFlow` records the requested release, model availability and analysis runtime.
+This API model does not describe every runtime implementation class. Fault predicates and arbitrary external
 field effects are incomplete, so these paths remain diagnostics rather than feasible-witness or safety proofs.
 Binding dependencies on reference arguments are substituted at calls, for reads within helpers, on normal and
 exceptional exits and at callback exposures. Reference-origin snapshots preserve captured values across later field
@@ -418,9 +421,9 @@ overwrites, including binding and invalidation facts used by later dereferences 
 does not repair an older saved null, and clearing the field does not invalidate an older saved binding.
 Return dependencies can forward an argument through an identity helper. These are known-null and dependency facts, not complete alias or
 non-nullness proofs.
-The analysis host runtime version and module image are task inputs, so changing the platform ancestry source invalidates
-cached results. The report records the image hash. A host without an available module image reruns the task rather than
-reusing a report on an untracked platform.
+The analysis host runtime version, module image and `lib/ct.sym` release symbols are task inputs, so changing the platform
+model invalidates cached results. The report records both file hashes when available. A host missing either file reruns
+the task rather than reusing a report on an untracked platform.
 
 For linter development, `./gradlew -p gradle-plugin behaviorSelfTest` runs the focused executable regression suite
 on a Java 17 toolchain, including Java 7 anonymous-class bytecode. Use `'-Pmycelium.testJava=25'` to run it on Java 25

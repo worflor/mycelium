@@ -124,6 +124,10 @@ public final class BehaviorLabSelfTest {
         Files.writeString(implementation.resolve("CallbackInitialization$Summary.class"), "changed");
         check(!originalImplementation.equals(BehaviorLab.analyzerFingerprint(root.resolve("implementation"))),
                 "analyzer fingerprint includes nested domain implementations");
+        String beforePlatform = BehaviorLab.analyzerFingerprint(root.resolve("implementation"));
+        Files.writeString(implementation.resolve("PlatformHierarchy$Session.class"), "release API resolver");
+        check(!beforePlatform.equals(BehaviorLab.analyzerFingerprint(root.resolve("implementation"))),
+                "analyzer fingerprint includes platform model implementation");
         check(summary.get("rootsCount").getAsInt() == 2 && summary.get("dependenciesCount").getAsInt() == 3,
                 "worker summary counts roots and dependencies while discarding their graphs");
         check(summary.getAsJsonArray("findings").size() == 2
