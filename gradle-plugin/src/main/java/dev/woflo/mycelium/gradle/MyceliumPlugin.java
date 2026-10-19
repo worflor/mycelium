@@ -38,8 +38,26 @@ import java.util.List;
  * No shared Mycelium runtime is introduced; imported code is private to the artifact.
  */
 public final class MyceliumPlugin implements Plugin<Project> {
+    private final org.gradle.build.event.BuildEventsListenerRegistry buildEvents;
+
+    @javax.inject.Inject
+    public MyceliumPlugin(org.gradle.build.event.BuildEventsListenerRegistry buildEvents) {
+        this.buildEvents = buildEvents;
+    }
+
     @Override
     public void apply(Project project) {
+        if (org.gradle.util.GradleVersion.current().compareTo(org.gradle.util.GradleVersion.version("8.3")) < 0) {
+            throw new org.gradle.api.GradleException("Mycelium requires Gradle 8.3 or newer for build-tree task identities");
+        }
+        Provider<TaskOutcomes> outcomes = project.getGradle().getSharedServices().registerIfAbsent(
+                "myceliumTaskOutcomes", TaskOutcomes.class, ignored -> {});
+        var rootExtras = project.getRootProject().getExtensions().getExtraProperties();
+        if (!rootExtras.has("dev.woflo.mycelium.taskOutcomesRegistered")) {
+            buildEvents.onTaskCompletion(outcomes);
+            rootExtras.set("dev.woflo.mycelium.taskOutcomesRegistered", true);
+        }
+        List<String> exclusions = List.copyOf(project.getGradle().getStartParameter().getExcludedTaskNames());
         MyceliumExtension ext = project.getExtensions().create("mycelium", MyceliumExtension.class);
         ext.project = project;
         // `myceliumDefaults { }` on the root project (dev.woflo.mycelium.defaults): written once, inherited by every project
@@ -222,8 +240,30 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getIsolationReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/isolation"));
             t.getSurfaceReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
             t.getOutputDir().set(evidenceDir);
+            t.getProducerPaths().convention(java.util.Map.of());
+            t.getProducerStates().set(outcomes.zip(t.getProducerPaths(), (service, paths) -> service.states(paths, exclusions)));
+            t.getProducerStates().finalizeValueOnRead();
+            t.usesService(outcomes);
             t.dependsOn(verifyTask, sourceGenerators);
         });
+
+        TaskProvider<VerificationEvidenceTask> verificationEvidence = project.getTasks().register(
+                "myceliumVerificationEvidence", VerificationEvidenceTask.class, t -> {
+                    t.setGroup("mycelium");
+                    t.setDescription("Records verification reports against the finished artifact hashes, separately from the jar.");
+                    t.getReports().convention(java.util.Map.of());
+                    t.getArtifacts().convention(java.util.Map.of());
+                    t.getProducerPaths().convention(java.util.Map.of());
+                    t.getProducerPaths().put("embedded", taskPath(project, evidenceTask));
+                    t.getProducerStates().set(outcomes.zip(t.getProducerPaths(), (service, paths) -> service.states(paths, exclusions)));
+                    t.getProducerStates().finalizeValueOnRead();
+                    t.getEmbeddedEvidence().set(evidenceTask.flatMap(task -> task.getOutputDir().file("evidence.json")));
+                    t.getReportFile().set(project.getLayout().getBuildDirectory().file("mycelium/verification/evidence.json"));
+                    t.usesService(outcomes);
+                });
+        artifactReport(project, evidenceTask, "verify", verifyTask, verifyTask.flatMap(t -> t.getReportDir().file("results.json")));
+        verificationReport(project, verificationEvidence, "verify", verifyTask,
+                verifyTask.flatMap(t -> t.getReportDir().file("results.json")), "", "");
 
         TaskProvider<CapsuleTask> capsuleTask = project.getTasks().register("myceliumCapsule", CapsuleTask.class, t -> {
             t.setGroup("mycelium");
@@ -303,6 +343,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/purity"));
             t.onlyIf(spec -> !ext.getPure().getSources().isEmpty());
         });
+        verificationReport(project, verificationEvidence, "purity", purityTask,
+                purityTask.flatMap(t -> t.getReportDir().file("purity.json")), "", "");
         TaskProvider<PureCompileTask> pureCompile = project.getTasks().register("myceliumPureCompile", PureCompileTask.class, t -> {
             t.setGroup("mycelium");
             t.setDescription("Compiles the pure layer, its suites and the Mycelium harness on their own with its Java release toolchain.");
@@ -350,6 +392,13 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.onlyIf(spec -> !ext.getPure().getSources().isEmpty() && ext.getMinecraft().isPresent());
         });
 
+        artifactReport(project, evidenceTask, "ship", pureShip, pureShip.flatMap(t -> t.getReportDir().file("ship.json")));
+        verificationReport(project, verificationEvidence, "ship", pureShip,
+                pureShip.flatMap(t -> t.getReportDir().file("ship.json")), "", "");
+        verificationReport(project, verificationEvidence, "capsule", capsuleTask, capsuleTask.flatMap(CapsuleTask::getReportFile),
+                "capsule", "archiveSha256");
+        verificationArtifact(project, verificationEvidence, "capsule", capsuleTask, ext.getCapsule().getArchive());
+
         // The era gates: JvmDowngrader (resolved only when a gate runs older bytecode) and a toolchain per era.
         Configuration privateLibraries = project.getConfigurations().create("myceliumPrivateLibraries", c -> {
             c.setCanBeConsumed(false);
@@ -396,12 +445,16 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.getBundles().from(pureBundle);
                     t.getSuites().set(suites);
                     t.getShadePrefix().set(ext.getShadePrefix());
-                    t.getDowngrader().from(downgrader);
+                    if (java < Math.max(ext.getPure().getRelease().get(), VerifyContractsTask.RELEASE)) {
+                        t.getDowngrader().from(downgrader);
+                    }
                     t.getLauncher().set(toolchains.launcherFor(spec -> spec.getLanguageVersion().set(JavaLanguageVersion.of(java))));
                     t.getReportDir().set(p.getLayout().getBuildDirectory().dir("mycelium/eras/java" + java));
                     t.dependsOn(verifyTask, pureCompile);
                 });
                 erasTask.configure(t -> t.dependsOn(one));
+                verificationReport(p, verificationEvidence, "era/" + java, one,
+                        one.flatMap(t -> t.getReportDir().file("era.json")), "", "");
             }
             if (shipDowngrades) {
                 // Only a downgrade reads the gate's jar. Without one, the gate's folder is not an input at all: a
@@ -412,7 +465,7 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 });
             }
         });
-        evidenceTask.configure(t -> t.mustRunAfter(erasTask, purityTask));
+
 
         project.getPlugins().withType(JavaPlugin.class, javaPlugin -> {
             project.getConfigurations().named("implementation", configuration -> configuration.extendsFrom(privateLibraries));
@@ -450,6 +503,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getTargetJava().set(ext.getMinecraft().map(ext::javaFor).orElse(Runtime.version().feature()));
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/behavior"));
             });
+            artifactReport(project, evidenceTask, "usage", usageTask, usageTask.flatMap(t -> t.getReportDir().file("usage.json")));
+            verificationReport(project, verificationEvidence, "usage", usageTask,
+                    usageTask.flatMap(t -> t.getReportDir().file("usage.json")), "", "");
             TaskProvider<IsolationTask> isolationTask = project.getTasks().register("myceliumIsolation", IsolationTask.class, t -> {
                 t.setGroup("mycelium");
                 t.setDescription("Checks that optional integrations never leak another mod's classes into the rest of the artifact.");
@@ -482,6 +538,10 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getBaselineFile().set(ext.getSurfaceBaseline());
                 t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/surface"));
             });
+            verificationReport(project, verificationEvidence, "isolation", isolationTask,
+                    isolationTask.flatMap(t -> t.getReportDir().file("isolation.json")), "", "");
+            verificationReport(project, verificationEvidence, "surface", surfaceTask,
+                    surfaceTask.flatMap(t -> t.getReportDir().file("surface.json")), "", "");
             // The conformance cases join the game-test sources when the mod asks (bridges { conformance() }): the gametest source set if
             // the project has one, else main, where a mod that keeps its game tests beside its code has them.
             project.afterEvaluate(p -> {
@@ -521,6 +581,10 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getBridgesReportDir().set(bridgesReport);
                 t.dependsOn(bridgeCheckTask);
             });
+            artifactReport(project, evidenceTask, "bridges", bridgeCheckTask,
+                    bridgeCheckTask.flatMap(t -> t.getReportDir().file("bridges.json")));
+            verificationReport(project, verificationEvidence, "bridges", bridgeCheckTask,
+                    bridgeCheckTask.flatMap(t -> t.getReportDir().file("bridges.json")), "", "");
             // The range gate (docs/decisions/0009): only for an artifact that declares one. It reads the processed resources, which
             // do not depend on the jar, so the evidence it feeds can go into the jar. It also runs after compileJava because
             // ForgeGradle (Forge 1.21 and later) writes classes and resources into one directory.
@@ -547,6 +611,8 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     t.getRangeReport().set(rangeTask.flatMap(RangeTask::getReportFile));
                     t.dependsOn(rangeTask);
                 });
+                artifactReport(p, evidenceTask, "range", rangeTask, rangeTask.flatMap(RangeTask::getReportFile));
+                verificationReport(p, verificationEvidence, "range", rangeTask, rangeTask.flatMap(RangeTask::getReportFile), "", "");
                 // Linkage (docs/decisions/0010) reads the finished artifact, so it cannot be inside the manifest that goes into it:
                 // it runs after the artifact exists and writes its own report. Only a range that declares it is linked.
                 if (ext.getRange().isLinkageDeclared()) {
@@ -590,14 +656,18 @@ public final class MyceliumPlugin implements Plugin<Project> {
                         t.dependsOn(rangeTask);
                     });
                     p.getTasks().named("check", check -> check.dependsOn(linkageTask));
+                    verificationReport(p, verificationEvidence, "linkage", linkageTask, linkageTask.flatMap(LinkageTask::getReportFile),
+                            "linkage", "artifact.sha256");
+                    verificationArtifact(p, verificationEvidence, "linkage", linkageTask, spec.getArchive());
                 }
             });
             // Nothing here blocks compilation (docs/decisions/0017): the text checks run in `check`; compiling, compiling the pure
             // layer alone and the linkage gate are the proofs, and the text explains them.
-            evidenceTask.configure(t -> t.mustRunAfter(isolationTask, surfaceTask));
+
             project.getTasks().named("check", check -> check.dependsOn(verifyTask, usageTask, isolationTask, purityTask, erasTask,
                     pureShip, surfaceTask, capsuleTask, bridgeCheckTask));
             evidenceTask.configure(t -> t.dependsOn(usageTask, pureShip));
+            project.getTasks().named("check", check -> check.finalizedBy(verificationEvidence));
 
             // Downgrading the jar's own classes (docs/decisions/0007). Nothing in `check` or in a jar runs it: a consumer whose
             // port is written for a newer Java than its era runs puts this task's output where its loader's tooling takes the
@@ -628,6 +698,11 @@ public final class MyceliumPlugin implements Plugin<Project> {
             project.afterEvaluate(p -> {
                 List<String> artifactJars = ext.getArtifactJars().get();
                 validateArtifactJars(artifactJars, p.getTasks().withType(Jar.class).getNames());
+                List<String> verificationJars = artifactJars.isEmpty() || artifactJars.contains("*") ? List.of("jar") : artifactJars;
+                for (String name : verificationJars) {
+                    TaskProvider<Jar> artifact = p.getTasks().named(name, Jar.class);
+                    verificationArtifact(p, verificationEvidence, "jar/" + name, artifact, artifact.flatMap(Jar::getArchiveFile), true);
+                }
                 if (ext.getPackMeta().isOn()) {
                     // Forge serves a mod's data only with a pack.mcmeta (Fabric and NeoForge make their own)
                     sourceSets.getByName("main").getResources().srcDir(packMetaTask.flatMap(PackMetaTask::getOutputDir));
@@ -643,6 +718,16 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     if (!isArtifactJar(artifactJars, jar.getName())) {
                         return;
                     }
+                    String evidenceProducerPath = taskPath(p, evidenceTask);
+                    var artifactState = p.getObjects().mapProperty(String.class, String.class);
+                    artifactState.set(outcomes.map(service -> service.states(
+                            java.util.Map.of("embedded", evidenceProducerPath), exclusions)));
+                    artifactState.finalizeValueOnRead();
+                    jar.getInputs().property("mycelium.evidenceProducer", artifactState);
+                    jar.usesService(outcomes);
+                    Provider<org.gradle.api.file.RegularFile> manifest = evidenceTask.flatMap(t -> t.getOutputDir().file("evidence.json"));
+                    jar.exclude(element -> element.getFile().equals(manifest.get().getAsFile())
+                            && !TaskOutcomes.CURRENT.equals(artifactState.get().get("embedded")));
                     jar.from(evidenceTask.flatMap(EvidenceTask::getOutputDir), spec -> spec.into("META-INF/mycelium"));
                     jar.dependsOn(pureShip);
                     jar.from(pureShip.flatMap(PureShipTask::getClassesDir));
@@ -697,6 +782,62 @@ public final class MyceliumPlugin implements Plugin<Project> {
                     });
                 });
             });
+        });
+    }
+
+    private static String taskPath(Project project, TaskProvider<?> task) {
+        String path = project.getBuildTreePath();
+        return (path.equals(":") ? ":" : path + ":") + task.getName();
+    }
+
+    private static void artifactReport(Project project, TaskProvider<EvidenceTask> evidence, String name,
+                                       TaskProvider<?> producer, Provider<org.gradle.api.file.RegularFile> file) {
+        String path = taskPath(project, producer);
+        evidence.configure(t -> {
+            t.getProducerPaths().put(name, path);
+            t.getReportFiles().from(file);
+            t.dependsOn(producer);
+        });
+    }
+
+    private static VerificationEvidenceTask.Report report(Project project, Provider<org.gradle.api.file.RegularFile> file,
+                                                           String subject, String hashPath) {
+        var report = project.getObjects().newInstance(VerificationEvidenceTask.Report.class);
+        report.getEnabled().set(file.map(ignored -> true).orElse(false));
+        report.getFiles().from(file.map(value -> List.of(value.getAsFile())).orElse(List.of()));
+        report.getSubject().set(subject);
+        report.getSubjectHashPath().set(hashPath);
+        report.getShippingArtifact().set(false);
+        return report;
+    }
+
+    private static void verificationReport(Project project, TaskProvider<VerificationEvidenceTask> evidence, String name,
+                                            TaskProvider<?> producer, Provider<org.gradle.api.file.RegularFile> file,
+                                            String subject, String hashPath) {
+        var record = report(project, file, subject, hashPath);
+        String path = taskPath(project, producer);
+        evidence.configure(t -> {
+            t.getReports().put(name, record);
+            t.getProducerPaths().put("report/" + name, path);
+            t.dependsOn(producer);
+        });
+    }
+
+    private static void verificationArtifact(Project project, TaskProvider<VerificationEvidenceTask> evidence, String name,
+                                              TaskProvider<?> producer, Provider<org.gradle.api.file.RegularFile> file) {
+        verificationArtifact(project, evidence, name, producer, file, false);
+    }
+
+    private static void verificationArtifact(Project project, TaskProvider<VerificationEvidenceTask> evidence, String name,
+                                              TaskProvider<?> producer, Provider<org.gradle.api.file.RegularFile> file,
+                                              boolean shipping) {
+        var record = report(project, file, "", "");
+        record.getShippingArtifact().set(shipping);
+        String path = taskPath(project, producer);
+        evidence.configure(t -> {
+            t.getArtifacts().put(name, record);
+            t.getProducerPaths().put("artifact/" + name, path);
+            t.dependsOn(producer);
         });
     }
 

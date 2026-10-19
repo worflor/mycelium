@@ -123,7 +123,8 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 | `myceliumLinkage` | When `mycelium.range { linkage { } }` is declared, holds every class, method and field the finished artifact references to the game's published names (`eras/names.json`: Searge, intermediary, Mojang's mappings, the game's own jar, an API's jar, each pinned by SHA-256 and cached) on each version of the claimed range that has name data. The build fails naming a reference and version when a member is absent. With the optional server inputs it also holds the target version to an exact dedicated-server game inventory, and records that archive's hash. In `check`. |
 | `myceliumPresentation` | Compiles the mod's item presentation programs (`item.presentation@1`) and block mosaics (`*.mosaic.json`, `block.presentation@1`: the era table chooses `dynamic-model` or `none`, and the task writes the plan with its manifest of models) for the target Minecraft version: the era table chooses an item definition or an item model with overrides, and the task writes it, with the plan the runtime adapter reads, into generated resources. A law the programs break, or a selection the committed lock lacks, fails the build with the diagnostic and the lines to add. Runs before `processResources`; skipped when there is no presentation source directory. |
 | `myceliumPresentationLock` | Appends the legacy codes the presentation programs need to the committed lock in the mod's sources, on request; never part of a build, and never changes an existing line. |
-| `myceliumEvidence` | Writes `META-INF/mycelium/evidence.json` into the selected artifact jars (the standard `jar` task by default): target, era, each contract's model hash, what ran and what was not checked, with why. Design-time evidence only. |
+| `myceliumEvidence` | Writes schema 4 `META-INF/mycelium/evidence.json` into the selected artifact jars: target, era, model hashes and current artifact-prerequisite results. Optional checks are recorded separately. Design-time evidence only. |
+| `myceliumVerificationEvidence` | Collects current verification reports in `build/mycelium/verification/evidence.json`, with finished archive SHA-256 hashes and each report's original scope. Finalizes a Java project's `check`; also callable directly. |
 | `myceliumRepository` | This repository only (`dev.woflo.mycelium.repository`): the repository against everything it states. |
 | `myceliumRecordProofs` | This repository only: after every harness and every era gate has passed, writes `contracts/proofs.json` (a fingerprint of each contract's sources and the Javas the gates ran on) so a mod need not run them again. In `check`. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |
@@ -441,6 +442,33 @@ Linkage establishes name availability, not lifecycle ordering. A method that exi
 service is initialized. Inspect the selected bridge's SPEC and native registration points, and test cold startup,
 resource loading and the ordinary packaged entrypoint. Model lifecycle requirements in the relevant contract and
 bridge when the feature needs them; package references alone do not establish which event must own a call.
+
+## Evidence and build history
+
+The embedded manifest records artifact prerequisites: contract verification, usage, bridge selection, range and pure
+shipping. Their report files and producer outcomes are declared task inputs. Gradle-validated up-to-date and restored
+outputs remain usable; skipped or failed tasks cannot revive reports left by an earlier build. Excluding
+`myceliumEvidence` omits its old manifest from a newly assembled jar.
+
+Purity, isolation, surface and additional era checks belong to the verification sidecar. Calling `jar` does not run those
+optional source checks. The sidecar selects their producers explicitly and records unavailable results with a reason.
+When tasks are excluded with `-x`, only completion facts already observed are used; a result can conservatively be
+unavailable. Missing evidence does not establish a failed rule or a successful check.
+
+The sidecar lists shipping artifacts separately from archives inspected by linkage or capsule checks. Each archive gets
+a raw-byte SHA-256; linkage and capsule results must name the same hash as their own archive subject. `artifactBound`
+is true only when every selected shipping producer completed successfully and each shipping jar contains the current
+embedded manifest. It does not mean every report passed: inspect each report's `available`, original `checked` and
+scope fields. An old archive inspected successfully cannot establish a current shipping build.
+
+Finite `artifactJars(...)` selections bind those Jar tasks. With `artifactJars("*")`, all Jar tasks still receive the
+manifest, while the sidecar selects the primary `jar`; it does not force auxiliary archives into every `check`.
+A loader's later remap or packaging output is a separate subject unless explicitly supplied to a check. These are
+build-time facts; runtime behavior still needs game tests. See [decision 0024](decisions/0024-evidence-follows-producers.md).
+
+A sidecar describes its recorded inputs, not the outcome of a later build invocation. A failure before collection can
+leave an older sidecar in place. Require a successful collection task and compare the recorded hashes when consuming it;
+the presence of the file alone does not establish that the latest `check` passed.
 
 ## The portability surface (`myceliumSurface`)
 

@@ -6,11 +6,12 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
-import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
@@ -51,7 +52,7 @@ public abstract class EvidenceTask extends DefaultTask {
     @Input
     public abstract ListProperty<String> getChecks();
 
-    /** Where the text checks left their reports; read if present, as of the last time each task ran. */
+    /** Legacy locations; optional text-check reports belong to VerificationEvidenceTask. */
     @Internal
     public abstract DirectoryProperty getPurityReportDir();
 
@@ -96,14 +97,23 @@ public abstract class EvidenceTask extends DefaultTask {
     public abstract DirectoryProperty getUsageReportDir();
 
     /** {@code myceliumRange}'s report, if the artifact declares a range (docs/decisions/0009). */
-    @InputFile
-    @Optional
-    @PathSensitive(PathSensitivity.NONE)
+    @Internal
     public abstract RegularFileProperty getRangeReport();
 
     /** {@code myceliumPureShip}'s report dir, if it ran: {@code ship.json} (docs/decisions/0006). */
     @Internal
     public abstract DirectoryProperty getPureShipReportDir();
+
+    /** Every report embedded below is an output of an artifact prerequisite. */
+    @org.gradle.api.tasks.InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract ConfigurableFileCollection getReportFiles();
+
+    @Input
+    public abstract MapProperty<String, String> getProducerStates();
+
+    @Input
+    public abstract MapProperty<String, String> getProducerPaths();
 
     @OutputDirectory
     public abstract DirectoryProperty getOutputDir();
@@ -115,7 +125,8 @@ public abstract class EvidenceTask extends DefaultTask {
         List<String> ids = getContracts().get();
 
         JsonObject evidence = new JsonObject();
-        evidence.addProperty("schema", 3);
+        evidence.addProperty("schema", 4);
+        evidence.addProperty("phase", "artifact");
         evidence.addProperty("generatedAt", Instant.now().toString());
         JsonObject artifact = new JsonObject();
         artifact.addProperty("id", getArtifactId().get());
@@ -148,58 +159,20 @@ public abstract class EvidenceTask extends DefaultTask {
             evidence.add("era", e);
         }
         JsonObject range;
-        if (getRangeReport().isPresent() && getRangeReport().get().getAsFile().isFile()) {
+        if (current("range") && getRangeReport().isPresent() && getRangeReport().get().getAsFile().isFile()) {
             range = JsonParser.parseString(Files.readString(getRangeReport().get().getAsFile().toPath(), StandardCharsets.UTF_8))
                     .getAsJsonObject();
         } else {
             range = new JsonObject();
             range.addProperty("checked", false);
-            range.addProperty("why", "this artifact declares no range (mycelium { range { ... } })");
+            range.addProperty("why", "no current range report is available (declare mycelium { range { ... } })");
         }
         evidence.add("range", range);
         // Every check below says whether it ran: {"checked": true, ...} or {"checked": false, "why": ...}. A check that is
         // absent, or silent, would read the same as one that ran and held (docs/decisions/0004).
-        Path erasDir = getErasReportDir().isPresent() ? getErasReportDir().get().getAsFile().toPath() : null;
-        JsonObject eraGates = new JsonObject();
-        JsonArray gates = new JsonArray();
-        if (erasDir != null && Files.isDirectory(erasDir)) {
-            try (var dirs = Files.list(erasDir)) {
-                for (Path d : (Iterable<Path>) dirs.sorted(java.util.Comparator.comparingInt(EvidenceTask::eraNumber))::iterator) {
-                    Path f = d.resolve("era.json");
-                    if (!Files.isRegularFile(f)) {
-                        continue;
-                    }
-                    JsonObject era = JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
-                    JsonObject g = new JsonObject();
-                    g.addProperty("java", era.get("java").getAsInt());
-                    JsonArray bundles = new JsonArray();
-                    for (var r : era.getAsJsonArray("results")) {
-                        JsonObject ro = r.getAsJsonObject();
-                        JsonObject b = new JsonObject();
-                        b.addProperty("bundle", ro.get("bundle").getAsString());
-                        b.addProperty("status", ro.has("status") ? ro.get("status").getAsString() : "unknown");
-                        if (ro.has("bytecode")) {
-                            b.addProperty("bytecode", ro.get("bytecode").getAsString());
-                        }
-                        bundles.add(b);
-                    }
-                    g.addProperty("checked", bundles.size());
-                    if (era.has("expected")) {
-                        g.addProperty("expected", era.get("expected").getAsInt());
-                    }
-                    if (era.has("skipped")) {
-                        g.add("skipped", era.getAsJsonArray("skipped"));
-                    }
-                    g.add("bundles", bundles);
-                    gates.add(g);
-                }
-            }
-        }
-        eraGates.addProperty("checked", !gates.isEmpty());
-        if (gates.isEmpty()) {
-            eraGates.addProperty("why", "no era gate ran in this build (none declared, or myceliumEras was not run)");
-        }
-        eraGates.add("gates", gates);
+        JsonObject eraGates = notChecked("Additional era gates are recorded separately by myceliumVerificationEvidence; "
+                + "a required downgrade gate is recorded in pureShip");
+        eraGates.add("gates", new JsonArray());
         evidence.add("eraGates", eraGates);
 
         // Shipping downgraded jars (docs/decisions/0006): source release, target Java, the downgrader version, what
@@ -208,37 +181,36 @@ public abstract class EvidenceTask extends DefaultTask {
         JsonObject pureShip;
         Path shipFile = getPureShipReportDir().isPresent()
                 ? getPureShipReportDir().get().getAsFile().toPath().resolve("ship.json") : null;
-        if (shipFile != null && Files.isRegularFile(shipFile)) {
+        if (current("ship") && shipFile != null && Files.isRegularFile(shipFile)) {
             pureShip = JsonParser.parseString(Files.readString(shipFile, StandardCharsets.UTF_8)).getAsJsonObject();
             pureShip.addProperty("checked", true);
         } else {
-            pureShip = notChecked("myceliumPureShip did not run in this build (no pure layer declared, or no "
-                    + "mycelium.minecraft target set)");
+            pureShip = notChecked("no current myceliumPureShip report (a pure layer and mycelium.minecraft target are required)");
         }
         evidence.add("pureShip", pureShip);
 
         // Bridges (docs/decisions/0016): which variant and overlays the target drew, or the class that overrides it, and what the
         // check found of an override. Written by myceliumBridges; the import's own report stands in only if that did not run.
         Path bridgesFile = getBridgesReportDir().isPresent() ? getBridgesReportDir().get().getAsFile().toPath().resolve("bridges.json") : null;
-        if (bridgesFile != null && Files.isRegularFile(bridgesFile)) {
+        if (current("bridges") && bridgesFile != null && Files.isRegularFile(bridgesFile)) {
             JsonObject bridges = JsonParser.parseString(Files.readString(bridgesFile, StandardCharsets.UTF_8)).getAsJsonObject();
             bridges.addProperty("checked", true);
             evidence.add("bridges", bridges);
         } else {
-            evidence.add("bridges", notChecked("myceliumBridges did not run in this build (it is not in the tasks this build ran), so no bridge was checked and none is recorded here"));
+            evidence.add("bridges", notChecked("no current myceliumBridges report is available"));
         }
 
         JsonObject harness = null;
         Path results = getVerifyReportDir().isPresent()
                 ? getVerifyReportDir().get().getAsFile().toPath().resolve("results.json") : null;
-        if (results != null && Files.isRegularFile(results)) {
+        if (getVerifyEnabled().getOrElse(false) && current("verify") && results != null && Files.isRegularFile(results)) {
             harness = JsonParser.parseString(Files.readString(results, StandardCharsets.UTF_8)).getAsJsonObject();
         }
 
         JsonObject usage = null;
         Path usageFile = getUsageReportDir().isPresent()
                 ? getUsageReportDir().get().getAsFile().toPath().resolve("usage.json") : null;
-        if (usageFile != null && Files.isRegularFile(usageFile)) {
+        if (current("usage") && usageFile != null && Files.isRegularFile(usageFile)) {
             usage = JsonParser.parseString(Files.readString(usageFile, StandardCharsets.UTF_8)).getAsJsonObject();
         }
 
@@ -283,6 +255,14 @@ public abstract class EvidenceTask extends DefaultTask {
             contracts.add(c);
         }
         evidence.add("contracts", contracts);
+        JsonObject producers = new JsonObject();
+        new java.util.TreeMap<>(getProducerPaths().getOrElse(java.util.Map.of())).forEach((role, path) -> {
+            JsonObject producer = new JsonObject();
+            producer.addProperty("task", path);
+            producer.addProperty("state", getProducerStates().get().getOrDefault(role, "unobserved"));
+            producers.add(role, producer);
+        });
+        evidence.add("producers", producers);
 
         JsonObject selection = new JsonObject();
         selection.addProperty("mode", getContractSelection().get());
@@ -297,21 +277,9 @@ public abstract class EvidenceTask extends DefaultTask {
         // text checks last found. A finding is shown with what the configuration made of it, an allowed one with its reason.
         JsonObject checks = Checks.decode(getChecks().get()).toJson();
         JsonObject reports = new JsonObject();
-        for (var dir : List.of(java.util.Map.entry("purity", getPurityReportDir()), java.util.Map.entry("isolation", getIsolationReportDir()),
-                java.util.Map.entry("surface", getSurfaceReportDir()))) {
-            Path file = dir.getValue().isPresent() ? dir.getValue().get().getAsFile().toPath().resolve(dir.getKey() + ".json") : null;
-            if (file != null && Files.isRegularFile(file)) {
-                JsonObject r = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
-                JsonObject one = new JsonObject();
-                one.addProperty("checked", true);
-                one.add("findings", r.has("findings") ? r.get("findings") : new JsonArray());
-                if (dir.getKey().equals("isolation") && r.has("integrations")) {
-                    one.add("integrations", r.get("integrations"));
-                }
-                reports.add(dir.getKey(), one);
-            } else {
-                reports.add(dir.getKey(), notChecked("myceliumPurity/Isolation/Surface did not run in this build"));
-            }
+        for (String kind : List.of("purity", "isolation", "surface")) {
+            reports.add(kind, notChecked("Recorded separately by myceliumVerificationEvidence; "
+                    + "this check is not an artifact prerequisite"));
         }
         checks.add("reports", reports);
         evidence.add("checks", checks);
@@ -339,7 +307,7 @@ public abstract class EvidenceTask extends DefaultTask {
     /** Whether the artifact's own sources reference a contract, or why that was not checked. */
     static JsonObject usageOf(JsonObject usage, String id) {
         if (usage == null) {
-            return notChecked("myceliumUsage did not run in this build");
+            return notChecked("no current myceliumUsage report is available");
         }
         if (usage.has("checked") && !usage.get("checked").getAsBoolean()) {
             return notChecked(usage.has("why") ? usage.get("why").getAsString() : "usage was not checked");
@@ -357,9 +325,7 @@ public abstract class EvidenceTask extends DefaultTask {
         return notChecked("this contract was not among the contracts myceliumUsage checked");
     }
 
-    /** {@code java8} → 8, so gates list in era order. */
-    private static int eraNumber(Path dir) {
-        String n = dir.getFileName().toString().replaceAll("\\D", "");
-        return n.isEmpty() ? Integer.MAX_VALUE : Integer.parseInt(n);
+    boolean current(String producer) {
+        return TaskOutcomes.CURRENT.equals(getProducerStates().getOrElse(java.util.Map.of()).get(producer));
     }
 }

@@ -25,7 +25,7 @@ A crossing combines a pure declaration, explicit obligations, target data, and b
 | **Era data** | What changes at which version, as rows the compiler reads. Never numbers in code. | `eras/` (`docs/eras.md`) |
 | **Compilers** | Build-time tasks that import models, generate each target's artefacts, ship the jar. | `gradle-plugin/` (`docs/plugin.md`) |
 | **Gates** | Checks of a mod: harnesses, purity, era Java, range, linkage, isolation, the repository itself. A proof fails the build; a check that explains has a level (`off`, `warn`, `fail`) the mod sets. | the table below, `docs/plugin.md` |
-| **Evidence** | What ran, what was not checked and why, written into the jar. | `META-INF/mycelium/evidence.json` |
+| **Evidence** | Artifact prerequisites in the jar; verification reports bound to finished archive bytes in a sidecar. Each states its scope and unavailable results. | [Evidence and build history](plugin.md#evidence-and-build-history) |
 
 A mod that imports nothing still gets the gates and an evidence manifest. A mod that imports one contract carries that
 contract's model, privately, under its own namespace.

@@ -34,8 +34,9 @@ Each contract has a reference implementation and deliberately broken implementat
 reference and catch each broken one for the right reason, including an implementation that does nothing. Bugs found
 while building mods become lasting checks of the behavior that matters.
 
-The build also checks Java compatibility and native references against pinned target data, and records what it checked
-in the jar. Those results are inspectable: model tests establish contract behavior, linkage checks establish which
+The build also checks Java compatibility and native references against pinned target data. It records artifact
+prerequisites in the jar and verification results in a separate sidecar. Those results are inspectable: model tests
+establish contract behavior, linkage checks establish which
 references resolve, and your mod's game tests establish what happens in the running game. Save-file and protocol
 compatibility need their own tests. The [architecture guide](docs/architecture.md) explains the boundaries.
 
@@ -75,7 +76,8 @@ checkout. The consumer chooses whether completion requires the captured source.
 
 ## Build and verify Mycelium
 
-Use a JDK 17 or newer to run Gradle. Bridge linkage needs a toolchain as new as the newest era; Gradle provisions
+Use Gradle 8.3 or newer and a compatible JDK 17 or newer to run it. The repository wrapper selects its Gradle version.
+Bridge linkage needs a toolchain as new as the newest era; Gradle provisions
 toolchains when needed. The first build may download dependencies, JDKs, and pinned game archives.
 
 ```bash
@@ -107,7 +109,7 @@ The [plugin reference](docs/plugin.md#tasks) describes each task and its inputs.
 |---|---|
 | Select and import | `myceliumDeriveContracts`, `myceliumImport`, `myceliumBridgeImport` |
 | Check a mod | `myceliumVerify`, `myceliumBridges`, `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>`, `myceliumEras`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`, `myceliumCapsule`, `myceliumBehavior` (opt-in experimental linter) |
-| Generate and package | `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta`, `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumEvidence` |
+| Generate and package | `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta`, `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumEvidence`, `myceliumVerificationEvidence` |
 | Maintain this repository | `myceliumRepository`, `myceliumBridgeLinkage`, `myceliumRecordProofs`, `myceliumRefreshVersions`, `myceliumRefreshNames` |
 
 </details>

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-10-19 - Bind evidence to its producers and archive bytes
+
+Artifact evidence now tracks prerequisite report files and Gradle completion facts. A changed usage report invalidates
+the manifest, disabled verification cannot retain an old checked harness, and excluding the manifest producer omits its
+old output from a newly assembled jar. Producer facts have deterministic key order across build JVMs.
+Task identities include the owning build, so consumers can run within composite builds. Evidence collection uses
+Gradle's public build-tree path API; the plugin requires Gradle 8.3 or newer and reports that requirement on older hosts.
+
+Schema 4 separates embedded artifact evidence from optional source checks and post-artifact verification. The new
+verification sidecar preserves each report's scope, records raw archive hashes, and checks linkage and capsule subjects
+against their reports. A current shipping binding requires all selected shipping producers and matching embedded
+manifest bytes. Inspecting an old archive alone cannot establish that binding. Optional checks remain outside ordinary
+compilation and jar assembly.
+
+Era tasks now declare the downgrader classpath only when their target can require a downgrade. A Java 25 consumer with
+Java 17 pure sources no longer needs a repository for an unused tool during configuration-cache serialization.
+
+Validation: the focused evidence suite passed 31 assertions with one-worker consumer builds and configuration caching,
+including a consumer launched as an included build. The public aggregate `check` passed in 11m 23s: 1,416 plugin
+assertions, 55 source-wrapper assertions, 19 consumer-hook assertions, bridge linkage and all 24 contracts on
+Java 8, 16, 17, 21 and 25.
+
 ## 2026-10-19 - Resolve static activation through declaring members
 
 Static fields and methods now activate their resolved declaring owner. Field lookup checks the declaring type,

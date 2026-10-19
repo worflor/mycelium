@@ -62,6 +62,7 @@ public final class SelfTest {
         presentation(root);
         integrations();
         evidence();
+        EvidenceSelfTest.run(root);
         loaders(root);
         compat();
         ranges(root);

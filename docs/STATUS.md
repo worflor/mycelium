@@ -30,7 +30,11 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
   effects, captured instance aliases, reflective entrypoints and external scheduling still need analysis
   or runtime evidence. Implicit initializer effects need a may/must initialization-state model: a class initializer
   that clears another class's service can currently escape diagnosis. Reentrant initialization also needs that model;
-  inherited member resolution alone does not establish initializer completion. The must-binding lattice loses
+  inherited member resolution alone does not establish initializer completion. Interprocedural summaries lose
+  effects on exceptional exits: a helper can clear a service, throw, and expose its callback through a caller's catch
+  or finally block without a C1 candidate. Independent JVM witnesses confirm the failure and safe rebinding controls.
+  Summaries need separate normal and exceptional outcomes, with handler routing and path-specific effects.
+  The must-binding lattice loses
   correlations between factory returns and later branches; executable controls retain that precision limit.
   Large content-mod inputs need continued scaling validation. Investigate convergence through worklist telemetry
   and constrain callback surfaces with available type facts; keep the stress inputs in the corpus. Extend rules with

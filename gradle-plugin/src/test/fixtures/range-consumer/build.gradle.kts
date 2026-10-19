@@ -52,7 +52,7 @@ val verifyRangeEvidence = tasks.register("verifyRangeEvidence") {
     doLast {
         ZipFile(tasks.jar.get().archiveFile.get().asFile).use { jar ->
             val evidence = jar.getInputStream(jar.getEntry("META-INF/mycelium/evidence.json")).reader().readText()
-            check("\"schema\": 3" in evidence) { "the manifest is not schema 3" }
+            check("\"schema\": 4" in evidence) { "the manifest is not schema 4" }
             check("\"status\": \"proven\"" in evidence && "\"status\": \"interpolated\"" in evidence) {
                 "the manifest does not record the keystone as proven and 1.21 as interpolated"
             }

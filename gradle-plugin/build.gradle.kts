@@ -66,6 +66,16 @@ val selfTest = tasks.register<JavaExec>("selfTest") {
     args(layout.projectDirectory.dir("..").asFile.absolutePath)
 }
 tasks.named("check") { dependsOn(selfTest, ":source-wrapper:check") }
+tasks.register<JavaExec>("evidenceSelfTest") {
+    group = "verification"
+    description = "Exercises artifact evidence history, task outcomes and configuration-cache reuse."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "dev.woflo.mycelium.gradle.EvidenceSelfTest"
+    jvmArgs(listOf("java.lang", "java.lang.invoke", "java.util", "java.util.concurrent.atomic", "java.net", "java.nio.charset", "java.io")
+        .map { "--add-opens=java.base/$it=ALL-UNNAMED" } + "--add-opens=java.prefs/java.util.prefs=ALL-UNNAMED")
+    args(layout.projectDirectory.dir("..").asFile.absolutePath)
+}
+
 tasks.register<JavaExec>("behaviorSelfTest") {
     group = "verification"
     description = "Runs executable callback-analysis counterexamples and safe controls."

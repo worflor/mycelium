@@ -18,6 +18,20 @@ public final class Fingerprint {
     private Fingerprint() {
     }
 
+    /** SHA-256 of exactly the file's bytes, without a filename prefix or text normalization. */
+    public static String ofFile(Path file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (var input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[65536];
+                for (int size; (size = input.read(buffer)) >= 0;) digest.update(buffer, 0, size);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (IOException | NoSuchAlgorithmException failure) {
+            throw new IllegalStateException("cannot fingerprint file " + file, failure);
+        }
+    }
+
     public static String ofDirectory(Path dir) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
