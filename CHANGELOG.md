@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-19 - Canonicalize requirement witnesses
+
+Requirement joins now choose a stable minimum read site for each field. Combining the same dispatch targets in a
+different order previously chose a different witness, even when the underlying requirement was identical. The new
+permutation control reproduces that difference before the fix. Requirement propagation now uses the same join at direct
+reads, calls and callback exposure, keeping diagnostic provenance independent of traversal order.
+The focused suites passed 724 assertions on Java 25 and 507 on Java 17.
+
 ## 2026-10-19 - Interpret exceptional outcomes and binding dependencies
 
 Method summaries now separate normal and typed exceptional effects. Calls apply the matching outcome before routing

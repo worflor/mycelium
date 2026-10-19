@@ -561,7 +561,7 @@ final class CallbackInitialization {
         Set<ConditionalRead> conditionalReads = new LinkedHashSet<>();
         for (Method target : targets) {
             Summary summary = specialized(target, call, frame, recordInitialization);
-            summary.needs.forEach(needs::putIfAbsent);
+            summary.needs.forEach((field, read) -> need(needs, field, read));
             conditionalReads.addAll(summary.conditionalReads);
             if (summary.returnsNormally) {
                 returnsNormally = true;
@@ -636,8 +636,11 @@ final class CallbackInitialization {
         return (target.name.equals(signature.name) && target.desc.equals(signature.descriptor))
                 || functionalSignatures.getOrDefault(target, Set.of()).contains(signature);
     }
+    static void need(Map<Field, String> needs, Field field, String read) {
+        needs.merge(field, read, (first, second) -> first.compareTo(second) <= 0 ? first : second);
+    }
     void require(Map<Field, String> needs, Set<Field> bound, Collection<Field> fs, String where) {
-        for (Field f:fs)if (!bound.contains(f))needs.putIfAbsent(f, where);
+        for (Field f:fs)if (!bound.contains(f))need(needs, f, where);
     }
     void requireReceiver(Map<Field, String> needs, Set<Field> bound, SourceValue receiver, Set<Value> nonnull,
                          Set<Field> clears, Set<Field> invalidatedNeeds, Map<Field, Set<Parameter>> conditional,
@@ -681,7 +684,7 @@ final class CallbackInitialization {
                 if (!dependencies.isEmpty()) escapes.add(new Escape(registration, target, e.getKey(), e.getValue(), false, dependencies));
                 continue;
             }
-            needs.putIfAbsent(e.getKey(), e.getValue());
+            need(needs, e.getKey(), e.getValue());
             escapes.add(new Escape(registration, target, e.getKey(), e.getValue(), clears.contains(e.getKey()) || s.invalidatedNeeds.contains(e.getKey())));
             if (emit)findings.add(new Finding(root, registration, target, e.getKey(), e.getValue()));
         }
@@ -803,17 +806,17 @@ final class CallbackInitialization {
                     continues = s.returnsNormally;
                     for (var e : s.needs.entrySet()) {
                         if (s.invalidatedNeeds.contains(e.getKey())) {
-                            needs.putIfAbsent(e.getKey(), e.getValue());
+                            need(needs, e.getKey(), e.getValue());
                             invalidatedNeeds.add(e.getKey());
                         } else if (!bound.contains(e.getKey())) {
-                            needs.putIfAbsent(e.getKey(), e.getValue());
+                            need(needs, e.getKey(), e.getValue());
                             if (clears.contains(e.getKey())) invalidatedNeeds.add(e.getKey());
                         }
                     }
                     for (ConditionalRead read : s.conditionalReads) {
                         ReferenceDependencies value = substitute(new ReferenceDependencies(false, read.parameters), call, f, callState);
                         if (value.nullable) {
-                            needs.putIfAbsent(read.dependency, read.read);
+                            need(needs, read.dependency, read.read);
                             invalidatedNeeds.add(read.dependency);
                         }
                         if (!value.parameters.isEmpty())

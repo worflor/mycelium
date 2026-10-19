@@ -42,6 +42,11 @@ union may-effects within their exception environments. Tests check associativity
 snapshot immutability, including an exhaustive two-parameter reference domain. These laws do not establish that every
 JVM instruction or external effect has been modeled soundly.
 
+Diagnostic provenance needs a join too. A field requirement retains a stable minimum read-site witness, rather than
+whichever dispatch target is visited first. A permutation control checks that combining the same targets gives the
+same summary in either order. Witness choices participate in summary equality, so incidental traversal order must not
+manufacture a new analysis fact.
+
 Implicit fault conditions remain conservative. Missing exception ancestry is unknown. Platform exception headers come
 from the analysis host, without initializing consumer code; this does not establish another target JVM's complete
 platform hierarchy. External bodies and their arbitrary field effects remain unresolved.

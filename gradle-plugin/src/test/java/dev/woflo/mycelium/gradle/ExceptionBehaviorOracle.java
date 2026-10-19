@@ -223,5 +223,15 @@ final class ExceptionBehaviorOracle {
             laws &= a.join(a).equals(a) && a.join(b).equals(b.join(a)) && a.join(b).join(c).equals(a.join(b.join(c)))
                     && a.join(CallbackInitialization.ReferenceDependencies.NONE).equals(a);
         SelfTest.that(laws, "exception domain: exhaustive two-parameter reference joins obey semilattice laws");
+        var analyzer = new CallbackInitialization();
+        var left = new CallbackInitialization.Method("Domain", "left", "()V");
+        var right = new CallbackInitialization.Method("Domain", "right", "()V");
+        for (var target : List.of(left, right))
+            analyzer.summaries.put(target, new CallbackInitialization.Summary(java.util.Map.of(field, target.name()),
+                    Set.of(), Set.of(), Set.of(), Set.of(), new java.util.BitSet(), Set.of(), false,
+                    java.util.Map.of(), java.util.Map.of(), CallbackInitialization.ReferenceDependencies.NONE, Set.of()));
+        var forward = analyzer.combined(new java.util.LinkedHashSet<>(List.of(left, right)));
+        var reverse = analyzer.combined(new java.util.LinkedHashSet<>(List.of(right, left)));
+        SelfTest.that(forward.equals(reverse), "exception domain: requirement witnesses are independent of dispatch order");
     }
 }
