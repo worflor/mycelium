@@ -14,14 +14,14 @@ compiler also needs to tell the client exactly which models it must load.
 
 ## Options
 
-- Add multiple-match behavior to item programs: changes their first-match meaning.
+- Add multiple-match behaviour to item programs: changes their first-match meaning.
 - Enumerate complete block states: multiplies independent domains and reaches the compilation cap unnecessarily.
 - Compile each model part over the inputs it reads: preserves independence and gives an exact model manifest.
 
 ## Decision
 
 `block.presentation@1` declares an ordered list of guarded model parts. It reuses the Sigil's inputs, guards, templates,
-and component catalog through a declared requirement. Every matching part draws, with its stated quarter-turn.
+and component catalogue through a declared requirement. Every matching part draws, with its stated quarter-turn.
 
 Enumeration and the span cap apply per part. The manifest is exactly the union of models those parts can draw, sorted
 and deduplicated; a plan with a stale manifest is rejected. Consumer-authored models remain assets, not compiler output.

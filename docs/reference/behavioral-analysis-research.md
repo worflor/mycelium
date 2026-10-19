@@ -1,7 +1,7 @@
-# Behavioral analysis research
+# Behavioural analysis research
 
 Research reviewed on 2026-10-19. These are priors for the interpreter, with experiments that can test their usefulness.
-They do not establish Mycelium's soundness or native loader behavior. The current supported scope is in
+They do not establish Mycelium's soundness or native loader behaviour. The current supported scope is in
 [the plugin reference](../plugin.md#inspecting-an-existing-mod).
 
 ## Exceptional control flow
@@ -12,7 +12,7 @@ An unhandled callee exception continues at its caller's invocation site. Individ
 exceptions; for example, [`aastore`](https://docs.oracle.com/javase/specs/jvms/se25/html/jvms-6.html#jvms-6.aastore)
 has null, bounds and array-store failure cases.
 
-[ByteBack's exceptional-behavior paper](https://bugcounting.net/pubs/ifm23-bb-exceptions.pdf), section 3.3, makes those
+[ByteBack's exceptional-behaviour paper](https://bugcounting.net/pubs/ifm23-bb-exceptions.pdf), section 3.3, makes those
 edges explicit in an intermediate representation. A thrown-value state connects explicit throws, supported implicit
 faults, calls and ordered handlers. Section 3.5 explains the role of specifications for modular and system-library
 calls. Its deductive-verification backend is a different undertaking from Mycelium's diagnostics; its explicit outcome
@@ -45,7 +45,7 @@ unknown incoming value. Reference-snapshot joins intersect binding guarantees an
 Reference-dependency joins use Boolean disjunction and parameter-set union. State joins intersect must-bindings and
 union may-effects within their exception environments. Tests check associativity, commutativity, idempotence and
 snapshot immutability, including an exhaustive two-parameter reference domain. These laws do not establish that every
-JVM instruction or external effect has been modeled soundly.
+JVM instruction or external effect has been modelled soundly.
 
 Diagnostic provenance needs a join too. A field requirement retains a stable minimum read-site witness, rather than
 whichever dispatch target is visited first. A permutation control checks that combining the same targets gives the
@@ -113,6 +113,6 @@ and [library design notes](https://github.com/github/codeql/blob/main/docs/ql-li
 for inspectable paths and matched call/return flow. A useful Mycelium trace would connect the clear, summary edge,
 exceptional transfer, callback exposure and read, while identifying external or unresolved edges.
 
-The eventual result taxonomy needs separate obligations: a feasible modeled violation, a property established within
-an explicit modeled scope, or undetermined. C1 currently remains an undetermined potential-risk diagnostic. A converged
+The eventual result taxonomy needs separate obligations: a feasible modelled violation, a property established within
+an explicit modelled scope, or undetermined. C1 currently remains an undetermined potential-risk diagnostic. A converged
 worklist, an available report and a zero-candidate run do not discharge those proof obligations.

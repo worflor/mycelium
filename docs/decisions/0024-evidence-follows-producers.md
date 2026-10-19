@@ -56,5 +56,5 @@ exercise asynchronous delivery, skipped tasks and repeated observation of a prod
 
 Consumers can inspect both the claims carried by a jar and the verification reports associated with finished bytes.
 Older report files no longer silently become current evidence. Schema readers must recognize the new artifact phase
-and the separate verification sidecar. The collector does not broaden any check's scope or establish native behavior.
+and the separate verification sidecar. The collector does not broaden any check's scope or establish native behaviour.
 Later remapping or packaging steps need their own archive subject when their exact bytes matter.

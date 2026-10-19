@@ -32,7 +32,7 @@ Legacy float codes come from a committed, append-only lock. New selections appen
 and draw the base model. The lock is required on modern targets too, so building a different target cannot allocate a
 different code. A selection's key is its model reference.
 
-Compilation checks every input against a component catalog, including network visibility. A server-private field is
+Compilation checks every input against a component catalogue, including network visibility. A server-private field is
 refused. The consumer checks `catalog.disagreements(registry)` in its own tests because the build cannot load its registry.
 
 `myceliumPresentation` generates resources before `processResources`. `myceliumPresentationLock` updates the lock only
@@ -59,7 +59,7 @@ The reference compiler passed and each initial rejection fixture was caught for 
 The plugin self-tests, the standalone `presentation-consumer` fixture, and `./gradlew check` passed.
 
 Consumer adoption recorded game evidence on 26.3 and 1.21.1. Other bridge versions have linkage evidence where name data
-is pinned; game behavior on them remains unproven. Conformance resources are excluded from the shipping jar by default;
+is pinned; game behaviour on them remains unproven. Conformance resources are excluded from the shipping jar by default;
 conformance classes require `conformanceClassesOutOfJar()` when they share `main`.
 
 ## Consequences

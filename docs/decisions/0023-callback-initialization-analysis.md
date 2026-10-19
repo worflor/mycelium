@@ -14,7 +14,7 @@ integration but add a second source of compatibility knowledge to maintain.
 
 ## Options
 
-- Maintain event names and ordering rules for each loader. This duplicates native behavior and becomes stale when the
+- Maintain event names and ordering rules for each loader. This duplicates native behaviour and becomes stale when the
   loader changes.
 - Infer a complete loader lifecycle from names or package roots. Those inputs do not establish event ordering.
 - Analyze callback dependencies in compiled consumer code, report the read and exposure sites, and keep scheduling
@@ -58,7 +58,7 @@ null and non-null factory returns invalidate the receiving binding.
 Independent regressions compile anonymous callbacks and lambdas across compiler releases. Unsafe and safe witnesses
 execute on the JVM. A reverse-ordered dependency chain and a permutation of its class-file method order check
 convergence and invariance. The focused `behaviorSelfTest` task supports a Java 17 or newer compiler toolchain, with
-Java 7 bytecode fixtures compiled on Java 17. These tests establish bytecode-analysis behavior, not native Minecraft
+Java 7 bytecode fixtures compiled on Java 17. These tests establish bytecode-analysis behaviour, not native Minecraft
 support on those eras.
 
 ## Outcome summaries and rethrows (2026-10-19)
@@ -110,7 +110,7 @@ These scans are analysis evidence, not runtime compatibility claims.
 
 ## Consequences
 
-The compiler gains one scoped behavioral diagnostic, not a general proof of cross-loader behavior. Reflection,
+The compiler gains one scoped behavioural diagnostic, not a general proof of cross-loader behaviour. Reflection,
 captured instance aliases, a closed set of runtime dispatch targets and native scheduler semantics remain outside its
 model. It tracks forwarded callbacks and matching synchronous receiver invocations with known callback effects.
 Unknown targets and effects remain uncertain. Assignment is

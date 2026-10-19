@@ -27,7 +27,7 @@ This index is maintained by review. The [package guide](../CONTRACT-PACKAGE.md) 
 | [`persistence.player-state@1`](player-state/SPEC.md) | Durable player state and verified schema migration chains |
 | [`presentation.particle-cue@1`](cue/SPEC.md) | Particle or sound cues emitted after the outermost commit |
 | [`data.catalog@1`](data-catalog/SPEC.md) | Reloadable, validated named data entries |
-| [`data.generation@1`](data-generation/SPEC.md) | Atomic publication of related catalogs, with validated cross-references and stable fingerprints |
+| [`data.generation@1`](data-generation/SPEC.md) | Atomic publication of related catalogues, with validated cross-references and stable fingerprints |
 | [`random.seeded@1`](random-seeded/SPEC.md) | A seed with a stable stream across Java versions and refactors |
 | [`random.keyed@1`](random-keyed/SPEC.md) | Domain-separated SHA-256 derivations and keyed HMAC draws with owned, reproducible algorithms |
 | [`agent.link@1`](agent-link/SPEC.md) | Authorized requests over reconnecting external-agent links, with at-most-once handling |
@@ -35,7 +35,7 @@ This index is maintained by review. The [package guide](../CONTRACT-PACKAGE.md) 
 | [`chat.coverage@1`](chat-coverage/SPEC.md) | Retired stream-coverage model, retained so older builds resolve |
 | [`command.authorization@1`](command-authorization/SPEC.md) | Explicit command permission grants and denials over a caller-provided default privilege (WorldPrompt) |
 
-A reference harness passing establishes model evidence. Game behavior requires a consumer's native implementation and
+A reference harness passing establishes model evidence. Game behaviour requires a consumer's native implementation and
 game tests. [Decisions](../docs/decisions/) record rationale and observed evidence; the [status board](../docs/STATUS.md)
 lists remaining work.
 

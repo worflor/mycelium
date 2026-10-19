@@ -18,7 +18,7 @@ change contract ownership and introduce another dependency system. The source wr
 
 ## Decision
 
-Build a Java 17 wrapper with the existing Gson dependency. Ship it with sources, licenses, launchers and maintained
+Build a Java 17 wrapper with the existing Gson dependency. Ship it with sources, licences, launchers and maintained
 Gradle hooks. Its version is independent of the compiler revision. Git handles transport, normalization and merge.
 The recipe records a full base commit, optional content-addressed binary patch, effective tree and completion policy.
 

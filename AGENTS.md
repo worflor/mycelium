@@ -30,6 +30,10 @@ The playbook is `docs/building-with-mycelium.md`. The decision behind it is
 Consumers pin their own contract versions. Preserve an existing major's meaning and run the gates before handing
 off a change.
 
+## Documentation language
+
+Write human-facing documentation in Canadian English: *behaviour*, *colour*, *neighbour*, *centre*, *catalogue*, and *licence* (noun), while keeping *license* (verb). Prefer *modelled*, *labelled*, and *travelling*; retain Canadian *organize* and *analyze*. Do not respell identifiers, contract IDs, filenames, URLs, commands, code examples, or official licence titles.
+
 ## Where knowledge lives
 
 Each fact has one home. Everything else links to it.
@@ -135,7 +139,7 @@ the tasks do is `docs/plugin.md`.
   strictly read), `NameCache.java` (pinned files by SHA-256, fetched once, checked on every use), `Names.java` (what the
   game has under one naming on one version), `Inventory.java` (the game's own classes, resolving a member through its
   hierarchy as the JVM does).
-- **Behavioral diagnostics.** `BehaviorTask.java` (`myceliumBehavior`, opt-in), `CallbackInitialization.java`
+- **Behavioural diagnostics.** `BehaviorTask.java` (`myceliumBehavior`, opt-in), `CallbackInitialization.java`
   (callback targets, reference provenance and initialization flow; potential risks, not native event-order proofs).
 - **Presentation.** `Presentation.java` (what `myceliumPresentation` and `myceliumPresentationLock` do apart from
   Gradle: reads a consumer's programs and mosaics, compiles `item.presentation@1`'s and `block.presentation@1`'s models with what they require, runs their tools),

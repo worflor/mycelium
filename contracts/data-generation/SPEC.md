@@ -1,6 +1,6 @@
 # data.generation@1
 
-One coherent, named view over several catalogs that name one another, published whole or not at all. Related catalogs
+One coherent, named view over several catalogues that name one another, published whole or not at all. Related catalogues
 are validated together, and a consumer can identify the exact generation an operation read. Written for Cartomancy;
 the examples below are synthetic.
 
@@ -8,21 +8,21 @@ the examples below are synthetic.
 |---|---|
 | Contract id | `data.generation@1` (package `mycelium.data_generation.v1`) |
 | Kind | Model contract, the shape of `../chunk-hold/SPEC.md` |
-| Requires | `data.catalog@1`, its model only: a generation is assembled from catalog snapshots |
+| Requires | `data.catalog@1`, its model only: a generation is assembled from catalogue snapshots |
 
 ## 1. The problem
 
-`data.catalog@1` publishes one catalog atomically: one file becomes one entry, a bad file is rejected without the
-others, a later pack wins, and a reload is never seen half done. Data that spans catalogs does not stay coherent that
+`data.catalog@1` publishes one catalogue atomically: one file becomes one entry, a bad file is rejected without the
+others, a later pack wins, and a reload is never seen half done. Data that spans catalogues does not stay coherent that
 way. A recipe names ingredients, and a machine definition names recipes and processing rules. Reloading each
-catalog on its own publishes, for a moment or for good, a view in which one catalog's new entries point at another's old
+catalogue on its own publishes, for a moment or for good, a view in which one catalogue's new entries point at another's old
 ones, or at nothing. And a record that must be reproducible later (a receipt, a saved operation, a log line) needs one
 name for everything that decided it, the same name on every machine that holds the same data.
 
 ## 2. The model
 
-- `Kind(id, policy)`: a catalog that takes part, offered under its id, and what a **broken** entry of it does. An entry
-  is broken when its catalog rejected its file, when an ERROR finding names it, or when one of its references names
+- `Kind(id, policy)`: a catalogue that takes part, offered under its id, and what a **broken** entry of it does. An entry
+  is broken when its catalogue rejected its file, when an ERROR finding names it, or when one of its references names
   nothing published. `REQUIRED`: the candidate is refused. `OPTIONAL`: the entry is left out and reported, and so is
   whatever referred to it, transitively.
 - `Ref(kind, id)`: one entry. Both strings are non-empty and well-formed UTF-16. Refs order by kind, then id, by code
@@ -57,8 +57,8 @@ An offer runs alone (offers are serialised) and changes nothing until its last s
 
 1. **Shape.** One snapshot for every declared kind and none for any other, or the offer is refused (`offer:missing-kind`,
    `offer:unknown-kind`) without reading.
-2. **What was offered.** Every snapshot entry is an offered `Ref`; every file the catalog rejected is a broken one
-   (`catalog:rejected`, the catalog's reason).
+2. **What was offered.** Every snapshot entry is an offered `Ref`; every file the catalogue rejected is a broken one
+   (`catalog:rejected`, the catalogue's reason).
 3. **Read.** The assembler's findings are collected. An ERROR naming the candidate, or an entry of an undeclared kind,
    refuses; an ERROR naming an entry breaks that entry.
 4. **Accounting.** A part for an entry no snapshot offered (`assembler:unoffered-part`), a second part for one entry
@@ -112,7 +112,7 @@ hash with them.
 | G4 | **Numbers rise.** The first publication is number 1 and each next is one more; a refusal takes no number | `G4:monotonic`, `G4:consecutive` |
 | G5 | **Held is held.** A generation someone holds never changes, whatever is offered after, and its manifest and findings cannot be changed by its holder | `G5:immutable` |
 | G6 | **Every finding at once.** A refusal names every problem found in every step that ran, each with its subject (or none, for the candidate) and code; a refusal is never silent | `G6:all-findings`, `G6:named`, `G6:refusal-says-why` |
-| G7 | **Accounted.** Every offered entry and every rejected file is in the published manifest or named by a finding; nothing is published that was not offered. An assembler that loses or invents an entry refuses the candidate; a broken required entry (rejected by its catalog, or named by an ERROR) refuses it; a rejected optional file is reported and left out with what named it | `G7:accounted`, `G7:nothing-invented`, `G7:unlisted-refuses`, `G7:unoffered-refuses`, `G7:required-rejection-refuses`, `G7:required-error-refuses`, `G7:optional-rejection-left-out` |
+| G7 | **Accounted.** Every offered entry and every rejected file is in the published manifest or named by a finding; nothing is published that was not offered. An assembler that loses or invents an entry refuses the candidate; a broken required entry (rejected by its catalogue, or named by an ERROR) refuses it; a rejected optional file is reported and left out with what named it | `G7:accounted`, `G7:nothing-invented`, `G7:unlisted-refuses`, `G7:unoffered-refuses`, `G7:required-rejection-refuses`, `G7:required-error-refuses`, `G7:optional-rejection-left-out` |
 | G8 | **Contained.** Whatever the assembler throws, and whatever shape the offer has, `offer` returns: a refusal with the reason, the live generation serving | `G8:never-throws`, `G8:threw-is-kept`, `G8:offer-shape` |
 
 ### Positive obligation
@@ -132,7 +132,7 @@ with a hook at each step; it is not a matrix entry).
 
 | Broken fixture | What it gets wrong | Caught by |
 |---|---|---|
-| `PiecewiseGenerations` | publishes as each catalog arrives: the first kind alone, then the first two | `G1:never-partial` |
+| `PiecewiseGenerations` | publishes as each catalogue arrives: the first kind alone, then the first two | `G1:never-partial` |
 | `MixedGenerations` | keeps the name apart from the value and writes the new name before the build: a reader sees one generation's hash on another's data | `G1:never-mixed` |
 | `FailOpenGenerations` | publishes a refused candidate as whatever survived | `G1:refused-is-kept` |
 | `DisturbingGenerations` | on a refusal, rewrites the live generation to carry the refused candidate's findings | `G1:refused-keeps-current` |
@@ -155,7 +155,7 @@ contract, and a type that does nothing must still fail one of its laws (CONTRACT
 ## 6. Using it
 
 A mod keeps one `Generations` on the server and gives it an assembler. On a datapack reload it reloads each of its
-catalogs (`data.catalog@1`: one source per file per pack, later pack wins), offers every catalog's snapshot together,
+catalogues (`data.catalog@1`: one source per file per pack, later pack wins), offers every catalogue's snapshot together,
 and either publishes or keeps the live generation, logging every finding either way. Everything that resolves a rule
 reads `current()` once and keeps what it resolved; a record names the generation by its hash. The assembler:
 

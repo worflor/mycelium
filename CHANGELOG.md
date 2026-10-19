@@ -18,7 +18,7 @@ an independent audit checked all 21 worker reports, their recorded hashes and th
 
 Corpus aggregates now retain the control and mutant summaries alongside the baseline, including each full report's
 SHA-256. A generated Java 8 corpus runs through the actual worker launcher, mutation and aggregate pipeline and checks
-all three recorded hashes against the report files. This changes the maintainer lab's evidence, not analyzer behavior.
+all three recorded hashes against the report files. This changes the maintainer lab's evidence, not analyzer behaviour.
 
 ## 2026-10-19 - Canonicalize requirement witnesses
 
@@ -99,7 +99,7 @@ candidates and its mutant had one; every original archive remained unchanged.
 ## 2026-10-18 - Bytecode effects and initialization reachability
 
 Callback arguments now specialize consumer-owned method summaries as dependency-worklist nodes. Recursive invocation,
-callback-owned writes and resets, and normal-return reachability are modeled without unfolding the call stack. Opaque
+callback-owned writes and resets, and normal-return reachability are modelled without unfolding the call stack. Opaque
 native bodies may return and may forward callback arguments. Public implementations on package-private classes stay
 visible as entry roots; known nullable factory and initializer paths invalidate bindings.
 
@@ -118,7 +118,7 @@ handlers, recursive callback effects, opaque native calls and transitive class i
 branch-correlation false positive is retained.
 All seven pinned corpus experiments passed their pristine scans and control/mutant comparisons, covering JEI, Lithium,
 Sodium and Create across Minecraft 1.12.2 through 26.3 on Forge, Fabric and NeoForge. These establish static-analysis and
-injected-defect behavior, not native game compatibility. Eleven offline collector tests passed.
+injected-defect behaviour, not native game compatibility. Eleven offline collector tests passed.
 
 ## 2026-10-18 - Resume compiler development in the canonical checkouts
 
@@ -133,7 +133,7 @@ analysis. Callback-owned writes are not a complete scheduler-effect model; exter
 
 Validation: the public aggregate `check` passed on JDK 25 in 14m 41s, including 1,013 plugin assertions,
 55 source-lifecycle assertions, 19 consumer-hook assertions, contract harnesses, bridge linkage and the era gates.
-Focused Gradle runs passed 47 behavioral assertions on Java 17 and 53 on Java 25, launched from the installed Java 21
+Focused Gradle runs passed 47 behavioural assertions on Java 17 and 53 on Java 25, launched from the installed Java 21
 build host. Fixture targets cover Java 7, 8, 11, 16, 17, 21 and 25; this is bytecode-analysis evidence, not native game
 support for each era. A 160-call chain converges, and permuting method order preserves findings and dependency edges.
 A fresh maintainer consumer captured and prepared the private compiler without changing its real index or including
@@ -165,7 +165,7 @@ Maintained Gradle hooks verify source before plugin loading, bind imports to tha
 and actual identities in artifact jars. Explicit development overrides remain available for compilation and focused
 runs. Locked completion rejects uncaptured source for checks and the existing artifactJars selection, plus sourcesJar;
 unrelated test archives remain available. The hooks revalidate with the configuration cache and transport paths through
-file URIs and UTF-8 output on Windows. The bundle carries sources, licenses, checksums and the lifecycle guide.
+file URIs and UTF-8 output on Windows. The bundle carries sources, licences, checksums and the lifecycle guide.
 
 Validation: full `check` passed on JDK 25 in 9m 53s, including 979 plugin self-test assertions and the contract era
 gates on Java 8, 16, 17, 21 and 25. Isolated Git tests passed 51 assertions, including Unicode paths, a legacy default encoding, staged work,
@@ -225,12 +225,12 @@ including the shared cold-start datapack function resource.
 
 ## 2026-10-18 - Test-runner comment cleanup
 
-Shortened the harness-report comment. `./gradlew check` passed; no runtime behavior changed.
+Shortened the harness-report comment. `./gradlew check` passed; no runtime behaviour changed.
 
 ## 2026-10-18 - block.catalog@1: immutable native block-state snapshots
 
-Added a finite catalog model for known block identifiers, every state property's allowed values, and exact defaults.
-Catalog construction validates and deep-copies definitions; normalization fills defaults, applies explicit values, and
+Added a finite catalogue model for known block identifiers, every state property's allowed values, and exact defaults.
+Catalogue construction validates and deep-copies definitions; normalization fills defaults, applies explicit values, and
 rejects unknown blocks, properties, and values. `CatalogSource` is the native registry capture seam. The rejection matrix
 holds malformed definitions, missing defaults, ignored explicit values, and input/output aliasing.
 
@@ -242,7 +242,7 @@ server smoke passed on both loaders.
 
 Added an immutable replay program that validates and owns one operation's RLE data during payload preparation; each
 fresh cursor shares that data and keeps independent resume state. The cursor preserves ordered visits, per-drain work
-budgets, retry position and whole-run skip accounting. Native palette and block behavior remains the consumer's port.
+budgets, retry position and whole-run skip accounting. Native palette and block behaviour remains the consumer's port.
 
 Validation: direct JDK 25 harness passed (10 reference assertions, all eight broken fixtures caught, including shared
 cursor state); the model compiles with `--release 17`. WorldPrompt's parser and game tests cover defensive views and
@@ -296,7 +296,7 @@ Validation: `./gradlew check`; README links, task coverage, and Markdown structu
   Existing contracts are optional reuse; separate checkouts and private forks are ordinary development routes.
 - Scoped this repository to reusable compiler machinery and intentionally shared contracts. Consumer-owned feature
   definitions remain in their own development tree under the same gates (decision 0022).
-- Refined the documentation around current behavior, evidence limits, and concise provenance. Updated the contract
+- Refined the documentation around current behaviour, evidence limits, and concise provenance. Updated the contract
   index for the retained packages and used synthetic presentation and data-generation examples.
 - Preserved contract APIs, executable model code, law labels, rejection entries, and the founding architecture. Consumer source audits are redacted from publication editions; complete records remain private.
 - Refined consumer-specific implementation notes across every reachable branch and corrected malformed Markdown escapes.
@@ -332,10 +332,10 @@ examples; `docs/decisions/0019-mosaic-block-presentation.md` the reasoning.
   selection. Self-tests cover the block table (lookup, refusals, a gap, an overlap) and the task core on a fixture mosaic (compile,
   determinism, a version with no mechanism, a server-private input).
 
-## 2026-10-13 - data.generation@1: one view over catalogs that name one another
+## 2026-10-13 - data.generation@1: one view over catalogues that name one another
 
 New contract `data.generation@1` (`contracts/data-generation`), written for Cartomancy, requiring `data.catalog@1`: a
-mod's catalogs (rules, and the data that names them) assembled into one candidate, every reference resolved across
+mod's catalogues (rules, and the data that names them) assembled into one candidate, every reference resolved across
 them, and published as one generation with one name, or not at all, the live generation serving meanwhile.
 `contracts/data-generation/SPEC.md` has the model, the hash, laws G1 to G8 with P1, and the matrix.
 
@@ -387,8 +387,8 @@ components, writes the era's selector, and writes the raw item data a display en
 
 - **Variants.** `item-definition` (1.21.4 on: the selector is the first custom model data string) and `model-overrides` (1.14 to 1.21.3: the
   locked number, in the root tag before 1.20.5; an overlay for 1.20.5 to 1.21.3 where it is a component). Linkage green.
-- **Contract (additive).** Scalar components in the catalog (`"value"`); `contexts` on a program (law S8, the `InvertedContexts` fixture,
-  a rejection matrix of seven, all caught); `StackPresenter`; the catalog written beside the plans; a presence component counts as a unit.
+- **Contract (additive).** Scalar components in the catalogue (`"value"`); `contexts` on a program (law S8, the `InvertedContexts` fixture,
+  a rejection matrix of seven, all caught); `StackPresenter`; the catalogue written beside the plans; a presence component counts as a unit.
 - **Conformance** (`PresenterConformance`): every selection round-trips onto a real stack, legacy codes are the lock's, the base clears the
   selector, neighbours are kept, equal-state stacks stay equal, copy, save and sync, raw item data, an empty stack untouched.
 - **Plugin.** A mod's jar leaves the conformance data out (`shipConformanceResources()` keeps it) and, on request, the conformance
@@ -488,7 +488,7 @@ simulating each era's rules over the emitted bytes, for every tuple.
 - **Verification.** Six broken compilers join the matrix (`EnumerationOrderCodes`, `DescendingOverrides`, `OffByOneLegacy`,
   `LeakyProjection`, `HashOrderEmitter`, `NoOpCompiler`), each caught for its label; 40 seeded random programs are held to S1, S2, S4 and S6.
 - Where the decision was silent it was decided and recorded in it: input defaults, out-of-domain stacks drawing the base, retired codes drawing
-  the base, a catalog file held to the registry, and the base model being another model than the item's own.
+  the base, a catalogue file held to the registry, and the base model being another model than the item's own.
 
 Ran: `bash run-contracts.sh item-presentation` (clean, 6 rejections caught), `./gradlew -p gradle-plugin selfTest`, the
 `presentation-consumer` fixture (`check` on 1.21.4; the lock task and the build fail and recover as described), `./gradlew check`.
@@ -608,7 +608,7 @@ Verification: `./gradlew check` passes on Java 21 with the installed Java 8, 16,
 fixtures pass, and the server-surface rejection fixture fails on the expected mapping-present/server-absent method. The launcher
 self-test selects the platform's Java executable, and `gradlew` is executable in source control.
 
-## 2026-10-07 - License
+## 2026-10-07 - Licence
 
 Mycelium is licensed under the Mozilla Public License 2.0 (`LICENSE`). A mod built with it keeps its own licence;
 Mycelium's own files stay MPL-2.0.
@@ -783,7 +783,7 @@ Added the opt-in `myceliumCapsule` gate for loader-scanned outer jars and nested
 ceilings, checks every bytecode class and member reference against ordered runtime roots, verifies declared Tiny v2
 namespace obligations, and records the checked artifact, mapping and runtime-root hashes. It also checks inherited
 members, staticness, constructors, access, nested-loader boundaries, and shadowed runtime definitions. `SelfTest`
-includes positive and negative fixtures for each behavior, including array-owner `clone` and inherited `Object` calls,
+includes positive and negative fixtures for each behaviour, including array-owner `clone` and inherited `Object` calls,
 missing array methods/components, and invalid static/interface invocation forms.
 
 Verification: plugin self-tests pass 274 assertions; `./gradlew check` passes for all 17 contract/package gates, 115

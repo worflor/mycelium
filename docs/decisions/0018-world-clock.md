@@ -73,7 +73,7 @@ sky colours, light, mob burning) are not emulated by this contract.
 
 ## First proofs
 
-Further consumer game evidence is required for the targets and behaviors not exercised here.
+Further consumer game evidence is required for the targets and behaviours not exercised here.
 
 ## Evidence (pure half, 2026-10-12)
 

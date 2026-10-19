@@ -6,7 +6,7 @@
 | Status | Mycelium contract package, mirrors `../flow/SPEC.md` in layout and discipline |
 | Domain | Move a player between dimensions (or same-coordinate across a seam) with position and inventory intact, confirming arrival before reporting success |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies |
-| Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires a native adapter (vanilla `teleportTo`, or a loader's own teleport) and packaged-game fixtures |
+| Claims discipline | Everything in this package is design-time. No claim here is evidence of behaviour on a real game target; that requires a native adapter (vanilla `teleportTo`, or a loader's own teleport) and packaged-game fixtures |
 
 ---
 
@@ -169,7 +169,7 @@ Expected result: reference implementation clean; every entry of the rejection ma
 - No Minecraft or mod loader code was executed to produce this package.
 - The native reference adapter (`FabricDimensions.teleport`, vanilla `teleportTo`/`changeDimension`) and a
   packaged-game fixture are later artifacts; until they exist, this contract has no game-target evidence. In
-  particular, "target chunk not loaded" is modeled here only as `LaggyPort`'s deferred `move` — no real chunk
+  particular, "target chunk not loaded" is modelled here only as `LaggyPort`'s deferred `move` — no real chunk
   loading, netcode, or client-server round trip is simulated.
 - `Pose` is set by `move` but not independently queryable on `TravelPort` in v1; no law here verifies arrival
   pose beyond what the receipt records. A future revision may add a query method and a pose-exactness law.

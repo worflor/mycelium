@@ -6,7 +6,7 @@
 | Status | Design-time contract package; Mycelium DESIGN v0.4 §6–§8, §11 |
 | Domain | Applying and removing a rule's effects (attribute modifiers, flags, status effects) on a bounded set of entities, with stable ids, locale scope, and transactional finality |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies beyond `harness/src` |
-| Claims discipline | Everything here is design-time. No claim is evidence of behavior on a real game target; that needs the native adapter and gametests (`rule_low_gravity`, `rule_no_stack`) |
+| Claims discipline | Everything here is design-time. No claim is evidence of behaviour on a real game target; that needs the native adapter and gametests (`rule_low_gravity`, `rule_no_stack`) |
 
 ---
 

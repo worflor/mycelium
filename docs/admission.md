@@ -50,10 +50,10 @@ the mistake, caught by the harness. It stays in `@N` when no label or required m
 - **It cannot break a build that did not ask for it.** A new check warns, or is off, until a consumer opts in.
 - **It is proven.** A case in `gradle-plugin/src/test/java/dev/woflo/mycelium/gradle/SelfTest.java` breaks the thing it
   checks and sees it fail, and a consumer's build runs it.
-- **Behavioral conclusions keep their premises.** A rule states what program facts it models and what remains unknown.
+- **Behavioural conclusions keep their premises.** A rule states what program facts it models and what remains unknown.
   A proven violation, a property established within scope, and an undetermined result are different outcomes.
   Potential diagnostics stay potential. Executable counterexamples and safe controls must test the distinction;
-  solver completion alone is not a proof. See [the analysis model](architecture.md#behavioral-analysis-and-conclusions).
+  solver completion alone is not a proof. See [the analysis model](architecture.md#behavioural-analysis-and-conclusions).
 - **It is mapped.** `AGENTS.md` names its class and `README.md` names its task (both checked), and `docs/plugin.md` says
   what it does.
 

@@ -13,7 +13,7 @@ decision 0016 records the native bridge work.
 | Part | Status |
 |---|---|
 | `TagNode`, `ComponentCodec`, `RecordCodec`, `ComponentDefinition`, `ComponentRegistry`, `CarrierSnapshot`, `Unit` | **Proven by a consumer.** Consumer adoption recorded in October 2026: record components, marks, and values with no default. |
-| `RosettaTranslator` / `StandardRosettaTranslator` (fenced read and write: T1 to T6, T9, T12) | **Proven by a consumer.** Used for consumer stack translation; native behavior still needs evidence for each target. |
+| `RosettaTranslator` / `StandardRosettaTranslator` (fenced read and write: T1 to T6, T9, T12) | **Proven by a consumer.** Used for consumer stack translation; native behaviour still needs evidence for each target. |
 | Quarantine and recovery records (T5) | **Proven by a consumer.** Consumer adoption exercised unreadable entries surviving later writes. |
 | Presence components, `FencedCarrier`, `WriteOutcome`, `ComponentRead`, `LegacyKeyMigration` (T13 to T20) | **Harness evidence.** Added from consumer adapter requirements: presence, typed outcomes, consistent single-component reads, and old-key migration. Each consumer must test the migration and quarantine paths its adapters use. |
 | `StackCarrier` (S1 to S6, section 5.7) and its bridge `item-carrier` | **Consumer adoption recorded in October 2026.** The bridge implements the port for `ItemStack`; conformance cases test S1 to S6 on the consumer's targets. See decision 0016 for linkage coverage and limits. |
@@ -42,7 +42,7 @@ In Minecraft 1.20.1, item state is a mutable string-keyed tree of untyped NBT (`
 - `ComponentCodec<T>`: Pure serializer (`encode: T -> TagNode`, `decode: TagNode -> T throws CodecException`). Provides compositional value semantics: `freeze(T)`, `validate(T)`, `semanticEquals(T, T)`, `semanticHash(T)`.
 - `RecordCodec<T>`: Record combinator over `ComponentCodec`: named required fields (`RecordCodec.field`), optional fields (`RecordCodec.optional`, read as `Optional`), each with its own codec, built into a codec that is also a `FieldAwareCodec`. `definition(id, default)` binds both, so fields the codec does not know survive an edit.
 - `ComponentDefinition<T>(id, codec, defaultValue)`: Declares a typed component and deeply frozen default value.
-- `ComponentRegistry`: Catalog of registered component definitions with duplicate conflict rejection and explicit `replace()` semantics.
+- `ComponentRegistry`: Catalogue of registered component definitions with duplicate conflict rejection and explicit `replace()` semantics.
 - `CarrierSnapshot`: Immutable snapshot of an item's carrier state (typed components, negative patch removals, and preserved foreign/quarantined tags). Guarantees complete immutability via defensive views (`defensiveMapView`), deep array/collection cloning, and compositional deep equality.
 - `ComponentPatch<T>`: Pure algebraic patch states (`Inherit`, `Set<T>`, `Remove<T>`).
 - `Unit`: Pure singleton type (`Unit.INSTANCE`) representing presence of Minecraft 1.20.5+ unit components (e.g. `minecraft:glider`).

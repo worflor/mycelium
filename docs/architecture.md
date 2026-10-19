@@ -5,7 +5,7 @@ a declaration, laws that say what must hold, and generated per-target artefacts,
 runtime. It exists at development time, between a mod's intent and the loaders and versions that run it, and grows with
 the mods that use it (`docs/decisions/0015-a-compiler-you-build-with.md`).
 
-The mod supplies its structure and behavioral contracts; Mycelium supplies the common compatibility machinery.
+The mod supplies its structure and behavioural contracts; Mycelium supplies the common compatibility machinery.
 Existing contracts are optional reuse. New declarations and realizations are developed with the feature in the mod's
 Mycelium checkout or private fork, so the compiler's capabilities grow through use. Upstream contribution is independent
 of that development loop.
@@ -20,7 +20,7 @@ A crossing combines a pure declaration, explicit obligations, target data, and b
 | Part | What it is | Where it lives |
 |---|---|---|
 | **Declaration** | A pure model of what the mod means, in plain Java, with no Minecraft types. Domain-specific: each divide gets its own precise model. | `model/` of a contract package |
-| **Laws** | Obligations on every target, including positive behavior that a do-nothing implementation breaks. | the package's `SPEC.md` |
+| **Laws** | Obligations on every target, including positive behaviour that a do-nothing implementation breaks. | the package's `SPEC.md` |
 | **Rejection matrix** | One broken implementation per law, ideally the bug a mod really made, and a `NoOp*`. The harness must catch every one for its own label. | `fixtures/` and `harness/` |
 | **Era data** | What changes at which version, as rows the compiler reads. Never numbers in code. | `eras/` (`docs/eras.md`) |
 | **Compilers** | Build-time tasks that import models, generate each target's artefacts, ship the jar. | `gradle-plugin/` (`docs/plugin.md`) |
@@ -49,20 +49,20 @@ Mycelium owns the contract models, reusable bridges, and build machinery (L2, L2
 kernels, composition, native extensions, and game-test evidence. The goal of the whole arrangement is a small platform layer
 and a large pure layer, with the pure layer proven on every era automatically (`docs/eras.md`).
 
-## Behavioral analysis and conclusions
+## Behavioural analysis and conclusions
 
 The bytecode analysis layer interprets abstract program facts, such as possible callback targets and guaranteed
 bindings. A dependency worklist computes summaries; the experimental linter is its diagnostic interface. This layer
-uses JVM semantics and the selected program, rather than loader names as substitutes for behavior.
+uses JVM semantics and the selected program, rather than loader names as substitutes for behaviour.
 
-A rule must distinguish a violation established from modeled facts, a property established within its explicit
+A rule must distinguish a violation established from modelled facts, a property established within its explicit
 scope, and an undetermined result whose required facts are unavailable. Conclusions need their premises and scope.
 Reaching a fixed point or reading every method body does not prove a rule. Cancellation or a failed run cannot
 establish safety. An external scheduler's unknown ordering stays unknown.
 
 C1 currently reports potential initialization risks, not either proof category. Its coverage, uncertainty and
 executable counterexamples are described in [the inspection checks](plugin.md#inspecting-an-existing-mod).
-Other behavioral rules need their own laws, witnesses and safe controls before making stronger claims.
+Other behavioural rules need their own laws, witnesses and safe controls before making stronger claims.
 
 ## Principles
 

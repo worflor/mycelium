@@ -6,12 +6,12 @@ its supplied properties before reaching the game registry.
 
 ## Model
 
-- `BlockCatalog(version, blocks)`: a validated catalog snapshot. `blocks()` is keyed by canonical block id in sorted
+- `BlockCatalog(version, blocks)`: a validated catalogue snapshot. `blocks()` is keyed by canonical block id in sorted
   order; each `Entry` contains the property domains and exact default values.
 - `BlockCatalog.Entry(properties, defaults)`: property names to their finite values and one default value per property.
 - `BlockCatalog.normalize(id, explicitProperties)`: the defaults for a known block with explicit values applied; an
   unknown block, property, or value is rejected.
-- `CatalogSource.capture()`: the native seam that captures a game registry as one catalog snapshot.
+- `CatalogSource.capture()`: the native seam that captures a game registry as one catalogue snapshot.
 
 ## Laws
 
@@ -26,18 +26,18 @@ its supplied properties before reaching the game registry.
 Definitions use canonical identifiers (`[a-z0-9_.-]+:[a-z0-9/._-]+`), property names (`[a-z0-9_]+`), and nonempty
 property values without whitespace, control characters, `[]`, comma, or equals. These generic tokens can represent finite
 domains outside Minecraft's current lowercase state values. Property maps and block ids are exposed in sorted order; each
-domain is sorted as well. A catalog may be empty, but its version must be nonblank.
+domain is sorted as well. A catalogue may be empty, but its version must be nonblank.
 
 ## Rejection matrix
 
 | Broken fixture | What it gets wrong | Caught by |
 |---|---|---|
-| `NoOpCatalogSource` | Captures an empty catalog when definitions are available | C1 (`C1:known-blocks`) |
+| `NoOpCatalogSource` | Captures an empty catalogue when definitions are available | C1 (`C1:known-blocks`) |
 | `AcceptsBadDefinitionFactory` | Silently accepts a malformed definition | C4 (`C4:rejects-malformed`) |
 | `MissingDefaultsFactory` | Omits a declared property's default during normalization | C2 (`C2:all-defaults`) |
 | `IgnoresExplicitFactory` | Ignores an explicitly supplied property value | C3 (`C3:explicit-overrides`) |
 | `AliasesInputsFactory` | Retains caller-owned maps and lists | C5 (`C5:deep-immutable`) |
-| `MutableOutputsFactory` | Exposes a mutable catalog map | C5 (`C5:deep-immutable`) |
+| `MutableOutputsFactory` | Exposes a mutable catalogue map | C5 (`C5:deep-immutable`) |
 
 Not covered (a runtime concern): when the game registry is captured, how its native names map into this snapshot, or
 the consumer's serialized payload and size limits.

@@ -6,7 +6,7 @@
 | Status | Mycelium contract package, mirrors `../flow/SPEC.md` in layout and discipline |
 | Domain | Bounded read of a block-token region from a source view, planned then written to a target port, within a per-call write budget |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies |
-| Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires the native adapter and packaged-game fixtures of a later gate |
+| Claims discipline | Everything in this package is design-time. No claim here is evidence of behaviour on a real game target; that requires the native adapter and packaged-game fixtures of a later gate |
 
 ---
 

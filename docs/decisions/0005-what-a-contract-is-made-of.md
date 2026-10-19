@@ -43,7 +43,7 @@ admits-nothing case returns is an outcome change, and that waits for a major tha
 
 **Two kinds of contract (#10).** *Operation contracts* govern an operation's outcomes: a sealed outcome, receipts,
 a transaction (`contracts/flow`). *Model contracts* govern a type's behaviour over any sequence of calls: a ledger, a
-catalog, a random source (`contracts/chunk-hold`). They need no outcome or receipt. Both are legitimate, and both keep
+catalogue, a random source (`contracts/chunk-hold`). They need no outcome or receipt. Both are legitimate, and both keep
 the same obligation: **a do-nothing implementation must fail**. Every matrix holds a `NoOp*` entry, and `ContractRun`
 fails a matrix without one. The three model contracts gained `NoOpKeeper` (caught by H1), `NoOpCatalog` (T1) and
 `NoOpSource` (T1). chunk-hold's H4 had no matrix entry at all; it gained `ReleaseAllOverreachKeeper`.

@@ -6,7 +6,7 @@
 | Status | Mycelium contract package, sibling to `inventory.transfer@1` (see `../flow/SPEC.md`, `../../CONTRACT-PACKAGE.md`) |
 | Domain | Durable per-player key/value state that must survive the ordinary lifecycle of a running server, versioned by an explicit schema and migrated by a declared, walk-verified chain |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies |
-| Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires a native adapter and packaged-game fixtures of a later gate |
+| Claims discipline | Everything in this package is design-time. No claim here is evidence of behaviour on a real game target; that requires a native adapter and packaged-game fixtures of a later gate |
 
 ---
 

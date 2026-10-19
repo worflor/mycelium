@@ -5,7 +5,7 @@ The wrapper version is independent of the compiler revision in `mycelium.lock`.
 The Gradle hooks require Gradle 7.5 or later. The selected compiler, build JVM and loader may require a newer version.
 
 Unpack the consumer bundle at the mod's root. Keep the launchers and `tools/mycelium` in version control,
-including the source JAR and licenses. The wrapper installs no toolchains and publishes nothing.
+including the source JAR and licences. The wrapper installs no toolchains and publishes nothing.
 Merge the bundle's root `.gitattributes` entries with any existing attributes. Keep its
 `tools/mycelium/.gitattributes`: binary patch bytes and digests must survive Windows checkouts unchanged.
 Build a bundle from Mycelium with:

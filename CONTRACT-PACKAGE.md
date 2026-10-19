@@ -22,7 +22,7 @@ contracts/<slug>/
 
 - **Operation contracts** govern an operation's outcomes: a transfer, a trip, a copy. They have a sealed outcome,
   receipts and a transaction. `contracts/flow` is the model to copy (`DESIGN.md` §7, §8).
-- **Model contracts** govern a type: a ledger of holds, a reloadable catalog, a seeded random source. Their laws are
+- **Model contracts** govern a type: a ledger of holds, a reloadable catalogue, a seeded random source. Their laws are
   about the type's behaviour over any sequence of calls, and they need no outcome or receipt. `contracts/chunk-hold`
   is the model to copy.
 

@@ -6,7 +6,7 @@
 | Status | First contract package of the Mycelium founding design (see `../../DESIGN.md`, v0.4, §6–§8, §11, §14) |
 | Domain | Bounded, single-variant transfer between disjoint, non-voiding providers whose required guarantees are established |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies |
-| Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires the native adapter and packaged-game fixtures of Gate B/C |
+| Claims discipline | Everything in this package is design-time. No claim here is evidence of behaviour on a real game target; that requires the native adapter and packaged-game fixtures of Gate B/C |
 
 ---
 

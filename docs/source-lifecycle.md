@@ -24,7 +24,7 @@ From the Mycelium checkout, build the independently shipped wrapper bundle with:
 Paths prefixed by `<consumer>` below belong to the consuming mod's repository.
 
 Copy the bundle's consumer template into the consumer repository. Keep `mycelium-wrapper.jar`, its source JAR, and the
-license files together under `<consumer>/tools/mycelium/`, along with the maintained consumer hook. The template includes the
+licence files together under `<consumer>/tools/mycelium/`, along with the maintained consumer hook. The template includes the
 `mycelium` and `mycelium.cmd` launchers, `consumer.gradle`, and `settings.gradle`; use those maintained files instead of
 writing another hook. The settings hook locates the selected checkout before Gradle loads `dev.woflo.mycelium` and
 includes its `gradle-plugin` build. The consumer hook runs the source check from `check` and before producing artifact

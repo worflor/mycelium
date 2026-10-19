@@ -20,7 +20,7 @@
 
 Mycelium is an extensible development-time compiler, adaptation system, and evidence registry for Minecraft mods. It preserves authored intent, factors recurring platform differences into **versioned semantic contracts**, and produces native target artifacts with explicit capability and verification manifests.
 
-**Its guarantee is not that every feature translates automatically.** Its guarantee is that supported contracts, native work, unresolved work, behavioral differences, and evidence are represented explicitly rather than concealed.
+**Its guarantee is not that every feature translates automatically.** Its guarantee is that supported contracts, native work, unresolved work, behavioural differences, and evidence are represented explicitly rather than concealed.
 
 The compounding unit is a **verified contract implementation or transformation with applicability conditions and regression evidence** — not an unqualified source-code diff, and not a fixed primitive count.
 
@@ -63,7 +63,7 @@ The source-specific findings supporting this lesson remain in the private audit 
 Osmosis is unusually portable. It validates the *first product*, not the universality of the architecture. Hypotheses still to test:
 
 - Contract backends can be reused across unrelated mods.
-- Typed planning can isolate most of Osmosis's behavior.
+- Typed planning can isolate most of Osmosis's behaviour.
 - Explicit deltas reduce repeated porting work.
 - Differential testing plus independent invariants identifies meaningful divergences.
 
@@ -76,7 +76,7 @@ None is established by building two artifacts. Gate D and Gate E (§14) exist to
 A mod is a bundle of **effects against a shared mutable world**, expressed through extension points.
 
 - **Intent (invariant-ish):** content definitions, rules (`event ∧ condition → action`), presentation style, persistence semantics, balance numbers.
-- **Expression (variant):** metadata, registration, resources, behavior hooks, state storage, protocol, presentation, commands, config.
+- **Expression (variant):** metadata, registration, resources, behaviour hooks, state storage, protocol, presentation, commands, config.
 
 Variance axes — loader, MC version, resource format, Java version, build tooling — are **useful classifications, not an exhaustive target identity**. Exact identity is an environment profile (§9).
 
@@ -105,7 +105,7 @@ Native extensions are not a loophole that counts manual work as automatic portab
 
 | Layer | Responsibility |
 |---|---|
-| L0 — Intent package | Authored behavior, examples, compatibility promises, safety invariants, feel criteria; stable feature identifiers connect prose, implementation, tests, manifests, deficits |
+| L0 — Intent package | Authored behaviour, examples, compatibility promises, safety invariants, feel criteria; stable feature identifiers connect prose, implementation, tests, manifests, deficits |
 | L1 — Semantic kernels | Pure algorithms and state machines over explicit inputs; no live Minecraft or loader objects |
 | L2 — Contract families | Typed, versioned domain capabilities and their laws |
 | L3 — Seams and planning | Reusable domain algorithms, effect planning, capability-aware feature composition |
@@ -130,7 +130,7 @@ inventory.enumerate@1     inventory.transfer@1     inventory.reorder@1
 interaction.use-block@1   presentation.particle-cue@1   persistence.player-state@1
 ```
 
-Each contract specifies more than signatures: allowed inputs, observable results, failure behavior, side/lifecycle restrictions, and properties every implementation must satisfy. For `inventory.transfer`: item identity preservation, bounded quantities, access restrictions, partial-acceptance semantics. For `inventory.reorder`: legal slot assignments, and whether reordering is meaningful for that storage at all.
+Each contract specifies more than signatures: allowed inputs, observable results, failure behaviour, side/lifecycle restrictions, and properties every implementation must satisfy. For `inventory.transfer`: item identity preservation, bounded quantities, access restrictions, partial-acceptance semantics. For `inventory.reorder`: legal slot assignments, and whether reordering is meaningful for that storage at all.
 
 **Corrected scaling claim:**
 
@@ -155,7 +155,7 @@ native event + execution context
 
 **Outcomes:** `Committed(receipt)`, `Stale`, `Rejected`, `Unsupported`. A receipt describes what actually committed — not what the planner hoped to move. Feedback (sound, particles, sync) consumes the receipt. A successful-looking `Send(visual)` must never be justified merely because a `Mutate` instruction appeared earlier.
 
-**Separate phases.** Registration/resource generation, runtime behavior, persistence migration, and presentation plans can share infrastructure without sharing one execution model. This is not academic: in 26.1, creating `ItemStack` requires loaded registries (`ItemStackTemplate` serves earlier uses) — a lifecycle distinction the abstraction must represent.
+**Separate phases.** Registration/resource generation, runtime behaviour, persistence migration, and presentation plans can share infrastructure without sharing one execution model. This is not academic: in 26.1, creating `ItemStack` requires loaded registries (`ItemStackTemplate` serves earlier uses) — a lifecycle distinction the abstraction must represent.
 
 **No premature IR.** Pure typed functions and small plans are enough to prove the first seam. A general effect language, if ever justified, must emerge from repeated requirements and carry explicit results, control flow, errors, lifetimes, and scheduling.
 
@@ -186,7 +186,7 @@ Do not equate API transactions with database durability or global isolation. Doc
 
 ### 8.3 Laws
 
-Author explicit laws: conservation where promised, count bounds, identity preservation, sided access, rejected-operation behavior, stale-plan handling, correspondence between committed quantity and feedback. Sorting adds layout legality and idempotence under a fixed ordering policy.
+Author explicit laws: conservation where promised, count bounds, identity preservation, sided access, rejected-operation behaviour, stale-plan handling, correspondence between committed quantity and feedback. Sorting adds layout legality and idempotence under a fixed ordering policy.
 
 ### 8.4 The retained counterexample
 
@@ -217,7 +217,7 @@ A **target profile** resolves exact game, loader, mappings/namespace, API and li
 
 - A solver establishes satisfiability of declared constraints, not runtime correctness. Return reasons for unsatisfied requirements.
 - **Required capabilities fail resolution when missing; only optional features may be pruned** under their declared policy. The machine must never silently redefine the product until it becomes buildable.
-- **Availability semantics:** class presence, enabled gameplay, obtainability, and compatible behavior are different facts and must not collapse into one boolean. (v0.1's `bundle >=1.17` floor was imprecise: the released bundle feature arrived in 1.21.2 and changed prototype controls.)
+- **Availability semantics:** class presence, enabled gameplay, obtainability, and compatible behaviour are different facts and must not collapse into one boolean. (v0.1's `bundle >=1.17` floor was imprecise: the released bundle feature arrived in 1.21.2 and changed prototype controls.)
 
 ---
 
@@ -245,9 +245,9 @@ Every reusable recipe records: identity and version; source and destination cond
 
 **Three independent evidence sources:**
 
-1. **Authored contract properties** — intended behavior: conservation where promised, legal slots, correct rejection, identity preservation.
-2. **Reference characterization** — existing behavior, including known defects and deliberate compatibility decisions. Defects get explicit decisions: preserve for compatibility, fix everywhere, or deprecate. Never silently blessed through differential agreement.
-3. **Real-target observations** — what the built artifact actually does: real hooks firing, world-state transitions, protocol outcomes, save/reload behavior, packaged artifacts.
+1. **Authored contract properties** — intended behaviour: conservation where promised, legal slots, correct rejection, identity preservation.
+2. **Reference characterization** — existing behaviour, including known defects and deliberate compatibility decisions. Defects get explicit decisions: preserve for compatibility, fix everywhere, or deprecate. Never silently blessed through differential agreement.
+3. **Real-target observations** — what the built artifact actually does: real hooks firing, world-state transitions, protocol outcomes, save/reload behaviour, packaged artifacts.
 
 None replaces the others.
 
@@ -279,7 +279,7 @@ This is evidence, not proof over every game state and modpack. Reserve proof ter
 - Start with a **deterministic workflow orchestrator**; add parallel agents when independent work exists.
 - Agents **propose** implementations and recipe changes. **Protected policies control acceptance tests, approved deficits, and publication.** A repair must not authorize itself by weakening its own gate.
 - Run untrusted builds and transformations in **isolated, disposable environments without release credentials**. Resolve and verify dependencies; separate artifact verification from publication; pin corpus versions; record provenance.
-- Track licenses and origins at recipe, copied-code, and generated-artifact boundaries. A machine's license does not change the obligations of incorporated code.
+- Track licences and origins at recipe, copied-code, and generated-artifact boundaries. A machine's licence does not change the obligations of incorporated code.
 - Staged governance: quotas, scheduling, and broader supply-chain controls arrive when measured bottlenecks justify them — designed now, enforced later.
 
 ---
@@ -315,9 +315,9 @@ Each stage justifies itself. No mod is required to buy the entire abstraction up
 
 | Gate | Work | Must demonstrate |
 |---|---|---|
-| **A — Trustworthy baseline** | Pin the actual 1.21 source and tool artifacts; characterize behavior; add independent Flow invariants; add a deliberately incorrect implementation | The harness rejects the bad implementation for the intended reason; reference defects distinguished from port defects |
+| **A — Trustworthy baseline** | Pin the actual 1.21 source and tool artifacts; characterize behaviour; add independent Flow invariants; add a deliberately incorrect implementation | The harness rejects the bad implementation for the intended reason; reference defects distinguished from port defects |
 | **B — Separate the axes** | Small loader × era matrix: reference-era Fabric + same-era NeoForge; modern Fabric + modern NeoForge; pre-component legacy as next stress case. Preflight artifact availability | Loader adaptation and version migration are separately understood; tool substrate viability proven before a large plugin suite |
-| **C — One vertical slice** | Extract one Flow operation: typed inputs, native executor, receipt, success presentation, failure behavior. Keep the rest of Osmosis native | A shipped-quality useful slice — not a universal IR prototype without a working mod |
+| **C — One vertical slice** | Extract one Flow operation: typed inputs, native executor, receipt, success presentation, failure behaviour. Keep the rest of Osmosis native | A shipped-quality useful slice — not a universal IR prototype without a working mod |
 | **D — Cross-mod reuse + depth probes** | Reuse the same versioned contract/backend in an unrelated consumer without copying or Osmosis-specific generalization; add content/persistence, rendering/input, and lifecycle/mixin probes | Independent reuse demonstrated; residual work measured; native-extension path documented |
 | **E — Held-out generalization** | Freeze contracts and corpus; attempt an unseen target or consumer; compare against a comparable manual baseline | Actual reuse, new engineering, failures, and cost recorded honestly. Newly authored work is not called "automatic reuse" |
 | **F — Controlled expansion** | Caching, release automation, scheduling, auditing, agent parallelism — as measured bottlenecks justify them | Expansion follows evidence, not ambition |
@@ -361,7 +361,7 @@ Consumer source inventories, implementation findings, and audit commands are omi
 - **Trait** — a capability property (rollback participation, stable slots, …); applies per provider and runtime container.
 - **Receipt** — record of what actually committed; drives feedback and sync.
 - **Delta / recipe** — directed, guarded, versioned transformation with evidence.
-- **Deficit** — declared, approved, fixture-backed behavioral difference; never a wildcard.
+- **Deficit** — declared, approved, fixture-backed behavioural difference; never a wildcard.
 - **Target profile** — exact resolved environment description; the identity of a support claim.
 - **PSA** — Port Surface Area; diagnostic metric, not an objective.
 - **Evidence bundle** — the artifact-bound record of claims, tests, environment, deficits, digests.

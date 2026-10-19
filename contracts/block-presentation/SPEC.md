@@ -4,7 +4,7 @@
 |---|---|
 | Contract id | `block.presentation@1` (implementation namespace `mycelium.block_presentation.v1`) |
 | Kind | Model contract (`CONTRACT-PACKAGE.md`): laws over a compiler and the plan it hands an adapter |
-| Requires | `item.presentation@1` (its inputs, guards, templates, catalog and `Json`), and through it `item.component@1`: declared in `contracts/registry.json`, `docs/decisions/0014-contracts-compose-by-declared-requirement.md` |
+| Requires | `item.presentation@1` (its inputs, guards, templates, catalogue and `Json`), and through it `item.component@1`: declared in `contracts/registry.json`, `docs/decisions/0014-contracts-compose-by-declared-requirement.md` |
 | Origin | Cartomancy. The general compilation decision is `docs/decisions/0019-mosaic-block-presentation.md`; examples here are synthetic |
 | Reference model | `src/`: pure Java 17, no Minecraft or loader imports, no dependency but `item.presentation@1`'s model |
 | Claims discipline | Everything here is design-time. A passing harness proves the reference compiler and the matrix; it says nothing about how a game composes or draws a baked model. That evidence is a consumer's own client lane |
@@ -81,7 +81,7 @@ parts `assemble` returns, each rotated by its turn, in order.
 | M2 Order and turn | Parts are drawn in the order they are declared (a later part paints over an earlier one), each with exactly the turn it declares. A block read through a `ComponentView` and through the plan resource read back draws what the evaluator says | `M2:declaration-order`, `M2:turn-carried-exactly`, `M2:plan-resource-agrees`, `M2:adapter-reading-agrees`, `M2:swapped-parts-draw-swapped` |
 | M3 Independence | An input no part reads changes nothing; an input only one part reads moves only that part | `M3:unread-input-changes-nothing`, `M3:input-only-moves-its-parts` |
 | M4 Manifest | The manifest is exactly the set of models any state can draw: none missing (an adapter would meet a model it did not load) and none extra (it would load a model nothing draws), sorted, without repeats. The plan resource's manifest is held to the same, and a resource whose manifest is stale is refused when read | `M4:manifest-covers-every-drawn-model`, `M4:manifest-has-no-undrawn-model`, `M4:manifest-sorted-unique`, `M4:resource-manifest-covers-every-drawn-model`, `M4:constant-manifest`, `M4:empty-manifest` |
-| M5 Projection | Every declared input reads a network-visible component of the catalog, with the field and kind it says; anything else is refused at compile time | `M5:server-private-rejected`, `M5:unknown-component-rejected`, `M5:unknown-field-rejected`, `M5:type-mismatch-rejected`, `M5:present-needs-a-unit-component`, `M5:present-on-a-unit-component-accepted` |
+| M5 Projection | Every declared input reads a network-visible component of the catalogue, with the field and kind it says; anything else is refused at compile time | `M5:server-private-rejected`, `M5:unknown-component-rejected`, `M5:unknown-field-rejected`, `M5:type-mismatch-rejected`, `M5:present-needs-a-unit-component`, `M5:present-on-a-unit-component-accepted` |
 | M6 Determinism | The same mosaic produces byte-identical artefacts: keys sorted, fixed formatting, line feeds, printable ASCII only, whatever the platform, locale or the order the mosaic lists its inputs, guards and keys in. The order of the parts is the picture's own and is kept | `M6:repeat-identical`, `M6:canonical-json`, `M6:ascii-and-line-feeds`, `M6:declaration-order-independent`, `M6:locale-independent`, `M6:part-order-is-kept` |
 | M7 Bounded | The span of **each part** (the product of the domains of the inputs that part reads) is at most the cap (4096 unless a compiler states another), checked from the domain sizes **before** anything is enumerated; the product saturates instead of overflowing. The product over every input is not bounded: parts are enumerated apart | `M7:part-span-over-cap-rejected`, `M7:product-over-cap-rejected-before-enumeration`, `M7:span-at-cap-accepted`, `M7:the-wide-mosaic-spans-more-than-the-cap`, `M7:independent-parts-beyond-product-accepted` |
 
@@ -107,7 +107,7 @@ build tool over text (`T1:*`). Property-style checks compile 40 seeded mosaics o
 ## 5. Using it
 
 **Writing a mosaic.** Keep it in the consumer's presentation directory (by default src/main/presentation of the project) as `<name>.mosaic.json`,
-beside the Sigil programs and the `components.json` catalog they share. A file ending `.mosaic.json` is a mosaic and never an item
+beside the Sigil programs and the `components.json` catalogue they share. A file ending `.mosaic.json` is a mosaic and never an item
 program. There is no lock: a mosaic has no legacy codes.
 
 **Building.** In the consumer's build script:
@@ -151,6 +151,6 @@ Expected result: reference implementation clean; every entry of the rejection ma
   the consumer's renderer.
 - Item rendering of the same picture is the adapter's: the plan is the same for the held item, which carries the same component, but
   how an item composes models is not part of this contract.
-- The catalog is held to the registry by `ComponentCatalog.disagreements`, which a consumer must call; the build reads only the file.
+- The catalogue is held to the registry by `ComponentCatalog.disagreements`, which a consumer must call; the build reads only the file.
 - A block whose data is outside a mosaic's domains draws with the defaults and says so (`inDomain`); the contract does not decide what
   a mod does about it.

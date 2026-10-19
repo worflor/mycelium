@@ -2,7 +2,7 @@
 
 A mod that works *with* another mod when it is installed and *without* it when it is not keeps that promise only if the
 other mod's classes are never loaded when it is absent. A direct API reference outside the guarded integration can cause class loading to fail when that mod is absent.
-Mycelium checks source references at build time; runtime loading behavior still needs consumer tests.
+Mycelium checks source references at build time; runtime loading behaviour still needs consumer tests.
 
 ## The law (`myceliumIsolation`, runs in `check`)
 

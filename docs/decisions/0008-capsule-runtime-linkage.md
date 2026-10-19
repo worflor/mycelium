@@ -84,4 +84,4 @@ server boot or the consumer's runtime ladder.
   1,824 capsule classes (254,958 class and 87,618 member references); 1.4.7 scans 1,828 (255,380 and 87,737) against
   the pinned five-transformer view; 1.5.2 scans 1,828 (255,386 and 87,735) against the pinned FML view; 1.6.4 scans
   1,827 (255,381 and 87,735) against the patched server view. These are build-time linkage checks; the separate
-  real-server ladder remains runtime behavior evidence.
+  real-server ladder remains runtime behaviour evidence.

@@ -88,7 +88,7 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
   `serverRuntimeNamespace.set("intermediary")` (or its actual runtime namespace) and
   `serverRuntimeOwns.set(listOf("net/minecraft/"))`.
 - `bridges { }`: bridge selection, overrides, and conformance sources (below).
-- `presentation { }`: presentation programs, component catalog, and lock; defaults use
+- `presentation { }`: presentation programs, component catalogue, and lock; defaults use
   `src/main/presentation` with `components.json` and `presentation.lock.json`.
 - `capsule { }`: runtime archives, nested jars, class-file ceilings, and mappings for `myceliumCapsule`
   (`docs/decisions/0008-capsule-runtime-linkage.md`).
@@ -352,14 +352,14 @@ game runs them.
 Its dependencies are declared in the `myceliumPrivateLibraries` configuration, which also supplies the compile
 classpath. `myceliumDowngradeJar` merges those jars, rewrites the artifact's callers and the libraries' bytecode,
 reflection class names and service descriptors, then downgrades that result. Every library class must belong to a
-declared package; overlapping translations and conflicting jar entries fail. Library license resources are retained
+declared package; overlapping translations and conflicting jar entries fail. Library licence resources are retained
 under `META-INF/private-libraries/<jar>/`. The downgrade report records input SHA-256 hashes, output identity and
 relocated class counts; these are build facts, not game evidence.
 
 Java 8 artifacts omit multi-release variants that their JVM ignores. Newer artifacts retain and relocate them.
 Explicit artifact module descriptors are refused: merging a named dependency into a named consumer needs its own
 module graph change. No private-library declaration means no relocation or merge, and existing artifacts retain
-that behavior. A consumer's loader step must take the task's output even when its source Java needs no downgrade.
+that behaviour. A consumer's loader step must take the task's output even when its source Java needs no downgrade.
 
 ## Inspecting an existing mod
 
@@ -386,7 +386,7 @@ callback does not establish that it runs before another callback.
 This is an advisory analysis of static reference fields. It treats public methods as possible entry roots, including implementations on package-private classes, even when called internally, and includes class initializers that expose
 callbacks, and resolves available class hierarchies. Private entrypoints reached only through annotations or external
 reflection can be missed. It does not establish a closed set of runtime virtual targets, captured instance aliases
-or an external scheduler's behavior. Forwarding callbacks to an external API is tracked; a consumer-written scheduler
+or an external scheduler's behaviour. Forwarding callbacks to an external API is tracked; a consumer-written scheduler
 is followed when its body invokes a forwarded callback through a matching method signature. Known callback arguments
 specialize that body's summary, carrying synchronous writes in program order. Those specializations are dependency
 nodes themselves, so recursive forwarding reaches a fixed point without unfolding the call stack. Normal-return
@@ -395,7 +395,7 @@ do not gain a guarantee. Known null return paths invalidate bindings, including 
 and non-null returns. Static member activation follows its resolved declaring owner, including inherited primitive
 fields and native method declarations. Missing hierarchy branches remain unresolved. An assignment from an unknown
 factory still does not prove non-nullness. Implicit initializer effects that clear another class's fields, and reentrant
-initialization, are not fully modeled; a run without candidates can miss those failures. The must-binding analysis can warn on
+initialization, are not fully modelled; a run without candidates can miss those failures. The must-binding analysis can warn on
 infeasible null-return branches and loses correlations between a factory's result and a later repairing branch. A candidate remains
 potential even when all analyzed bodies have valid frames. The report lists roots and analysis errors, reports empty
 input as unchecked, and explicitly records `nativeEventOrderProven: false`. It is not part of `check` unless the consumer
@@ -448,8 +448,8 @@ retaining the original archive unchanged. Reports preserve failures, selected fi
 `behaviorSelfTest`. The corpus experiment establishes detection of the injected defect, not correctness of the mod or
 compatibility with its native loader. Baseline candidates require investigation and are not automatically mod bugs.
 
-The solver uses a dependency-driven worklist for callback behavior. Direct class activations and selected synchronous
-calls form a separate initialization graph; a monotone bitset closure solves their transitive reachability after behavior
+The solver uses a dependency-driven worklist for callback behaviour. Direct class activations and selected synchronous
+calls form a separate initialization graph; a monotone bitset closure solves their transitive reachability after behaviour
 summaries settle. Initialization growth therefore does not reinterpret unchanged bytecode effects. A changed method summary, returned callback set, callback field or class
 initializer invalidates the summaries that read it, including callback specializations. Binding guarantees intersect at control-flow joins; potential
 dependencies accumulate. The report records `summaryDependencies` as typed prerequisite-to-dependent edges, together
@@ -485,7 +485,7 @@ scope fields. An old archive inspected successfully cannot establish a current s
 Finite `artifactJars(...)` selections bind those Jar tasks. With `artifactJars("*")`, all Jar tasks still receive the
 manifest, while the sidecar selects the primary `jar`; it does not force auxiliary archives into every `check`.
 A loader's later remap or packaging output is a separate subject unless explicitly supplied to a check. These are
-build-time facts; runtime behavior still needs game tests. See [decision 0024](decisions/0024-evidence-follows-producers.md).
+build-time facts; runtime behaviour still needs game tests. See [decision 0024](decisions/0024-evidence-follows-producers.md).
 
 A sidecar describes its recorded inputs, not the outcome of a later build invocation. A failure before collection can
 leave an older sidecar in place. Require a successful collection task and compare the recorded hashes when consuming it;

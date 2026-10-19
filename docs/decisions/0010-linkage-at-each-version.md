@@ -82,7 +82,7 @@ and state the game class prefixes it contains. The task requires that namespace 
 `namespace`; where a name-lock row exists, its `owns` scope must match. The report hashes the exact archive. Only references
 inside that game scope are compared; loader APIs, libraries and the JDK remain outside the check. The inventory resolves
 methods and fields through its class hierarchy. It complements published mappings, whose flat rows can name a client-only
-member, and it can check a target for which no published name row exists. It does not prove loader behavior or replace a
+member, and it can check a target for which no published name row exists. It does not prove loader behaviour or replace a
 real-server run.
 
 The Searge and intermediary files number methods and fields and say nothing about the rest: a constructor, an enum's

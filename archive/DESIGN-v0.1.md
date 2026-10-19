@@ -76,7 +76,7 @@ A mod is a bundle of **effects against a shared mutable world**, expressed throu
 
 **Intent (invariant)** — content definitions, rules (`event ∧ condition → action`), presentation style, persistence semantics, balance numbers.
 
-**Expression (variant)** — metadata, registration, resources/data, behavior hooks, state storage, protocol, presentation, commands, config.
+**Expression (variant)** — metadata, registration, resources/data, behaviour hooks, state storage, protocol, presentation, commands, config.
 
 The system's job: **maximize intent, minimize expression, generate the difference.**
 
@@ -89,7 +89,7 @@ This is also the answer to "what modding functionally is": *rules + content + ef
 Choose per feature, not per project:
 
 1. **Interpret** — push intent into data/resources + a tiny stable shim. Content mods are ~90% this. Near-free, scales infinitely.
-2. **Adapt** — core semantics + per-target primitive backends. The main path for behavior.
+2. **Adapt** — core semantics + per-target primitive backends. The main path for behaviour.
 3. **Translate** — ship one target; let compatibility layers translate (Sinytra Connector + Forgified Fabric API for Fabric→NeoForge; ReForged for NeoForge→Forge; Porting Lib for Forge→Fabric). Zero effort, third-party risk, edge cases. Bonus channel, never foundation.
 4. **Vendor** — adopt someone's shim for a subsystem.
 
@@ -254,7 +254,7 @@ Outcomes nobody explicitly designed, from local rules plus compounding data:
 |---|---|---|---|
 | T0 | Data/content | generator only | near-zero |
 | T1 | Registration | `Register`, `Resources` | days |
-| T2 | Behavior | `Observe`, `Query`, `Mutate`, `Persist` | the main path |
+| T2 | Behaviour | `Observe`, `Query`, `Mutate`, `Persist` | the main path |
 | T3 | Presentation | + `Present` (hard: render/UI churn) | real work; budget honestly |
 | T4 | Protocol/mixin-heavy | full set + client gametests | most expensive |
 
@@ -273,7 +273,7 @@ Outcomes nobody explicitly designed, from local rules plus compounding data:
 5. **Differential traces** — same effect program, all interpreters, divergence vs declared deficits.
 6. **Manual feel checklist** — the one thing that stays human. Sound/particle taste is authored, not emergent.
 
-**Correctness definition:** a port is correct when its behavior differs from the reference only in *declared* ways, and the system proves the declarations.
+**Correctness definition:** a port is correct when its behaviour differs from the reference only in *declared* ways, and the system proves the declarations.
 
 ---
 
@@ -311,7 +311,7 @@ Once 1–3 exist, every subsequent target, version, and mod gets cheaper. That i
 - **Delta format.** Custom (recommended) vs adapting an existing ruleset format (ModPorter-style).
 - **Spec format.** YAML/TOML vs JSON; must be machine-readable and diffable.
 - **Where the corpus lives.** Machine repo (recommended) vs per-mod repos with a shared registry.
-- **License and contribution model.** Machine license separate from mod licenses; design for eventual external target contributions.
+- **Licence and contribution model.** Machine licence separate from mod licences; design for eventual external target contributions.
 - **Primitive count.** 8 is the hypothesis. Validate against Osmosis + one content mod + one client mod before freezing.
 
 ---
@@ -327,6 +327,6 @@ Consumer source inventories, implementation findings, and audit commands are omi
 - **Effect IR** — the reified stream the core emits; interpreters per target.
 - **Delta** — a version-hop transformation module; the compounding unit of the corpus.
 - **Capability manifest** — per-target declaration of supported features and floors.
-- **Deficit** — a declared, proven behavioral difference between targets.
+- **Deficit** — a declared, proven behavioural difference between targets.
 - **PSA (Port Surface Area)** — diff size per version hop across primitives, manifests, and resources; the system's health metric.
 - **Lazy target** — a target built on demand rather than prebuilt.

@@ -69,7 +69,7 @@ nothing), evaluates the cases for each, and collapses tuples that reach one mode
 ```
 
 A guard value is a bare value (equals), an array (in) or `{"min": n, "max": n}` (range). A `present` input has no
-`field`, and neither has an input over a scalar component (the catalog says `"value": "string"` for it: the component is
+`field`, and neither has an input over a scalar component (the catalogue says `"value": "string"` for it: the component is
 the value). `default` is optional on an input.
 
 **Display contexts.** An item definition can ask how an item is shown (the hand, the gui, the ground, an item display
@@ -97,7 +97,7 @@ artefact has no contexts and draws `model`: a rule is how the item definition di
   row and draws the base, so a stack still carrying it is not drawn as its neighbour. The file is the item's own model, so a
   program may not draw `ns:item/<id>` itself (`MODEL_CLASH`): the base is another model.
 - the plan, `META-INF/mycelium/presentation/<ns>/<id>.plan.json` in both eras: the program's read inputs, cases and contexts and
-  the selections with their codes; and the catalog, `META-INF/mycelium/presentation/components.json`, which a runtime adapter
+  the selections with their codes; and the catalogue, `META-INF/mycelium/presentation/components.json`, which a runtime adapter
   reads its stacks through (`ItemPresenter.load`).
 
 The stack's selector is the key (written as custom model data string 0) in the first era and the code (the custom model data number)
@@ -111,7 +111,7 @@ in the second; the base model writes nothing.
 | S2 Agreement | For every tuple, the emitted item definition and the emitted item model, each interpreted by its own era's rules (string equality; ascending `>=` with the last match winning) and given the selector the plan writes for the tuple, draw the model the evaluator chose. The harness simulates the emitted bytes (`harness/Simulators.java`), not the emitter. The plan resource read back, a stack read through `ComponentView` and through a `CarrierSnapshot` agree with the plan; a retired code draws the base | `S2:modern-draws-evaluated-model`, `S2:legacy-draws-evaluated-model`, `S2:plan-resource-agrees`, `S2:adapter-reading-agrees`, `S2:carrier-view-agrees`, `S2:retired-code-draws-base` |
 | S3 Stable codes | Adding a case or an input value never changes the code of an existing selection. The lock is append-only; a new selection takes the next code above every code the item ever had; a selection the lock lacks is a `LOCK_MISSING` refusal listing the exact lines to add, and those lines complete the lock | `S3:existing-codes-kept`, `S3:new-selections-append`, `S3:missing-lock-lists-lines`, `S3:lines-complete-the-lock` |
 | S4 Override order | Legacy overrides are written strictly ascending by code, and every code is a positive whole number | `S4:overrides-strictly-ascending` |
-| S5 Projection | Every declared input reads a network-visible component of the catalog, with the field and kind it says; anything else is refused at compile time. The catalog is held to the registry's definitions | `S5:server-private-rejected`, `S5:unknown-component-rejected`, `S5:type-mismatch-rejected`, `S5:catalog-agrees-with-registry` |
+| S5 Projection | Every declared input reads a network-visible component of the catalogue, with the field and kind it says; anything else is refused at compile time. The catalogue is held to the registry's definitions | `S5:server-private-rejected`, `S5:unknown-component-rejected`, `S5:type-mismatch-rejected`, `S5:catalog-agrees-with-registry` |
 | S6 Determinism | The same program and lock produce byte-identical artefacts: keys sorted, fixed formatting, line feeds, printable ASCII only, whatever the platform, locale or the order the program lists its inputs and guards in; cases in key order | `S6:repeat-identical`, `S6:canonical-json`, `S6:ascii-and-line-feeds`, `S6:declaration-order-independent`, `S6:locale-independent`, `S6:cases-in-key-order` |
 | S7 Bounded | A product of the read inputs' domain sizes above the cap (4096 tuples unless a compiler states another) is refused with a `TOO_LARGE` diagnostic **before** enumeration: the product saturates instead of overflowing, so a four-quintillion-tuple program is refused as fast as a large one | `S7:product-over-cap-rejected-before-enumeration`, `S7:product-at-cap-accepted` |
 | S8 Contexts | The item definition draws a display context rule's model in the contexts it names (`only`) or in all others (`except`), and the selected model otherwise, for every display context; the item model with overrides ignores the rules; a rule for a model the program never draws, two rules for one model and a misspelt context are refused; the rules survive the plan resource and their order changes nothing | `S8:definition-draws-context-rules`, `S8:legacy-ignores-contexts`, `S8:rules-mean-only-and-except`, `S8:plan-keeps-rules`, `S8:rule-for-undrawn-model-rejected`, `S8:one-rule-per-model`, `S8:unknown-context-rejected` |
@@ -157,7 +157,7 @@ their plan helper. Each is the reference compiler with one step replaced.
 | `FaultyLock` as `InventedCodes` | compiles against a lock that lacks a selection, giving it the next code instead of refusing | S3 (`S3:missing-lock-lists-lines`) |
 | `FaultyLock` as `NamespacelessLockLines` | the lines it lists drop the namespace and do not read back as lock lines | S3 (`S3:lines-complete-the-lock`) |
 | `FaultyLock` as `GappedLockLines` | the lines it lists start one code above the next free one | S3 (`S3:new-selections-append`), and `S3:missing-lock-lists-lines` |
-| `FaultyProjection` as `BlindToUnknownComponents` | accepts an input over a component or field the catalog lacks | S5 (`S5:unknown-component-rejected`) |
+| `FaultyProjection` as `BlindToUnknownComponents` | accepts an input over a component or field the catalogue lacks | S5 (`S5:unknown-component-rejected`) |
 | `FaultyProjection` as `BlindToKindMismatch` | accepts an input whose domain is of another kind than its field | S5 (`S5:type-mismatch-rejected`) |
 | `FaultyTarget` as `MechanismlessCompiles` | compiles for a version with no mechanism as if it had item definitions | R1 (`R1:no-realization-rejected`) |
 | `FaultyTarget` as `UnguardedOwnModel` | writes overrides on the item's own model when a program also draws it | R2 (`R2:model-clash-rejected`) |
@@ -179,7 +179,7 @@ program.
 ## 5. Using it
 
 **Writing a program.** Keep programs in the consumer's presentation directory (by default src/main/presentation of the project): one JSON
-file per item, a `components.json` catalog and a committed `presentation.lock.json`. The catalog states, for every component a program
+file per item, a `components.json` catalogue and a committed `presentation.lock.json`. The catalogue states, for every component a program
 reads, `networkSynced` (true or false), and `unit` for a unit component, `fields` (a dotted path to `bool`, `int` or `string`) for a record or
 `value` (`bool`, `int` or `string`) for a scalar one. Keep it honest
 with a test of your own that builds the registry the game uses and asserts `catalog.disagreements(registry)` is empty.
@@ -214,7 +214,7 @@ switch (plan.selectorOf(s)) {
 ```
 
 For Minecraft that adapter is the bridge `bridges/item-presentation` (`BRIDGE-PACKAGE.md`): `ItemPresenter.load(loader, "ns:item", registry, carrier)`
-reads the plan and the catalog the build generated, `present(stack)` selects from the stack's own components and writes the era's selector
+reads the plan and the catalogue the build generated, `present(stack)` selects from the stack's own components and writes the era's selector
 (the key as the first custom model data string from 1.21.4 on a record that keeps another mod's numbers, flags and colours; the locked number
 before it, in the root tag before 1.20.5 and in the component after), and `writeRaw(item, snapshot)` writes it into the raw item data a display
 entity is built from. The model-overrides variant checks that the plan was compiled for the era it draws by.
@@ -234,6 +234,6 @@ Expected result: reference implementation clean; every entry of the rejection ma
 
 - No Minecraft or mod loader code was executed to produce this package. The era simulators encode how the item definition `select` and the
   model `overrides` behave as the decision describes them; whether a game draws the model they predict is the consumer's gametest and client lane.
-- The catalog is held to the registry by `ComponentCatalog.disagreements`, which a consumer must call; the build reads only the file.
+- The catalogue is held to the registry by `ComponentCatalog.disagreements`, which a consumer must call; the build reads only the file.
 - Composition (layered models), a renderer cache keyed on the fields a model reads, and music discs (`item_model` per disc) are not covered.
 - A stack whose state is outside a program's domains draws the base model and says so (`inDomain`); the contract does not decide what a mod does about it.

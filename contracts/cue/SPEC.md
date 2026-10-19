@@ -6,7 +6,7 @@
 | Status | Mycelium contract package, sibling to `inventory.transfer@1` (see `../flow/SPEC.md`, `../../CONTRACT-PACKAGE.md`) |
 | Domain | Scheduling a presentation cue (particle/sound/etc.) against a profile-resolved key, deferred to the outermost commit of the operation it rides on |
 | Reference model | `src/` — pure Java 17, no Minecraft or loader imports, no dependencies |
-| Claims discipline | Everything in this package is design-time. No claim here is evidence of behavior on a real game target; that requires a native adapter and packaged-game fixtures of a later gate |
+| Claims discipline | Everything in this package is design-time. No claim here is evidence of behaviour on a real game target; that requires a native adapter and packaged-game fixtures of a later gate |
 
 ---
 
