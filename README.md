@@ -69,6 +69,10 @@ Contract selection follows references in your sources. Bridges are selected when
 loader-specific bridges also need `loader`. See the [plugin reference](docs/plugin.md) for configuration, generated
 resources, check levels, and jar packaging. Pin the checkout revision used by your build.
 
+For a reproducible consumer checkout, use the maintained [source wrapper](docs/source-lifecycle.md). It records local
+contract and compiler work, checks the selected source before plugin loading, and prepares updates in a separate Git
+checkout. The consumer chooses whether completion requires the captured source.
+
 ## Build and verify Mycelium
 
 Use a JDK 17 or newer to run Gradle. Bridge linkage needs a toolchain as new as the newest era; Gradle provisions
@@ -76,6 +80,10 @@ toolchains when needed. The first build may download dependencies, JDKs, and pin
 
 ```bash
 ./gradlew check
+# Focused experimental linter regressions (Java 17, including Java 7 bytecode):
+./gradlew -p gradle-plugin behaviorSelfTest
+# Repeat on a modern compiler/runtime:
+./gradlew -p gradle-plugin behaviorSelfTest '-Pmycelium.testJava=25'
 ./gradlew myceliumVerify -Pmycelium.contracts=world.copy@1
 bash run-contracts.sh
 ```
@@ -85,7 +93,7 @@ the reference result and whether each broken implementation was `CAUGHT` for its
 
 | | |
 |---|---|
-| Status | Contracts: 21 packages, 326 rejection fixtures. `./gradlew check` runs the harnesses, era gates, bridge linkage, and repository checks. [Open work](docs/STATUS.md), [history](CHANGELOG.md). |
+| Status | Contracts: 24 packages, 344 rejection fixtures. `./gradlew check` runs the harnesses, era gates, bridge linkage, and repository checks. [Open work](docs/STATUS.md), [history](CHANGELOG.md). |
 | Java | Contract models and harness: Java 17 source, checked on every era's Java. Gradle plugin: Java 17 bytecode. See [era gates](docs/eras.md). |
 | Targets | `eras/minecraft.json` records version, Java, loader, naming, and realization data. An era row describes a target; it does not prove a mod or bridge works there. |
 | Dependencies | Contracts and harness use the JDK only. The plugin uses Gson and ASM; era gates resolve JvmDowngrader and JDKs as needed. Bridge linkage reads pinned game archives. |
@@ -98,7 +106,7 @@ The [plugin reference](docs/plugin.md#tasks) describes each task and its inputs.
 | Purpose | Tasks |
 |---|---|
 | Select and import | `myceliumDeriveContracts`, `myceliumImport`, `myceliumBridgeImport` |
-| Check a mod | `myceliumVerify`, `myceliumBridges`, `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>`, `myceliumEras`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`, `myceliumCapsule` |
+| Check a mod | `myceliumVerify`, `myceliumBridges`, `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>`, `myceliumEras`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`, `myceliumCapsule`, `myceliumBehavior` (opt-in experimental linter) |
 | Generate and package | `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta`, `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumEvidence` |
 | Maintain this repository | `myceliumRepository`, `myceliumBridgeLinkage`, `myceliumRecordProofs`, `myceliumRefreshVersions`, `myceliumRefreshNames` |
 
@@ -110,6 +118,7 @@ The [plugin reference](docs/plugin.md#tasks) describes each task and its inputs.
 |---|---|
 | [Architecture](docs/architecture.md) | The layers, principles, and what each check proves |
 | [Building with Mycelium](docs/building-with-mycelium.md) | Crossing a version or loader divide |
+| [Building with Mycelium skill](.agents/skills/building-with-mycelium/SKILL.md) | Agent guidance for fresh mods and adoption in existing codebases |
 | [Plugin](docs/plugin.md) | Consumer configuration and tasks |
 | [Eras](docs/eras.md) | Version data, pure-layer laws, and Java gates |
 | [Integrations](docs/integrations.md) | Isolating optional mod dependencies |

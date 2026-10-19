@@ -13,6 +13,7 @@ This index is maintained by review. The [package guide](../CONTRACT-PACKAGE.md) 
 | [`item.component@1`](item-component/SPEC.md) | Typed item state across data components and legacy NBT, with preservation and quarantine rules (Rosetta) |
 | [`item.presentation@1`](item-presentation/SPEC.md) | State-driven item assets and selectors, with stable legacy codes (the Sigil); requires `item.component@1` |
 | [`block.presentation@1`](block-presentation/SPEC.md) | Independent model parts compiled from component fields, with an exact model manifest (the Mosaic) |
+| [`block.catalog@1`](block-catalog/SPEC.md) | Immutable finite block registry snapshots with exact state-property domains and defaults (WorldPrompt) |
 | [`state.lifecycle@1`](state-lifecycle/SPEC.md) | Slot policies across host transitions, stale-reference rejection, and release callbacks (the Threshold); requires `item.component@1` |
 | [`chunk.hold@1`](chunk-hold/SPEC.md) | Independent holders over an engine that deduplicates chunk tickets |
 | [`dimension.travel@2`](dimension-travel-2/SPEC.md) | Journaled return trips that recover after the process stops |
@@ -20,6 +21,7 @@ This index is maintained by review. The [package guide](../CONTRACT-PACKAGE.md) 
 | [`inventory.transfer@1`](flow/SPEC.md) | Transactional item transfer and its commit boundary |
 | [`storage.access@1`](storage-access/SPEC.md) | Sided block storage, exact fluid units, and transactional moves; requires `inventory.transfer@1` |
 | [`world.copy@1`](world-copy/SPEC.md) | Planned region copies within a write budget, including sealed copies |
+| [`world.replay@1`](world-replay/SPEC.md) | Ordered resumable RLE traversal under a per-step work budget (WorldPrompt) |
 | [`rule.effects@1`](rule-effects/SPEC.md) | Apply and remove scoped effects with stable identities |
 | [`world.clock@1`](world-clock/SPEC.md) | Clocks, rates, timelines, markers, sync, and sleep skip; the older game is a special case |
 | [`persistence.player-state@1`](player-state/SPEC.md) | Durable player state and verified schema migration chains |
@@ -31,6 +33,7 @@ This index is maintained by review. The [package guide](../CONTRACT-PACKAGE.md) 
 | [`agent.link@1`](agent-link/SPEC.md) | Authorized requests over reconnecting external-agent links, with at-most-once handling |
 | [`chat.invocation@1`](chat-invocation/SPEC.md) | Explicit chat invocations without recording the surrounding stream |
 | [`chat.coverage@1`](chat-coverage/SPEC.md) | Retired stream-coverage model, retained so older builds resolve |
+| [`command.authorization@1`](command-authorization/SPEC.md) | Explicit command permission grants and denials over a caller-provided default privilege (WorldPrompt) |
 
 A reference harness passing establishes model evidence. Game behavior requires a consumer's native implementation and
 game tests. [Decisions](../docs/decisions/) record rationale and observed evidence; the [status board](../docs/STATUS.md)
@@ -47,6 +50,8 @@ Bridges implement contract ports as target-selected source. Selection and packag
 | [`item-presentation`](../bridges/item-presentation/bridge.json) | `StackPresenter` | String selectors or legacy numeric model overrides |
 | [`world-clock`](../bridges/world-clock/bridge.json) | `ClockPort` | Native world clocks or emulation over day time and saved data |
 | [`lifecycle`](../bridges/lifecycle/bridge.json) | `LifecyclePort` | Player and server state, bound through loader event overlays |
+| [`command-authorization`](../bridges/command-authorization/bridge.json) | `AuthorizationPort` | Command-source permission decisions on 26.3 through Fabric and NeoForge overlays |
+| [`block-catalog`](../bridges/block-catalog/bridge.json) | `CatalogSource` | Complete block identifiers, state-property domains, and defaults from the native registry |
 
 `eras/minecraft.json` owns the version ranges. Linkage covers pinned game data; loader APIs and game conformance are
 checked by consumers. A realization row and a compiled conformance case do not establish a successful game run.

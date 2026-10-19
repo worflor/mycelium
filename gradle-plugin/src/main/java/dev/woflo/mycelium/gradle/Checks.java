@@ -83,6 +83,8 @@ public final class Checks {
                 "an override the contract's laws cannot be held to: a typo, or a class that is not the port");
         check("B2", Level.WARN, "a bridge has a realization on the target version",
                 "a mod that targets a version a bridge cannot map on and does not know it: the bridge was not imported there");
+        check("C1", Level.WARN, "a callback's static reference dependencies are bound before exposure (potential; opt-in experimental linter)",
+                "callbacks observing state before initialization; external scheduling guarantees require separate evidence");
         check("PR1", Level.FAIL, "the committed presentation lock holds every selection the programs need",
                 "an item drawn with no model on a version (a warn writes no presentation files)");
     }

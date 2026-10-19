@@ -1,0 +1,81 @@
+# 0023 - Callback initialization diagnostics
+
+| | |
+|---|---|
+| Date | 2026-10-18 |
+| Status | Accepted as an opt-in experimental linter |
+| Extends | [0017](0017-offer-dont-police.md), [0010](0010-linkage-at-each-version.md) |
+
+## Context
+
+While porting WorldPrompt, a callback could reach a shared permission query before a later callback bound it. The API
+names were valid, so linkage could not explain the initialization risk. A loader event recipe would describe that one
+integration but add a second source of compatibility knowledge to maintain.
+
+## Options
+
+- Maintain event names and ordering rules for each loader. This duplicates native behavior and becomes stale when the
+  loader changes.
+- Infer a complete loader lifecycle from names or package roots. Those inputs do not establish event ordering.
+- Analyze callback dependencies in compiled consumer code, report the read and exposure sites, and keep scheduling
+  uncertainty visible. This gives useful feedback without inventing a native lifecycle proof.
+
+## Decision
+
+Add an opt-in experimental linter, `myceliumBehavior`, for static reference dependencies exposed through callbacks.
+ASM's analysis module supplies operand provenance; the compiler propagates bindings through branches and direct-call summaries and
+follows callback factories, forwarded parameters, static callback fields and locally constructed interface implementations,
+including inherited handlers. Guard facts belong to the checked value; unrelated class initializers cannot bind a root
+class's fields. Known direct and returned nulls invalidate bindings. The selected target's compiled classes are
+the input, so loader-specific wiring is analyzed as code rather than encoded again as rules. The additional ASM module
+uses the same version as the existing ASM dependencies.
+
+C1 warns by default when explicitly run. It identifies the callback registration and state read, with line metadata
+when available. It is outside `check` unless the consumer opts in. The report identifies its input, inferred public
+roots, callback-exposing class initializers, supported scope and analysis errors. It cannot be read as proof that a
+callback is reachable on a particular loader before another event. A confirmed external ordering guarantee can justify an allowance.
+
+## Dependency worklist refinement (2026-10-18)
+
+A fixed number of whole-program passes can stop before a long call chain reaches its fixed point. The solver now
+records which summaries read each method summary, returned callback set, callback field and class initializer.
+Changed facts enqueue their dependents. Operand provenance still comes from ASM; the interprocedural relationships
+come from those actual reads. The report exposes sorted typed dependency edges and the evaluation count. Exhausting
+its work budget records an incomplete analysis.
+
+A parameter invoked as a receiver carries the invoked method signature through forwarding summaries. At a concrete
+call site, only matching callback methods contribute requirements. This distinguishes invocation from merely calling
+`Object.toString` on the callback. Scheduler-local binding order is retained. Complete substitution of callback-owned
+write effects is not implemented; the diagnostic remains potential rather than a scheduler proof.
+
+Independent regressions compile anonymous callbacks and lambdas across compiler releases. Unsafe and safe witnesses
+execute on the JVM. A reverse-ordered dependency chain and a permutation of its class-file method order check
+convergence and invariance. The focused `behaviorSelfTest` task supports a Java 17 or newer compiler toolchain, with
+Java 7 bytecode fixtures compiled on Java 17. These tests establish bytecode-analysis behavior, not native Minecraft
+support on those eras.
+
+## Evidence
+
+The independent fixtures compile as Java 8 bytecode. They exercise early exposure, prior binding, delayed writers,
+partial and complete branches, null guards, callback factories, helper methods, anonymous implementations, resets and
+exception paths. Adversarial fixtures cover unrelated class initializers, inherited handlers, forwarded parameters,
+base-typed method references, merged and stale guard values, resets within callbacks, known null returns and safe lazy
+class initialization. The eager scheduler fixture also executes the unsafe and safe programs, rather than relying solely
+on the analyzer's own output. Missing debug metadata preserves method-level findings. Multi-release fixtures select
+different Java 8 and 17 implementations instead of merging them.
+
+The full repository check passed with 979 plugin assertions and contract era gates on Java 8, 16, 17, 21 and 25. The
+Gradle task analyzed both WorldPrompt target modules without candidates or errors; removing NeoForge's early permission
+binding from a separate bytecode mutation produced the expected registration/read candidate. Static scans of five
+official Minecraft 1.21.1 mods completed without analysis errors after the initialization and multi-release fixes.
+These scans are analysis evidence, not runtime compatibility claims.
+
+## Consequences
+
+The compiler gains one bounded behavioral diagnostic, not a general proof of cross-loader behavior. Reflection,
+captured instance aliases, a closed set of runtime dispatch targets and native scheduler semantics remain outside its
+model. It tracks forwarded callbacks and matching synchronous receiver invocations, but not complete callback-owned
+write effects. Assignment is
+tracked separately from a full nullness proof. Existing range, linkage, bridge conformance and production runtime
+validation remain necessary. Future diagnostics should derive from program facts or declared contracts with rejection
+fixtures, rather than accumulate loader-name exceptions.

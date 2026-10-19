@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "block-catalog",
+  "contract": "block.catalog@1",
+  "port": "CatalogSource",
+  "implementation": "MinecraftBlockCatalog",
+  "package": "mycelium.bridges.block_catalog",
+  "divide": "block.catalog",
+  "writtenIn": ["unobfuscated"],
+  "what": "An immutable snapshot of the running game's complete registered block IDs, finite property domains and native default values, including mod namespaces. Capture after registry bootstrap on the server thread.",
+  "variants": { "native-registry": {} }
+}

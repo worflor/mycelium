@@ -6,6 +6,10 @@ and writes the evidence. It knows no loader: version and loader knowledge is dat
 
 This page is the consumer's reference. The plugin's own classes are mapped in `AGENTS.md`.
 
+The maintained [source wrapper](source-lifecycle.md) can select and verify the compiler before plugin loading. Its
+consumer hook sets `mycelium.root` to that checkout and adds `myceliumSourceCheck` to completion and jar tasks.
+The consumer's lock controls whether uncaptured development source is allowed there.
+
 ## Using it in a mod
 
 The mod and Mycelium are separate projects developed together. Point the build at an upstream checkout or your own
@@ -108,12 +112,13 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 | `myceliumIsolation` | An optional integration's API is mentioned only in its home package (I1), and its home only from its gates (I2). In `check`; never before `compileJava`. |
 | `myceliumPurity` | The pure layer mentions no platform package (P1, warns), shares no package with the platform (P1.split, fails), and reads no clock, environment or unseeded chance (P3, warns). In `check`; never before `compileJava`. |
 | `myceliumPackMeta` | Writes the target's `pack.mcmeta` from the era table's `packFormat` rows, in the schema the version reads. Joins the resources when `packMeta { }` is declared. |
-| `myceliumPureCompile` | Compiles the pure layer alone. If it compiles there, it is pure in fact. |
+| `myceliumPureCompile` | Compiles the pure layer alone with a compiler at least as new as Java 17, `pure.release`, and the Gradle JVM. It reuses the Gradle JVM when capable and requests a newer toolchain only when the declared release requires one. If it compiles there, it is pure in fact. |
 | `myceliumEraJava<N>` | One era's gate: every bundle on that Java's JVM (stubs, linkage P2, behaviour). `myceliumEras` runs every declared era. |
 | `myceliumPureShip` | Puts the pure layer's classes into this target's jar, downgraded and shaded from the era gate's own output when the era needs it, a no-op when it does not (below). |
 | `myceliumDowngradeJar` | Downgrades the jar's own classes to the era's Java, optionally isolating declared feature libraries first, and holds the result to that Java. Runs only when a consumer's loader step takes its output (below). |
 | `myceliumCapsule` | When `mycelium.capsule` is configured, checks outer and nested class-file ceilings, source-to-runtime class mappings, and erased class and member references from bytecode and `StackMapTable` frames against ordered, declared runtime artifacts. Generic `Signature` attributes and source-debug local-variable tables are not checked; the gate does not replace JVM verification. Writes exact SHA-256 inputs to `build/mycelium/capsule/capsule.json`. In `check`. |
 | `myceliumSurface` | Reports platform references per package of the mod's own sources, split into declared `ports(...)` and everything else (below). |
+| `myceliumBehavior` | Experimental linter, opt-in callback initialization analysis over `main`'s compiled classes. Writes `build/mycelium/behavior/behavior.json` with source locations, inferred roots, the input fingerprint and potential dependencies (C1). Does not prove a loader's native event order. |
 | `myceliumRange` | When `mycelium.range` is declared, holds the claimed Minecraft versions to the era table (the loader exists on each), the proofs (a keystone, and a proof on each side of every wall inside the range) and the metadata the built artifact declares to its loader (it accepts every claimed version). Records each version as `proven`, `pending` or `interpolated` in `build/mycelium/range/range.json`, which the evidence manifest carries. In `check`. |
 | `myceliumLinkage` | When `mycelium.range { linkage { } }` is declared, holds every class, method and field the finished artifact references to the game's published names (`eras/names.json`: Searge, intermediary, Mojang's mappings, the game's own jar, an API's jar, each pinned by SHA-256 and cached) on each version of the claimed range that has name data. The build fails naming a reference and version when a member is absent. With the optional server inputs it also holds the target version to an exact dedicated-server game inventory, and records that archive's hash. In `check`. |
 | `myceliumPresentation` | Compiles the mod's item presentation programs (`item.presentation@1`) and block mosaics (`*.mosaic.json`, `block.presentation@1`: the era table chooses `dynamic-model` or `none`, and the task writes the plan with its manifest of models) for the target Minecraft version: the era table chooses an item definition or an item model with overrides, and the task writes it, with the plan the runtime adapter reads, into generated resources. A law the programs break, or a selection the committed lock lacks, fails the build with the diagnostic and the lines to add. Runs before `processResources`; skipped when there is no presentation source directory. |
@@ -123,6 +128,20 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 | `myceliumRecordProofs` | This repository only: after every harness and every era gate has passed, writes `contracts/proofs.json` (a fingerprint of each contract's sources and the Javas the gates ran on) so a mod need not run them again. In `check`. |
 | `myceliumRefreshVersions` | This repository only: rewrites `eras/versions.json` from Mojang's launcher manifest, by hand. |
 | `myceliumRefreshNames` | This repository only: pins name data in `eras/names.json` for `--namespace=<name> --versions=<v,...>`, or reports pins whose files changed, by hand. |
+
+`gradle-plugin/src/test/fixtures/java25-compiler-consumer` is the toolchain and argument-file regression fixture. Run its
+`myceliumPureCompile` task with Gradle on Java 21 and a Java 25 toolchain available (or provisionable). Its compact
+source file requires Java 25, and its generated source set has paths with spaces, non-ASCII characters, and over 32 KiB of
+aggregate path text. The compiler reads argument files and Java sources as UTF-8, including on Java 17 Windows hosts.
+When wiring generated Java sources, add the producing `TaskProvider` to `SourceDirectorySet.from(...)` (for example,
+`sources.from(generatePathStressSources)`); passing only its output directory loses the producer dependency and can run
+compilation before generation. This proves the pure compiler follows `pure.release` when that is newer than the Gradle
+daemon's JDK, and handles its operating-system command-line limit.
+
+`gradle-plugin/src/test/fixtures/java25-default17-compiler-consumer` covers a Java 25 Gradle JVM with the default
+`pure.release`. Its Gradle properties disable toolchain discovery and downloads, and `verifyDefaultRelease` checks that
+the generated class uses Java 17 bytecode (major version 61). Run it with Gradle on Java 25; this proves the current JDK
+can compile the default release without requiring an installed Java 17 toolchain.
 
 ## Checks
 
@@ -140,6 +159,7 @@ in the table: it holds or the artifact is not what it says. The table is the che
 | `I2` | warn | the integration's home is referenced only from its gates (derived unless declared) | the home loaded without its guard |
 | `B1` | fail | a bridge the mod overrides (`bridges { override(slug, className) }`) has a class that exists and implements the bridge's port | an override the contract's laws cannot be held to |
 | `B2` | warn | an imported bridge has a realization on the target version, and the build sets `minecraft` | a bridge the build silently left out, so its port has no native half there |
+| `C1` | warn | an exposed callback's static reference dependencies have a binding on the analyzed path (potential; `myceliumBehavior` is opt-in) | callbacks reaching state before initialization; an external scheduler may provide an ordering guarantee the analysis cannot see |
 | `U1` | warn | an explicitly imported contract is referenced by the mod's own sources (`failOnUnused = true` sets `fail`) | a manifest that says the mod carries a contract it never uses |
 | `S1` | warn | the portability surface has not grown past `surfaceBaseline` (`surfaceFailOnGrowth = true` sets `fail`; `off` skips `myceliumSurface`) | the next port growing unseen |
 | `R0` | **fail** | the claimed range is real: both ends are versions, the loader exists on each, proofs name real versions the artifact claims | a claim about versions that do not exist |
@@ -272,6 +292,10 @@ Each fixture is a small consumer build that must pass, with planted breaks the g
   leak (I1) and `-Pflex=pureLeak` a pure layer that does not compile alone: `compileJava` still passes, `check` does not.
 - `./gradlew -p gradle-plugin/src/test/fixtures/derive-consumer check` proves the derivation in a clean build with the configuration cache on: a fully qualified reference with no import, the pure layer, a source directory written by a task named `stonecutterGenerate` that nothing declares as its producer (as Stonecutter does), and one a task declares; none of them exists when the build is configured. It failed (the generated sources did not compile) before the list was chosen at execution time.
 - `./gradlew -p gradle-plugin/src/test/fixtures/defaults-consumer check` proves two projects inheriting one `myceliumDefaults`.
+- `./gradlew -p gradle-plugin/src/test/fixtures/java25-default17-compiler-consumer verifyDefaultRelease` runs under Java 25
+  with toolchain discovery and downloads disabled, then checks the default pure release emitted Java 17 class-file version 61.
+- `./gradlew -p gradle-plugin/src/test/fixtures/java25-compiler-consumer myceliumPureCompile` runs under Java 21 and
+  compiles 407 sources, including Java 25 compact syntax, through an argument file with generated paths containing spaces.
 - `gradle-plugin/src/test/fixtures/ship-consumer` ships a pure layer written for Java 21 to a Java 8 era
   (`docs/decisions/0006-shipping-downgraded-jars.md`).
 
@@ -335,6 +359,56 @@ Java 8 artifacts omit multi-release variants that their JVM ignores. Newer artif
 Explicit artifact module descriptors are refused: merging a named dependency into a named consumer needs its own
 module graph change. No private-library declaration means no relocation or merge, and existing artifacts retain
 that behavior. A consumer's loader step must take the task's output even when its source Java needs no downgrade.
+
+## Inspecting an existing mod
+
+Use the checks against the build's actual source sets and finished artifact. `myceliumSurface` shows where platform
+references sit outside declared ports; it is an inventory for choosing boundaries, not a list of incompatible calls.
+`myceliumPurity` and `myceliumIsolation` explain violations of the configured layer and integration boundaries.
+
+Bridge selection reads target versions, realization rows and loader overlays. A B2 finding means the selected bridge
+has no realization for that target; it does not mean every native feature on that loader is unavailable.
+For API compatibility, configure `range { linkage { } }` against the target's pinned name data or exact server runtime
+inventory. L1 findings name the missing reference and target. Instruction references carry the source filename and line
+when the jar retains that debug metadata, alongside the compiled caller. Declarations and stripped classes retain a
+class or method location. A filename from a class file is not an inferred path into a source tree.
+
+For an initialization risk, the **experimental linter** runs with `./gradlew myceliumBehavior` after configuring the
+normal target build. It follows calls within the input classes, field bindings, control-flow branches, callback factories,
+callback parameters and locally constructed interface implementations, including inherited handlers.
+It derives callback dependencies from compiled code rather than a list of loader events. Findings connect a callback's
+registration site to its shared-state read. Null guards constrain the relevant branch; a write inside one registered
+callback does not establish that it runs before another callback.
+
+This is an advisory analysis of static reference fields. It infers public entry roots and class initializers that expose
+callbacks, and resolves available class hierarchies. Private entrypoints reached only through annotations or external
+reflection can be missed. It does not establish a closed set of runtime virtual targets, captured instance aliases
+or an external scheduler's behavior. Forwarding callbacks to an external API is tracked; a consumer-written scheduler
+is followed when its body invokes a forwarded callback through a matching method signature. Callback-owned writes are
+not substituted as complete synchronous state transformers, so this does not prove arbitrary scheduler effects.
+A write establishes assignment, not full non-nullness. A candidate remains
+potential even when all analyzed bodies have valid frames. The report lists roots and analysis errors, reports empty
+input as unchecked, and explicitly records `nativeEventOrderProven: false`. It is not part of `check` unless the consumer
+adds that dependency. Its report stays separate from the jar's evidence manifest. Archive inputs select multi-release
+classes using the target's era Java, or the Gradle JVM when no Minecraft target is set; directory inputs are already the
+selected compilation output. C1 uses the existing check levels and allowances; keep the external ordering evidence with
+any allowance reason.
+
+For linter development, `./gradlew -p gradle-plugin behaviorSelfTest` runs the focused executable regression suite
+on a Java 17 toolchain, including Java 7 anonymous-class bytecode. Use `'-Pmycelium.testJava=25'` to run it on Java 25
+and compile the newer fixture targets. These are JVM analysis regressions, not game runs for those Minecraft eras.
+The full plugin `selfTest` also runs the suite with its own JVM.
+
+The solver uses a dependency-driven worklist. A changed method summary, returned callback set, callback field or class
+initializer invalidates the summaries that read it. Binding guarantees intersect at control-flow joins; potential
+dependencies accumulate. The report records `summaryDependencies` as typed prerequisite-to-dependent edges, together
+with `summaryEvaluations` and `dependencyEdges`. This is an analysis dependency graph, not a native event graph. A
+resource budget limits pathological inputs; exhaustion records an incomplete analysis rather than a clean result.
+
+Linkage establishes name availability, not lifecycle ordering. A method that exists can still be called before its
+service is initialized. Inspect the selected bridge's SPEC and native registration points, and test cold startup,
+resource loading and the ordinary packaged entrypoint. Model lifecycle requirements in the relevant contract and
+bridge when the feature needs them; package references alone do not establish which event must own a call.
 
 ## The portability surface (`myceliumSurface`)
 

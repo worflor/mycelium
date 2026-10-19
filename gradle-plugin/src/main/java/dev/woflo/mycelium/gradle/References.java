@@ -127,7 +127,8 @@ final class References {
                 skipped++; // still the artifact's own, so a member named on it resolves through it; only its references are not held
                 continue;
             }
-            new ClassReader(e.getValue()).accept(new Collector(e.getKey(), own, refs), ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            // Keep debug metadata on the reference pass: instruction references can then carry their source line.
+            new ClassReader(e.getValue()).accept(new Collector(e.getKey(), own, refs), ClassReader.SKIP_FRAMES);
         }
         return new Found(refs, classes.size() - skipped, skipped);
     }
@@ -166,6 +167,7 @@ final class References {
         private final String caller;
         private final Map<String, Declared> own;
         private final Map<Ref, String> refs;
+        private String sourceFile;
 
         Collector(String caller, Map<String, Declared> own, Map<Ref, String> refs) {
             super(Opcodes.ASM9);
@@ -308,6 +310,14 @@ final class References {
         }
 
         @Override
+        public void visitSource(String source, String debug) {
+            if (source != null) {
+                int slash = Math.max(source.lastIndexOf('/'), source.lastIndexOf('\\'));
+                sourceFile = source.substring(slash + 1);
+            }
+        }
+
+        @Override
         public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
             return annotation(descriptor, caller);
         }
@@ -350,38 +360,50 @@ final class References {
                 }
             }
             return new MethodVisitor(Opcodes.ASM9) {
+                private int line = -1;
+
+                private String instructionWhere() {
+                    return sourceFile == null || line < 1 ? where : sourceFile + ":" + line + " (" + where + ")";
+                }
+
+                @Override
+                public void visitLineNumber(int line, Label start) {
+                    this.line = line;
+                }
+
                 @Override
                 public void visitTypeInsn(int opcode, String type) {
-                    cls(type, where);
+                    cls(type, instructionWhere());
                 }
 
                 @Override
                 public void visitFieldInsn(int opcode, String owner, String n, String d) {
-                    member('F', owner, n, d, where);
+                    member('F', owner, n, d, instructionWhere());
                 }
 
                 @Override
                 public void visitMethodInsn(int opcode, String owner, String n, String d, boolean itf) {
-                    member('M', owner, n, d, where);
+                    member('M', owner, n, d, instructionWhere());
                 }
 
                 @Override
                 public void visitInvokeDynamicInsn(String n, String d, Handle bsm, Object... args) {
-                    type(Type.getMethodType(d), where);
-                    handle(bsm, where);
+                    String at = instructionWhere();
+                    type(Type.getMethodType(d), at);
+                    handle(bsm, at);
                     for (Object a : args) {
-                        constant(a, where);
+                        constant(a, at);
                     }
                 }
 
                 @Override
                 public void visitLdcInsn(Object value) {
-                    constant(value, where);
+                    constant(value, instructionWhere());
                 }
 
                 @Override
                 public void visitMultiANewArrayInsn(String d, int dims) {
-                    type(Type.getType(d), where);
+                    type(Type.getType(d), instructionWhere());
                 }
 
                 @Override

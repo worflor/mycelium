@@ -6,7 +6,9 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -20,6 +22,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.nio.file.attribute.BasicFileAttributes;
 
 /**
  * The plugin's self-tests, in the repository's own dependency-free style (a main, labelled checks, exit code = failures;
@@ -33,6 +36,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class SelfTest {
     private static final List<String> FAILURES = new ArrayList<>();
     private static int assertions;
+    private static java.util.Map<String, Integer> repositoryMatrixCounts = java.util.Map.of();
 
     public static void main(String[] args) {
         try {
@@ -49,7 +53,10 @@ public final class SelfTest {
 
     private static void run(String[] args) throws Exception {
         Path root = Path.of(args.length > 0 ? args[0] : "..").toAbsolutePath().normalize();
+        repositoryMatrixCounts = repositoryMatrixCounts(root);
         eras(root);
+        copyPrunesIgnoredTrees();
+        repositoryPathClassification();
         registry();
         requirementsImport();
         presentation(root);
@@ -59,8 +66,11 @@ public final class SelfTest {
         compat();
         ranges(root);
         LinkageSelfTest.run(root);
+        BehaviorSelfTest.run();
         shipping();
         artifactJars();
+        pureCompilerToolchains();
+        pureCompilerArgumentFiles();
         downgrading();
         privateLibraries();
         runtimeBootClasspath();
@@ -71,7 +81,11 @@ public final class SelfTest {
         BridgeSelfTest.run(root);
         repository(root);
         System.out.println();
-        System.out.println("Mycelium plugin self-test: " + (FAILURES.isEmpty() ? "PASS" : "FAIL") + " (" + assertions
+        finish("Mycelium plugin self-test");
+    }
+
+    static void finish(String label) {
+        System.out.println(label + ": " + (FAILURES.isEmpty() ? "PASS" : "FAIL") + " (" + assertions
                 + " assertions, " + FAILURES.size() + " failed)");
         FAILURES.forEach(f -> System.out.println("  - " + f));
         System.exit(FAILURES.size());
@@ -99,6 +113,102 @@ public final class SelfTest {
             }
             that(rejected, "artifact jars: invalid declaration rejected " + names);
         }
+    }
+
+    static void repositoryPathClassification() throws IOException {
+        Path root = Files.createTempDirectory("mycelium-document-paths-");
+        Path docs = root.resolve("docs");
+        Files.createDirectories(docs);
+        try {
+            List<Path> bases = List.of(docs);
+            String regex = "[a-z0-9_.-]+:[a-z0-9/._-]+";
+            that(!RepositoryCheck.looksLikePath(regex, bases), "docs:path classifier ignores a backticked regex literal");
+            RepositoryCheck.Report regexReport = new RepositoryCheck.Report();
+            that(RepositoryCheck.paths(root, "docs/SPEC.md", "`" + regex + "`", bases, regexReport) == 0
+                            && regexReport.findings().isEmpty(),
+                    "docs:regex literal does not create a path finding");
+
+            Files.writeString(docs.resolve("foo+bar.md"), "");
+            Files.writeString(docs.resolve("[guide].md"), "");
+            RepositoryCheck.Report literalPaths = new RepositoryCheck.Report();
+            int literalCount = RepositoryCheck.paths(root, "README.md", "`docs/foo+bar.md` `docs/[guide].md`", List.of(root), literalPaths);
+            that(literalCount == 2 && literalPaths.findings().isEmpty(),
+                    "docs:legitimate plus and bracket filenames still resolve");
+
+            RepositoryCheck.Report resourceId = new RepositoryCheck.Report();
+            that(RepositoryCheck.paths(root, "docs/SPEC.md", "`minecraft:folder/name`", bases, resourceId) == 0
+                            && resourceId.findings().isEmpty(),
+                    "docs:namespaced resource identifiers are not repository paths");
+
+            RepositoryCheck.Report missing = new RepositoryCheck.Report();
+            that(RepositoryCheck.paths(root, "docs/SPEC.md", "`contracts/missing/SPEC.md`", bases, missing) == 1
+                            && missing.findings().stream().anyMatch(f -> f.message().contains("does not exist")),
+                    "docs:missing repository paths are still reported");
+
+            RepositoryCheck.Report external = new RepositoryCheck.Report();
+            that(RepositoryCheck.paths(root, "docs/SPEC.md", "`../../outside.md`", bases, external) == 1
+                            && external.findings().stream().anyMatch(f -> f.message().contains("outside this repository")),
+                    "docs:external paths are still reported");
+
+            RepositoryCheck.Report malformed = new RepositoryCheck.Report();
+            String invalid = "contracts/bad\u0000path";
+            that(RepositoryCheck.paths(root, "docs/SPEC.md", "`" + invalid + "`", bases, malformed) == 1
+                            && malformed.findings().stream().anyMatch(f -> f.message().contains("not a valid path")),
+                    "docs:filesystem-invalid path reports a finding instead of aborting the check");
+        } finally {
+            delete(root);
+        }
+    }
+
+    static void copyPrunesIgnoredTrees() throws IOException {
+        Path root = Files.createTempDirectory("mycelium-copy-pruning-");
+        Path copy = null;
+        try {
+            write(root.resolve("src/main/Kept.java"), "class Kept {}\n");
+            write(root.resolve("archive/DESIGN.md"), "archived source docs\n");
+            write(root.resolve("module/build/generated/Output.class"), "ignored\n");
+            write(root.resolve("module/.gradle/cache/state.bin"), "ignored\n");
+            write(root.resolve("module/.jvmdg/cache/state.bin"), "ignored\n");
+            write(root.resolve("module/out/classes/Output.class"), "ignored\n");
+            write(root.resolve("module/.git/objects/data"), "ignored\n");
+            write(root.resolve("module/.work/downloads/game.jar"), "ignored\n");
+            write(root.resolve("module/__pycache__/helper.pyc"), "ignored\n");
+            write(root.resolve("module/.kilo/state.bin"), "ignored\n");
+            copy = copy(root);
+            Path copied = copy;
+            that(Files.isRegularFile(copied.resolve("src/main/Kept.java"))
+                            && Files.isRegularFile(copied.resolve("archive/DESIGN.md")),
+                    "self-test copy keeps source files and archived design docs");
+            that(List.of("module/build", "module/.gradle", "module/.jvmdg", "module/out", "module/.git",
+                            "module/.work", "module/__pycache__", "module/.kilo").stream()
+                            .noneMatch(path -> Files.exists(copied.resolve(path))),
+                    "self-test copy prunes ignored build and cache trees");
+        } finally {
+            delete(root);
+            if (copy != null) {
+                delete(copy);
+            }
+        }
+    }
+
+    static void pureCompilerToolchains() {
+        that(MyceliumPlugin.pureCompilerVersion(17, 25) == 25,
+                "pure compiler: Java 25 daemon compiles the default Java 17 release without an older toolchain");
+        that(MyceliumPlugin.pureCompilerVersion(8, 21) == 21,
+                "pure compiler: Java 21 daemon compiles older releases without an older toolchain");
+        that(MyceliumPlugin.pureCompilerVersion(25, 21) == 25,
+                "pure compiler: Java 21 daemon selects a Java 25 toolchain for Java 25 sources");
+        that(MyceliumPlugin.pureCompilerVersion(8, 11) == VerifyContractsTask.RELEASE,
+                "pure compiler: never selects below the supported Java 17 baseline");
+    }
+
+    static void pureCompilerArgumentFiles() {
+        that(PureCompileTask.quoteArgumentFileArgument("C:\\work area\\kernel\\Main.java")
+                        .equals("\"C:\\\\work area\\\\kernel\\\\Main.java\""),
+                "pure compiler: javac argument files preserve spaces and Windows separators");
+        that(PureCompileTask.quoteArgumentFileArgument("source with \"quotes\".java")
+                        .equals("\"source with \\\"quotes\\\".java\""),
+                "pure compiler: javac argument files escape embedded quotes");
     }
 
     static void capsuleLinkage() throws Exception {
@@ -2136,7 +2246,7 @@ public final class SelfTest {
 
     // --- the repository check, on broken copies -----------------------------------------------------------------------
 
-    static final Set<String> SKIP = Set.of("build", "out", ".gradle", ".git", ".jvmdg", "archive");
+    static final Set<String> SKIP = Set.of("build", "out", ".gradle", ".git", ".jvmdg", ".work", "__pycache__", ".kilo");
 
     static void repository(Path root) throws IOException {
         Path base = copy(root);
@@ -2350,19 +2460,113 @@ public final class SelfTest {
     /** Contracts whose harness report the next check is not handed (a break of what ran, not of a file). */
     static final Set<String> UNREPORTED = new java.util.HashSet<>();
 
-    /** What myceliumVerify would hand the check: a report for every registered contract, but those {@link #UNREPORTED}. */
+    /** Use the actual harness report from myceliumVerify, omitting contracts a fixture intentionally withholds. */
     static java.util.Map<String, Integer> reported(Path copy) {
         java.util.Map<String, Integer> out = new java.util.LinkedHashMap<>();
         try {
             for (ContractRegistry.Entry e : ContractRegistry.load(copy.toFile()).all()) {
-                if (!UNREPORTED.contains(e.id())) {
-                    out.put(e.id(), 1);
+                Integer count = repositoryMatrixCounts.get(e.id());
+                if (!UNREPORTED.contains(e.id()) && count != null) {
+                    out.put(e.id(), count);
                 }
             }
         } catch (RuntimeException e) {
             // a registry that does not load is the check's own finding
         }
         return out;
+    }
+
+    /** Read matrix counts from the harness report. */
+    private static java.util.Map<String, Integer> repositoryMatrixCounts(Path root) {
+        java.util.Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        ContractRegistry registry;
+        try {
+            registry = ContractRegistry.load(root.toFile());
+        } catch (RuntimeException invalidRegistry) {
+            return java.util.Map.of();
+        }
+        Path report = root.resolve("build/mycelium/verify/results.json");
+        if (Files.isRegularFile(report)) try {
+            JsonObject json = JsonParser.parseString(Files.readString(report, StandardCharsets.UTF_8)).getAsJsonObject();
+            for (var result : json.getAsJsonArray("results")) {
+                JsonObject entry = result.getAsJsonObject();
+                if (!entry.has("id") || !entry.has("fingerprint") || !entry.has("harness")
+                        || !entry.get("harness").isJsonObject()) {
+                    continue;
+                }
+                String id = entry.get("id").getAsString();
+                ContractRegistry.Entry contract = registry.all().stream().filter(candidate -> candidate.id().equals(id)).findFirst().orElse(null);
+                if (contract != null && entry.get("fingerprint").getAsString().equals(Proofs.fingerprint(root, registry, contract))) {
+                    counts.put(id, entry.getAsJsonObject("harness").getAsJsonArray("matrix").size());
+                }
+            }
+        } catch (RuntimeException | IOException malformedReport) {
+            counts.clear();
+        }
+        List<ContractRegistry.Entry> missing = new ArrayList<>();
+        for (ContractRegistry.Entry entry : registry.all()) {
+            if (!counts.containsKey(entry.id())) {
+                missing.add(entry);
+            }
+        }
+        if (missing.isEmpty()) {
+            return java.util.Map.copyOf(counts);
+        }
+        javax.tools.JavaCompiler compiler = javax.tools.ToolProvider.getSystemJavaCompiler();
+        if (compiler == null) {
+            throw new IllegalStateException("cannot verify rejection-matrix counts without a JDK compiler");
+        }
+        Path temp;
+        try {
+            temp = Files.createTempDirectory("mycelium-selftest-matrices-");
+        } catch (IOException failure) {
+            throw new IllegalStateException("cannot create matrix-report fixture directory", failure);
+        }
+        try {
+            Path javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java"
+                    + (java.io.File.separatorChar == '\\' ? ".exe" : ""));
+            for (ContractRegistry.Entry entry : missing) {
+                Path work = temp.resolve(entry.slug());
+                Path classes = work.resolve("classes");
+                Files.createDirectories(classes);
+                List<String> args = new ArrayList<>(List.of("--release", String.valueOf(VerifyContractsTask.RELEASE), "-d", classes.toString()));
+                Path pkg = root.resolve("contracts").resolve(entry.path()).resolve("src");
+                for (Path source : VerifyContractsTask.sources(root, pkg, registry.closure(entry))) {
+                    args.add(source.toString());
+                }
+                java.io.ByteArrayOutputStream diagnostics = new java.io.ByteArrayOutputStream();
+                int compileExit = compiler.run(null, diagnostics, diagnostics, args.toArray(String[]::new));
+                if (compileExit != 0) {
+                    throw new IllegalStateException("cannot collect " + entry.id() + " harness report: compile failed\n" + diagnostics);
+                }
+                Path harnessReport = work.resolve("harness.json");
+                Path log = work.resolve("harness.log");
+                Process process = new ProcessBuilder(javaExecutable.toString(), "-Dmycelium.harness.report=" + harnessReport,
+                        "-cp", classes.toString(), entry.runMain()).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+                int exit = process.waitFor();
+                if (exit != 0 || !Files.isRegularFile(harnessReport)) {
+                    throw new IllegalStateException("cannot collect " + entry.id() + " harness report; exit=" + exit
+                            + (Files.isRegularFile(log) ? ":\n" + Files.readString(log, StandardCharsets.UTF_8) : ""));
+                }
+                JsonObject harness = JsonParser.parseString(Files.readString(harnessReport, StandardCharsets.UTF_8)).getAsJsonObject();
+                if (!harness.get("contract").getAsString().equals(entry.id()) || harness.get("exit").getAsInt() != 0) {
+                    throw new IllegalStateException("invalid harness report for " + entry.id() + ": " + harness);
+                }
+                counts.put(entry.id(), harness.getAsJsonArray("matrix").size());
+            }
+            return java.util.Map.copyOf(counts);
+        } catch (IOException | InterruptedException failure) {
+            if (failure instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new IllegalStateException("cannot collect current rejection-matrix counts", failure);
+        } finally {
+            try {
+                delete(temp);
+            } catch (IOException failure) {
+                throw new IllegalStateException("cannot remove matrix-report fixture directory " + temp, failure);
+            }
+        }
     }
 
     static Set<String> findings(Path copy) throws IOException {
@@ -2375,27 +2579,33 @@ public final class SelfTest {
 
     static Path copy(Path root) throws IOException {
         Path to = Files.createTempDirectory("mycelium-selftest");
-        try (Stream<Path> walk = Files.walk(root)) {
-            for (Path p : (Iterable<Path>) walk::iterator) {
-                Path rel = root.relativize(p);
-                boolean skip = false;
-                for (Path part : rel) {
-                    if (SKIP.contains(part.toString())) {
-                        skip = true;
-                        break;
-                    }
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) throws IOException {
+                Path relative = root.relativize(directory);
+                if (!relative.toString().isEmpty() && SKIP.contains(directory.getFileName().toString())) {
+                    return FileVisitResult.SKIP_SUBTREE;
                 }
-                if (skip) {
-                    continue;
+                Files.createDirectories(to.resolve(relative.toString()));
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
+                if (SKIP.contains(file.getFileName().toString())) {
+                    return FileVisitResult.CONTINUE;
                 }
-                Path target = to.resolve(rel.toString());
-                if (Files.isDirectory(p)) {
+                Path target = to.resolve(root.relativize(file).toString());
+                if (Files.isDirectory(file)) {
+                    // With default (non-following) traversal a symbolic-link directory is a file visit; the old copy
+                    // logic followed it for the type check and made an empty destination directory.
                     Files.createDirectories(target);
                 } else {
-                    Files.copy(p, target);
+                    Files.copy(file, target);
                 }
+                return FileVisitResult.CONTINUE;
             }
-        }
+        });
         return to;
     }
 

@@ -1,5 +1,167 @@
 # Changelog
 
+## 2026-10-18 - Resume compiler development in the canonical checkouts
+
+Carried the reviewed source wrapper, consumer templates, adoption skill, Java 25 compiler work and reusable contracts
+into the shared contribution checkout and private development tree. Private-only contracts and historical documents
+remain private. The consumer toolchain builds from Mycelium itself and has no dependency on the commission workspace.
+
+The experimental linter now records method-signature constraints for callback parameters invoked by consumer-owned
+schedulers. Its interprocedural solver uses a dependency-driven worklist instead of a fixed number of whole-program
+passes. Reports expose the typed prerequisite graph and evaluation count. Budget exhaustion remains an incomplete
+analysis. Callback-owned writes are not a complete scheduler-effect model; external native scheduling is still unknown.
+
+Validation: the public aggregate `check` passed on JDK 25 in 14m 41s, including 1,013 plugin assertions,
+55 source-lifecycle assertions, 19 consumer-hook assertions, contract harnesses, bridge linkage and the era gates.
+Focused Gradle runs passed 47 behavioral assertions on Java 17 and 53 on Java 25, launched from the installed Java 21
+build host. Fixture targets cover Java 7, 8, 11, 16, 17, 21 and 25; this is bytecode-analysis evidence, not native game
+support for each era. A 160-call chain converges, and permuting method order preserves findings and dependency edges.
+A fresh maintainer consumer captured and prepared the private compiler without changing its real index or including
+old verification artifacts, then built on Java 21. Its jar recorded matching locked-source provenance and its planted
+bug produced one C1 candidate with a typed graph. Scratch copies now prune local work and Python caches; the private
+plugin suite passed the extended pruning regression. No existing contract's meaning changed.
+
+## 2026-10-18 - Consumer portability review
+
+Relative local repository paths now resolve from the consumer root. Capture records the absolute path, and legacy
+relative recipes retain that meaning when preparing into another directory. HTTPS and SSH remote syntax is preserved.
+The source hook checks its Gradle 7.5 API minimum before use; the guide distinguishes that floor from the selected
+compiler, build JVM and loader requirements. Bundled guidance refers to documents in the selected checkout instead of
+using links that only worked in Mycelium's documentation directory.
+
+Validation: full `check` passed on JDK 25 in 9m 29s, including 979 plugin assertions, 55 lifecycle assertions,
+19 Gradle-hook assertions and the contract era gates. The new cases cover relative capture, legacy relative preparation
+from a different parent directory, and unchanged HTTPS and SSH transport strings. Both read-only reviewers confirmed
+their findings were addressed. A Windows-normalized consumer snapshot also prepared and verified its compiler on Java 17.
+
+## 2026-10-18 - Consumer source lifecycle
+
+Added an independently versioned Java 17 source wrapper and consumer bundle, built with the existing Gson dependency.
+Consumers keep an editable Mycelium checkout and commit a recipe containing its base revision, optional verified
+patch, effective Git tree and completion policy. Capture preserves the real index, checks a patch round trip, installs
+an immutable patch and atomically replaces the lock. Updates merge into a separate Git candidate and retain conflicts.
+
+Maintained Gradle hooks verify source before plugin loading, bind imports to that same checkout, and record expected
+and actual identities in artifact jars. Explicit development overrides remain available for compilation and focused
+runs. Locked completion rejects uncaptured source for checks and the existing artifactJars selection, plus sourcesJar;
+unrelated test archives remain available. The hooks revalidate with the configuration cache and transport paths through
+file URIs and UTF-8 output on Windows. The bundle carries sources, licenses, checksums and the lifecycle guide.
+
+Validation: full `check` passed on JDK 25 in 9m 53s, including 979 plugin self-test assertions and the contract era
+gates on Java 8, 16, 17, 21 and 25. Isolated Git tests passed 51 assertions, including Unicode paths, a legacy default encoding, staged work,
+index flags, binary data, executable modes, CRLF, ignored files, optional patches, future-schema refusal, diverged history
+and resolving and recapturing a merge conflict. Independent Gradle consumers passed 19 assertions across Groovy and
+Kotlin settings, configuration-cache reuse, root binding and strict versus development completion. A read-only Windows
+junction check was refused as intended. WorldPrompt built both loaders from a fresh prepared compiler checkout; both
+sets of required GameTests passed, and the Python suite passed 640 tests with 28 skips and 33 subtests. Its compiler
+patch is unchanged. Jar comparisons found only the recipe and provenance metadata changed from the runtime-tested
+baseline, with all classes and other resources identical. No publication was performed.
+
+## 2026-10-18 - Experimental linter for callback initialization
+
+Added opt-in `myceliumBehavior` and C1 warnings over the selected target's compiled classes. The analysis follows
+static reference dependencies through calls, branches, callback factories, forwarded parameters, callback fields and
+inherited implementations. Findings connect registration and read sites using available source metadata. The report
+records its input fingerprint, inferred roots, incomplete analyses and unknown external scheduling. No loader event
+rules are maintained, and the task is outside normal `check`, compilation and jar assembly.
+
+Independent regression programs cover eager callback failures and safe controls, unrelated class initializers,
+merged and stale null guards, resets inside callbacks, virtual dispatch, known null returns, array access and
+malformed inputs. This remains an experimental, bounded analysis; it does not prove native event order or handle
+reflection and captured instance aliases.
+
+Validation: full `check` passed on JDK 25 in 14m 11s, including 979 plugin self-test assertions and contract era gates
+on Java 8, 16, 17, 21 and 25. Explicit consumer tasks analyzed 446 Fabric and 455 NeoForge method bodies without
+candidates or analysis errors. A separate unbound NeoForge mutation produced the intended candidate. Static scans of
+five official Minecraft 1.21.1 mod jars completed without analysis errors; multi-release selection has its own Java 8
+and 17 regression. WorldPrompt's pinned compiler patch and validated release jars were left unchanged.
+
+## 2026-10-18 - Source locations and adoption guidance
+
+Linkage diagnostics retain instruction source filenames and line numbers from class debug metadata. Missing references
+still use the existing pinned target data and first-reference semantics; declarations and stripped classes keep their
+class or method locations. No loader-specific compatibility rules or dependencies were added.
+
+Added a Building with Mycelium skill for fresh mods and existing codebases, with separate guidance for the build JVM,
+pure source release and target runtime. The plugin reference explains the existing inspection checks and distinguishes
+API availability from native lifecycle ordering.
+
+Validation: full `check` passed on JDK 25 in 12m 53s, including 957 plugin self-test assertions and the era gates. The
+linkage consumer's planted missing method was refused at `Uses.java:10`; its unbroken `check` passed. Skill validation
+and relative-link checks passed.
+
+## 2026-10-18 - Register NeoForge command permissions after early binding
+
+The NeoForge permission adapter now constructs its immutable nodes before registration and exposes an instance
+registration method for `PermissionGatherEvent.Nodes`. Consumers can bind the query before datapack command parsing and
+register the same nodes on each server lifecycle event; the existing combined factory-and-register method remains
+available. Operator defaults, dynamic fallback resolution, and `UNSET` for non-player sources are unchanged.
+
+Validation: `./gradlew.bat check --no-daemon '-Dorg.gradle.jvmargs=-Xmx2g' --max-workers=2 --console=plain` passed
+on JDK 25 in 8m 53s. The repository check covered all 24 contract packages and 344 rejection entries; bridge linkage
+had no failures (77 versions linked, 72 omitted for missing pinned name data), and the plugin self-test passed all 951
+assertions. WorldPrompt's NeoForge and Fabric builds passed, each with 67 JUnit tests and 23 required GameTests,
+including the shared cold-start datapack function resource.
+
+## 2026-10-18 - Test-runner comment cleanup
+
+Shortened the harness-report comment. `./gradlew check` passed; no runtime behavior changed.
+
+## 2026-10-18 - block.catalog@1: immutable native block-state snapshots
+
+Added a finite catalog model for known block identifiers, every state property's allowed values, and exact defaults.
+Catalog construction validates and deep-copies definitions; normalization fills defaults, applies explicit values, and
+rejects unknown blocks, properties, and values. `CatalogSource` is the native registry capture seam. The rejection matrix
+holds malformed definitions, missing defaults, ignored explicit values, and input/output aliasing.
+
+Validation: `.\run-contracts.ps1 block-catalog` passed: reference clean and all six rejection fixtures caught. Fabric
+and NeoForge each passed 67 JUnit tests and 22 required GameTests, including native registry conformance. The packaged
+server smoke passed on both loaders.
+
+## 2026-10-18 - world.replay@1: bounded resumable replay cursor
+
+Added an immutable replay program that validates and owns one operation's RLE data during payload preparation; each
+fresh cursor shares that data and keeps independent resume state. The cursor preserves ordered visits, per-drain work
+budgets, retry position and whole-run skip accounting. Native palette and block behavior remains the consumer's port.
+
+Validation: direct JDK 25 harness passed (10 reference assertions, all eight broken fixtures caught, including shared
+cursor state); the model compiles with `--release 17`. WorldPrompt's parser and game tests cover defensive views and
+independent cursors. The final Mycelium check passed all 24 contract harnesses (344 rejection entries), 120 contract-era
+suites on Java 8, 16, 17, 21 and 25, 951 plugin self-test assertions, and repository checks. Fabric and NeoForge each
+passed 67 JUnit tests and 22 required GameTests; the packaged server smoke passed on both loaders.
+
+## 2026-10-18 - Select a capable pure compiler and handle long source lists
+
+The pure compiler now passes javac sources in a UTF-8 argument file, avoiding Windows command-line length limits while
+keeping plugin sources at Java 17. It reuses the Gradle JVM when that JDK can compile the declared release, and selects a
+newer toolchain only when needed. The Java 21 compiler fixture generates 407 sources, including Java 25 compact syntax
+and paths with spaces and non-ASCII characters; using the producing task provider preserves the generated-source dependency
+in Gradle. A second
+fixture disables toolchain discovery and downloads under a Java 25 daemon, then verifies the default Java 17 bytecode.
+
+Validation: the Java 21 daemon fixture compiled 407 sources with `myceliumPureCompile` on Java 25, including UTF-8 paths
+and source text. The Java 25 daemon probe compiled the default release with toolchain discovery/downloads disabled and
+verified class-file major version 61. The final Mycelium check passed on Java 25 with the compiler and argument-file tests.
+
+## 2026-10-18 - command.authorization@1: explicit permission decisions over command defaults
+
+Added a pure command authorization model for WorldPrompt. Explicit grants authorize and explicit denials refuse
+regardless of operator/default privilege; an unset decision delegates to that privilege. The rejection matrix covers
+overridden grants, overridden denials, unset-as-grant, and a no-op policy. The consumer supplies each command's
+effective fallback privilege to the port.
+
+Added the `command-authorization` bridge for Minecraft 26.3. Its game-only port adapter delegates to loader overlays:
+Fabric preserves its tri-state permission result, while NeoForge registers boolean nodes with the invocation's effective
+fallback in a dynamic context. The NeoForge PermissionAPI is player-only, so non-player command sources use the supplied
+fallback. Registered NeoForge nodes also resolve safely when queried without a dynamic context, using the declared
+open-or-moderator policy; offline sensitive-node checks refuse. Earlier versions are explicitly marked without a bridge
+realization. Added game conformance cases against `AuthorizationPort`; the consumer supplies granted, denied and unset
+nodes and registers the cases in its game tests.
+
+Validation: `.\run-contracts.ps1 command-authorization` passed: reference clean, all four rejection entries caught,
+including `NoOpAuthorization`. Registry, bridge and era JSON parsed successfully. Fabric and NeoForge each passed 67
+JUnit tests and 22 required GameTests, including dynamic grant/deny/unset and no-context native permission checks.
+
 ## 2026-10-18 - Give mod authors a clearer introduction
 
 Refined the README around the porting problem, a component-storage example, and the contract authoring loop. Explained

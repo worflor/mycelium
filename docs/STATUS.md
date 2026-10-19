@@ -26,9 +26,10 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
   overlays for a jar spanning resource schemas is not implemented.
 - **Range evidence from test runs:** keystones are declared by the consumer. The plugin cannot infer which game tests
   ran; ranges without keystones warn and remain `interpolated`.
-- **Local contract incubation:** a `localContracts` input would let a mod develop a package under the same gates before
-  moving it upstream. Until then, develop packages in the separate Mycelium checkout or fork the mod builds with.
-  [Decision 0015](decisions/0015-a-compiler-you-build-with.md).
+- **Behavioral analysis:** the experimental linter diagnoses callback initialization dependencies. Complete callback
+  effect substitution, captured instance aliases, reflective entrypoints and external scheduling still need analysis
+  or runtime evidence. Extend it with executable counterexamples and safe controls, rather than loader-name rules.
+  See the [inspection checks](plugin.md#inspecting-an-existing-mod).
 
 ## Data and verification
 

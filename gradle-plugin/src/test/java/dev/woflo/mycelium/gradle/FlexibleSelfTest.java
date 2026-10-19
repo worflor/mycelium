@@ -576,6 +576,13 @@ final class FlexibleSelfTest {
         Set<String> check = new HashSet<>();
         reachable(p.getTasks().getByName("check")).forEach(t -> check.add(t.getName()));
         that(check.contains("myceliumPurity") && check.contains("myceliumIsolation"), "compile:check still runs them: " + check);
+        that(!check.contains("myceliumBehavior") && !jar.contains("myceliumBehavior") && !deps.contains("myceliumBehavior"),
+                "behavior: the experimental linter is opt-in for check, jar and compilation");
+        Task behavior = p.getTasks().getByName("myceliumBehavior");
+        that(behavior instanceof BehaviorTask && reachable(behavior).stream().anyMatch(t -> t.getName().equals("compileJava")),
+                "behavior: an explicit run consumes compiled main classes and brings their compiler dependency");
+        that(Checks.decode(((BehaviorTask) behavior).getChecks().get()).level("C1") == Checks.Level.WARN,
+                "behavior: C1 defaults to a warning in the consumer task");
     }
 
     static void derivedContracts(Path root, Path tmp) throws Exception {

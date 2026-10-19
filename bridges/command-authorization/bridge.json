@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "id": "command-authorization",
+  "contract": "command.authorization@1",
+  "port": "AuthorizationPort",
+  "implementation": "CommandPermissions",
+  "package": "mycelium.bridges.command_authorization",
+  "divide": "command.authorization",
+  "writtenIn": ["unobfuscated"],
+  "loaders": ["fabric", "neoforge"],
+  "what": "Minecraft 26.3 command-source authorization through command.authorization@1: the game-only base applies explicit grant/deny/unset semantics, and Fabric or NeoForge loader overlays supply their permission query.",
+  "variants": {
+    "permission-api": {
+      "overlays": [
+        {
+          "name": "fabric-26.3",
+          "from": "26.3",
+          "to": "26.3",
+          "loaders": ["fabric"],
+          "why": "Fabric Permissions API answers tri-state permission queries for command sources"
+        },
+        {
+          "name": "neoforge-26.3",
+          "from": "26.3",
+          "to": "26.3",
+          "loaders": ["neoforge"],
+          "why": "NeoForge PermissionAPI registers boolean nodes with the invocation's effective fallback in a dynamic context; context-free queries use each node's declared default, and the API queries players only"
+        }
+      ]
+    }
+  }
+}

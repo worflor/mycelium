@@ -40,6 +40,7 @@ Each fact has one home. Everything else links to it.
 | Onboarding, routing, rules for working here | `AGENTS.md` (this file) |
 | The technical model, principles, what checks what | `docs/architecture.md` |
 | What to do when a mod meets a divide | `docs/building-with-mycelium.md` |
+| Agent workflow for a fresh mod or adoption | `.agents/skills/building-with-mycelium/SKILL.md` |
 | What makes a good addition; rules for documents | `docs/admission.md` |
 | What a contract package is made of | `CONTRACT-PACKAGE.md` |
 | What a bridge package is made of | `BRIDGE-PACKAGE.md` |
@@ -48,6 +49,7 @@ Each fact has one home. Everything else links to it.
 | Every contract's id, path, package | `contracts/registry.json` (checked; the only such mapping) |
 | Versions, eras, the pure layer's laws and gates | `docs/eras.md`, data in `eras/` |
 | The plugin: options, tasks, shipping a jar | `docs/plugin.md` |
+| Pinning, editing and updating a consumer's compiler | `docs/source-lifecycle.md`, maintained wrapper in `source-wrapper/` |
 | Optional integrations kept isolated | `docs/integrations.md` |
 | Why a choice was made | `docs/decisions/` (one per file, dated, with its evidence) |
 | What changed and what ran | `CHANGELOG.md` |
@@ -86,6 +88,7 @@ mycelium/
 │   └── <slug>/             one package per contract (CONTRACT-PACKAGE.md)
 ├── bridges/<slug>/         one package per bridge: bridge.json, a src/ per variant, overlays/, conformance/
 ├── gradle-plugin/          the plugins, an included build (map below)
+├── source-wrapper/         Java 17 source lifecycle, consumer hooks and reproducible bundle (built by gradle-plugin)
 ├── run-contracts.sh, .ps1  the harness without Gradle: identical behaviour
 └── build.gradle.kts        applies both plugins to this repository; `./gradlew check` runs everything
 ```
@@ -132,6 +135,8 @@ the tasks do is `docs/plugin.md`.
   strictly read), `NameCache.java` (pinned files by SHA-256, fetched once, checked on every use), `Names.java` (what the
   game has under one naming on one version), `Inventory.java` (the game's own classes, resolving a member through its
   hierarchy as the JVM does).
+- **Behavioral diagnostics.** `BehaviorTask.java` (`myceliumBehavior`, opt-in), `CallbackInitialization.java`
+  (callback targets, reference provenance and initialization flow; potential risks, not native event-order proofs).
 - **Presentation.** `Presentation.java` (what `myceliumPresentation` and `myceliumPresentationLock` do apart from
   Gradle: reads a consumer's programs and mosaics, compiles `item.presentation@1`'s and `block.presentation@1`'s models with what they require, runs their tools),
   `PresentationSpec.java` (`mycelium { presentation { } }`), `PresentationTask.java` (`myceliumPresentation`: the

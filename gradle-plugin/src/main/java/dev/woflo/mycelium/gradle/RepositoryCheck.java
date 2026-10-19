@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -646,6 +647,7 @@ public final class RepositoryCheck {
             + "|rejection fixtures|rejection-matrix entries|matrix entries|fixtures|harnesses|tasks|era gates|eras|plugin classes)\\b");
 
     static final Pattern BACKTICK = Pattern.compile("`([^`\\n]+)`");
+    private static final Pattern RESOURCE_LOCATION = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_.-][a-z0-9/._-]*");
 
     /** Tokens in documents that name a path in this repository, checked to exist. */
     static final List<String> PATH_ROOTS = List.of("contracts/", "bridges/", "harness/", "gradle-plugin/", "docs/", "eras/", "archive/",
@@ -750,14 +752,22 @@ public final class RepositoryCheck {
             String path = token.replaceAll("[.,:;)]+$", "");
             boolean outside = true;
             boolean found = false;
+            String invalidPath = null;
             for (Path base : bases) {
-                Path p = base.toAbsolutePath().normalize().resolve(path).normalize();
-                if (p.startsWith(top)) {
-                    outside = false;
-                    found |= Files.exists(p);
+                try {
+                    Path p = base.toAbsolutePath().normalize().resolve(path).normalize();
+                    if (p.startsWith(top)) {
+                        outside = false;
+                        found |= Files.exists(p);
+                    }
+                } catch (InvalidPathException invalid) {
+                    invalidPath = invalid.getMessage();
+                    break;
                 }
             }
-            if (!found) {
+            if (invalidPath != null) {
+                report.find("docs", where + " names `" + token + "`, which is not a valid path");
+            } else if (!found) {
                 report.find("docs", where + " names `" + token + "`, which "
                         + (outside ? "is outside this repository (say what was learned there in words)" : "does not exist"));
             }
@@ -800,7 +810,10 @@ public final class RepositoryCheck {
      * name ({@code fabric.mod.json}) is not a path: documents talk about files in consumers' projects too.
      */
     static boolean looksLikePath(String token, List<Path> bases) {
-        if (token.contains("<") || token.contains("*") || token.contains("{") || token.contains(" ") || token.contains("...")
+        int characterClass = token.startsWith("^[") ? 1 : token.startsWith("[") ? 0 : -1;
+        if ((characterClass >= 0 && token.indexOf(']', characterClass + 1) >= 0)
+                || RESOURCE_LOCATION.matcher(token).matches()
+                || token.contains("<") || token.contains("*") || token.contains("{") || token.contains(" ") || token.contains("...")
                 || token.contains("$") || token.contains("://") || token.contains("\\")
                 // code, not a path: a call or a string literal (and on Windows a quote cannot even be resolved)
                 || token.contains("(") || token.contains("\"") || token.contains("'") || token.contains("|")
@@ -824,7 +837,12 @@ public final class RepositoryCheck {
         }
         String first = token.substring(0, slash);
         for (Path base : bases) {
-            if (Files.isDirectory(base.resolve(first))) {
+            try {
+                if (Files.isDirectory(base.resolve(first))) {
+                    return true;
+                }
+            } catch (InvalidPathException invalid) {
+                // It is path-shaped, but malformed for this filesystem: let paths() report it instead of aborting the check.
                 return true;
             }
         }

@@ -17,6 +17,13 @@
       "provenance": "written for Somnium"
     },
     {
+      "id": "world.replay@1",
+      "path": "world-replay",
+      "package": "mycelium.world_replay.v1",
+      "status": "reference",
+      "provenance": "written for WorldPrompt"
+    },
+    {
       "id": "dimension.travel@1",
       "path": "dimension-travel",
       "package": "mycelium.dimension_travel.v1",
@@ -124,6 +131,22 @@
       "package": "mycelium.chat_coverage.v1",
       "status": "retired",
       "provenance": "written for Recon"
+    },
+    {
+      "id": "command.authorization@1",
+      "path": "command-authorization",
+      "package": "mycelium.command_authorization.v1",
+      "status": "reference",
+      "bridges": ["command-authorization"],
+      "provenance": "written for WorldPrompt"
+    },
+    {
+      "id": "block.catalog@1",
+      "path": "block-catalog",
+      "package": "mycelium.block_catalog.v1",
+      "status": "reference",
+      "bridges": ["block-catalog"],
+      "provenance": "written for WorldPrompt"
     },
     {
       "id": "item.component@1",

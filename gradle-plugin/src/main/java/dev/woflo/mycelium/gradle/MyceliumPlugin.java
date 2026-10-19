@@ -48,6 +48,9 @@ public final class MyceliumPlugin implements Plugin<Project> {
         MyceliumExtension defaults = project == rootProject ? null
                 : rootProject.getExtensions().findByType(MyceliumDefaultsPlugin.Defaults.class);
         conventions(project, ext, defaults);
+        // The pure compiler follows the pure layer's release, which may be newer than the JVM running Gradle.
+        project.getPluginManager().apply(JvmToolchainsPlugin.class);
+        JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);
         Provider<List<String>> checks = project.provider(() -> ext.getChecks().merged(defaults == null ? null : defaults.getChecks()));
         // A mod is a project with the Java plugin. A flag set when the plugin arrives, not a lookup of the project later:
         // nothing a task holds may reach the Project (the configuration cache).
@@ -302,13 +305,17 @@ public final class MyceliumPlugin implements Plugin<Project> {
         });
         TaskProvider<PureCompileTask> pureCompile = project.getTasks().register("myceliumPureCompile", PureCompileTask.class, t -> {
             t.setGroup("mycelium");
-            t.setDescription("Compiles the pure layer, its suites and the Mycelium harness on their own, as written.");
+            t.setDescription("Compiles the pure layer, its suites and the Mycelium harness on their own with its Java release toolchain.");
             t.getRoot().set(ext.getRoot());
             t.getHarnessFingerprint().set(fingerprint);
             t.getSources().from(ext.getPure().getSources());
             t.getSources().from(importTask.flatMap(ImportContractsTask::getOutputDir));
             t.getTests().from(ext.getPure().getTests());
             t.getRelease().set(ext.getPure().getRelease());
+            int daemonJava = Runtime.version().feature();
+            Provider<JavaLanguageVersion> compilerVersion = ext.getPure().getRelease()
+                    .map(release -> JavaLanguageVersion.of(pureCompilerVersion(release, daemonJava)));
+            t.getJavaCompiler().set(toolchains.compilerFor(spec -> spec.getLanguageVersion().set(compilerVersion)));
             t.getSuiteMain().set(ext.getPure().getSuiteMain());
             t.getStrict().set(ext.getPure().getStrict());
             t.getBundleName().set(ext.getArtifactId().map(a -> a + " pure layer"));
@@ -344,7 +351,6 @@ public final class MyceliumPlugin implements Plugin<Project> {
         });
 
         // The era gates: JvmDowngrader (resolved only when a gate runs older bytecode) and a toolchain per era.
-        project.getPluginManager().apply(JvmToolchainsPlugin.class);
         Configuration privateLibraries = project.getConfigurations().create("myceliumPrivateLibraries", c -> {
             c.setCanBeConsumed(false);
             c.setTransitive(true);
@@ -355,7 +361,6 @@ public final class MyceliumPlugin implements Plugin<Project> {
             c.defaultDependencies(d -> d.add(project.getDependencies().create(
                     "xyz.wagyourtail.jvmdowngrader:jvmdowngrader:" + ext.getDowngraderVersion().get() + ":all")));
         });
-        JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);
         TaskProvider<Task> erasTask = project.getTasks().register("myceliumEras", t -> {
             t.setGroup("mycelium");
             t.setDescription("Runs every era gate: the contracts and the pure layer on each era's Java (docs/eras.md).");
@@ -436,6 +441,14 @@ public final class MyceliumPlugin implements Plugin<Project> {
                 t.getImportedDir().set(importedRoot);
                 t.getReportDir().set(usageDir);
                 t.dependsOn(importTask);
+            });
+            project.getTasks().register("myceliumBehavior", BehaviorTask.class, t -> {
+                t.setGroup("mycelium");
+                t.setDescription("Runs the experimental linter for callback initialization dependencies in the selected target's compiled code.");
+                t.getClasses().from(sourceSets.getByName("main").getOutput().getClassesDirs());
+                t.getChecks().set(checks);
+                t.getTargetJava().set(ext.getMinecraft().map(ext::javaFor).orElse(Runtime.version().feature()));
+                t.getReportDir().set(project.getLayout().getBuildDirectory().dir("mycelium/behavior"));
             });
             TaskProvider<IsolationTask> isolationTask = project.getTasks().register("myceliumIsolation", IsolationTask.class, t -> {
                 t.setGroup("mycelium");
@@ -694,6 +707,11 @@ public final class MyceliumPlugin implements Plugin<Project> {
         }
         String[] parts = path.substring(bridgesPrefix.length()).split("/");
         return parts.length >= 3 && parts[1].equals("conformance");
+    }
+
+    /** Reuse the Gradle JVM when it can compile the requested release; otherwise request a capable toolchain. */
+    static int pureCompilerVersion(int release, int daemonJava) {
+        return Math.max(Math.max(VerifyContractsTask.RELEASE, release), daemonJava);
     }
 
     /** Whether a source directory is one Mycelium wrote (an import, a bridge, conformance cases): under the imported root. */

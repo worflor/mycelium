@@ -290,6 +290,14 @@
     {"from": "1.14", "to": "1.21.11", "realization": "emulated-clock", "what": "the game has one clock, dayTime: the overworld clock is that, and a mod's own clocks are held in saved data, advanced on the server tick and synced by the mod's payload"},
     {"from": "c0.0.11a", "to": "1.13.2", "realization": "none", "what": "the bridge is written in Mojang's names, which the game's own mappings give from 1.14.4 (a variant in the older names could cover these)"}
   ],
+  "block.catalog": [
+    {"from": "26.3", "to": "26.3", "realization": "native-registry", "what": "the initialized BuiltInRegistries block registry exposes all namespaces, Property domains and native defaults"},
+    {"from": "c0.0.11a", "to": "26.2", "realization": "none", "what": "no block-catalog bridge realization has been written for these versions"}
+  ],
+  "command.authorization": [
+    {"from": "26.3", "to": "26.3", "realization": "permission-api", "what": "Minecraft 26.3 command sources are adapted through Fabric Permissions API or NeoForge's player permission nodes"},
+    {"from": "c0.0.11a", "to": "26.2", "realization": "none", "what": "no command-authorization bridge realization has been written for these versions"}
+  ],
   "block.presentation": [
     {"from": "1.14", "to": "26.x", "realization": "dynamic-model", "what": "the baked model of a block can be replaced by one that composes models, fed per block from its block entity (Fabric's renderer API from 1.14, Forge's and NeoForge's model data after it)"},
     {"from": "c0.0.11a", "to": "1.13.2", "realization": "none", "what": "no channel from a block entity's data to its baked model: a block is drawn from its block state alone"}

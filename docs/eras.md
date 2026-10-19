@@ -142,7 +142,11 @@ Its laws are checked on every build. Each was proven by a planted violation that
 | **Behaviour** | Every suite passes on each era's JVM: contract references stay clean, every rejection is caught, the kernels' suites pass. | each era gate |
 
 The pure layer is also compiled **on its own** (`myceliumPureCompile`: harness and kernels, nothing else on the
-path). If it compiles there, it is pure in fact, not only by the source scan.
+path). Its Java compiler is at least as new as Java 17, the declared `pure.release`, and the JVM running Gradle. It reuses
+the Gradle JVM when capable and requests a newer toolchain only when the pure release requires one; a consumer can therefore
+build Java 25 pure sources while Gradle itself runs on Java 21, and use a Java 25 Gradle JVM for the default Java 17 pure
+release without provisioning Java 17. If it compiles there,
+it is pure in fact, not only by the source scan.
 
 ### Why static linkage, not only tests
 

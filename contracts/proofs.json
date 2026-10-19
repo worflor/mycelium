@@ -4,10 +4,12 @@
   "eras": [8, 16, 17, 21, 25],
   "contracts": {
     "agent.link@1": "b66b5f8770fe90e9ad6c53f6a95c844f47e5bb4ff9cdc2428babf2b360ce0382",
+    "block.catalog@1": "cf27a9f70b0924959437558aa6e6597eae0b269708e32bec18a6a67fa448966b",
     "block.presentation@1": "11de0520772b25cbba8e2616d879931130e7dbcf2be691e2db52646ef7ac2904",
     "chat.coverage@1": "47406a76f658c28bfd53e238f539f6bccfcf45ee4f63e139f304b914b602f99f",
     "chat.invocation@1": "408b92e09ca5a897800e6995078d731689c3edd68eae9e901882bf05ffddd899",
     "chunk.hold@1": "27b9a8cb4eaa1cbf3b22f68065f481bc3add3d56b39d22703ae91ee2073571f1",
+    "command.authorization@1": "f2234ca2032a62044f75301e0612c36b44346e3eb2ce17d0c14faa416a418942",
     "data.catalog@1": "35236cfdf12a0a0a88f63be51c4c5b2c18d24afaf51f3cb3dbcb76d860d2a580",
     "data.generation@1": "bf7bb978beaa315f253da785a3edab47f5477a0e41b94086787242790f962050",
     "dimension.travel@1": "6406cd688bb056b97b34a492b76636d5e3e55e7bcb3914c9e86e6e97987a8397",
@@ -23,6 +25,7 @@
     "state.lifecycle@1": "5f65ba1dd9b51a1a25d876ad358a4cf5fdd9ad93bc0de66613babdba8c31e172",
     "storage.access@1": "1b632d4048f2b1388831c94dd85311b45b81c19b7111125a29b5eb9144d90a3f",
     "world.clock@1": "7f9b6bc2a93ccd49d31fd36e44226a2e6f7fe09eb428a1281f0ef5a1d653f50d",
-    "world.copy@1": "ea2edf1533d342b4b8eccea87ccf8b5a3ee1b1e952761f87d5826a8bd36c36b7"
+    "world.copy@1": "ea2edf1533d342b4b8eccea87ccf8b5a3ee1b1e952761f87d5826a8bd36c36b7",
+    "world.replay@1": "0839ebe6089cff3e1ec91dabaceef572b5a414acbeb256efe63f121e1abe3e1e"
   }
 }

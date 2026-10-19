@@ -11,6 +11,10 @@ it fits and helps, or author the declaration your feature needs. Adding a contra
 The [architecture](architecture.md) explains the layers; [decision 0015](decisions/0015-a-compiler-you-build-with.md)
 explains why Mycelium grows alongside its first consumer.
 
+For agent-assisted fresh builds or adoption in an existing mod, see the [Building with Mycelium skill](../.agents/skills/building-with-mycelium/SKILL.md).
+
+Consumer checkout setup, source locking, and compiler updates are described in the [source lifecycle guide](source-lifecycle.md).
+
 ## Recognise a divide
 
 You are looking at one when the mod has, or is about to have:

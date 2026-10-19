@@ -14,6 +14,7 @@ dependencies {
     // era gates: reads a bundle's outside references for the linkage law (docs/eras.md)
     implementation("org.ow2.asm:asm:9.10.1")
     implementation("org.ow2.asm:asm-commons:9.10.1")
+    implementation("org.ow2.asm:asm-analysis:9.10.1")
     // the self-tests load task classes, so they run with the Gradle API on their path (no test framework: see SelfTest)
     testImplementation(gradleApi())
 }
@@ -64,6 +65,15 @@ val selfTest = tasks.register<JavaExec>("selfTest") {
         .map { "--add-opens=java.base/$it=ALL-UNNAMED" } + "--add-opens=java.prefs/java.util.prefs=ALL-UNNAMED")
     args(layout.projectDirectory.dir("..").asFile.absolutePath)
 }
-tasks.named("check") { dependsOn(selfTest) }
+tasks.named("check") { dependsOn(selfTest, ":source-wrapper:check") }
+tasks.register<JavaExec>("behaviorSelfTest") {
+    group = "verification"
+    description = "Runs executable callback-analysis counterexamples and safe controls."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "dev.woflo.mycelium.gradle.BehaviorSelfTest"
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(providers.gradleProperty("mycelium.testJava").getOrElse("17").toInt())
+    }
+}
 // No test framework, so Gradle's JUnit task has nothing to discover; selfTest runs the test sources instead.
 tasks.named<Test>("test") { enabled = false }

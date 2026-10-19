@@ -191,16 +191,29 @@ final class LinkageSelfTest {
     private static byte[] mod() {
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         cw.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "fixture/Mod", null, BASE, null);
+        cw.visitSource("Mod.java", null);
         MethodVisitor use = cw.visitMethod(Opcodes.ACC_PUBLIC, "use", "(L" + WORLD + ";)V", null, null);
         use.visitCode();
         use.visitVarInsn(Opcodes.ALOAD, 1);
         use.visitInsn(Opcodes.ICONST_1);
+        org.objectweb.asm.Label callLine = new org.objectweb.asm.Label();
+        use.visitLabel(callLine);
+        use.visitLineNumber(41, callLine);
         use.visitMethodInsn(Opcodes.INVOKEVIRTUAL, WORLD, "func_1_a", "(I)V", false);
+        org.objectweb.asm.Label fieldLine = new org.objectweb.asm.Label();
+        use.visitLabel(fieldLine);
+        use.visitLineNumber(44, fieldLine);
         use.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/block/Blocks", "field_9_z", "Lnet/minecraft/block/Block;");
         use.visitInsn(Opcodes.POP);
+        org.objectweb.asm.Label classLine = new org.objectweb.asm.Label();
+        use.visitLabel(classLine);
+        use.visitLineNumber(47, classLine);
         use.visitLdcInsn(Type.getObjectType("net/minecraft/entity/Gone"));
         use.visitInsn(Opcodes.POP);
         use.visitVarInsn(Opcodes.ALOAD, 0);
+        org.objectweb.asm.Label inheritedLine = new org.objectweb.asm.Label();
+        use.visitLabel(inheritedLine);
+        use.visitLineNumber(50, inheritedLine);
         use.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "fixture/Mod", "func_71_b", "()V", false);
         use.visitVarInsn(Opcodes.ALOAD, 0);
         use.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "fixture/Mod", "own", "()V", false);
@@ -209,6 +222,16 @@ final class LinkageSelfTest {
         use.visitInsn(Opcodes.RETURN);
         use.visitMaxs(0, 0);
         use.visitEnd();
+        MethodVisitor other = cw.visitMethod(Opcodes.ACC_PUBLIC, "other", "()V", null, null);
+        other.visitCode();
+        org.objectweb.asm.Label otherLine = new org.objectweb.asm.Label();
+        other.visitLabel(otherLine);
+        other.visitLineNumber(73, otherLine);
+        other.visitTypeInsn(Opcodes.NEW, "sample/Other");
+        other.visitInsn(Opcodes.POP);
+        other.visitInsn(Opcodes.RETURN);
+        other.visitMaxs(0, 0);
+        other.visitEnd();
         MethodVisitor own = cw.visitMethod(Opcodes.ACC_PUBLIC, "own", "()V", null, null);
         own.visitCode();
         own.visitInsn(Opcodes.RETURN);
@@ -249,6 +272,43 @@ final class LinkageSelfTest {
                 "linkage:what the artifact defines itself is never a reference outside it (not a class, not a member it declares)");
         SelfTest.that(found.refs().keySet().stream().filter(r -> r.kind() == 'M' && r.name().equals("toString")).count() == 1,
                 "linkage:a method the artifact's class does not declare is traced up to the first class outside it");
+        References.Ref call = found.refs().keySet().stream().filter(r -> r.kind() == 'M' && r.owner().equals(WORLD)
+                && r.name().equals("func_1_a")).findFirst().orElseThrow();
+        SelfTest.that(found.refs().get(call).equals("Mod.java:41 (fixture/Mod#use)"),
+                "linkage:an instruction reference carries its source basename, line and caller method");
+        References.Ref field = found.refs().keySet().stream().filter(r -> r.kind() == 'F' && r.owner().equals("net/minecraft/block/Blocks"))
+                .findFirst().orElseThrow();
+        SelfTest.that(found.refs().get(field).equals("Mod.java:44 (fixture/Mod#use)"),
+                "linkage:each instruction reference uses the active line number");
+        References.Ref secondMethod = found.refs().keySet().stream().filter(r -> r.kind() == 'C' && r.owner().equals("sample/Other"))
+                .findFirst().orElseThrow();
+        SelfTest.that(found.refs().get(secondMethod).equals("Mod.java:73 (fixture/Mod#other)"),
+                "linkage:line attribution resets per method and uses that method's caller location");
+        References.Ref declarationClass = found.refs().keySet().stream().filter(r -> r.kind() == 'C' && r.owner().equals(WORLD))
+                .findFirst().orElseThrow();
+        SelfTest.that(found.refs().get(declarationClass).equals("fixture/Mod#use"),
+                "linkage:a method signature reference keeps its declaration location instead of borrowing a later line");
+        Map<String, byte[]> noDebug = Map.of("fixture/Plain", plainCaller());
+        References.Found fallback = References.scan(noDebug, java.util.Set.of());
+        References.Ref plainCall = fallback.refs().keySet().stream().filter(r -> r.kind() == 'M' && r.name().equals("func_1_a"))
+                .findFirst().orElseThrow();
+        SelfTest.that(fallback.refs().get(plainCall).equals("fixture/Plain#call"),
+                "linkage:a class without source or line debug data keeps the existing method-level location");
+    }
+
+    private static byte[] plainCaller() {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        cw.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "fixture/Plain", null, "java/lang/Object", null);
+        MethodVisitor call = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "call", "(L" + WORLD + ";)V", null, null);
+        call.visitCode();
+        call.visitVarInsn(Opcodes.ALOAD, 0);
+        call.visitInsn(Opcodes.ICONST_1);
+        call.visitMethodInsn(Opcodes.INVOKEVIRTUAL, WORLD, "func_1_a", "(I)V", false);
+        call.visitInsn(Opcodes.RETURN);
+        call.visitMaxs(0, 0);
+        call.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
     }
 
     // --- the names -------------------------------------------------------------------------------------------------------
@@ -550,8 +610,11 @@ final class LinkageSelfTest {
             LinkageGate.Result bad = LinkageGate.evaluate(range, claim, null, eras, brokenAt18, found, loader, Map.of(), false);
             SelfTest.that(bad.findings().size() == 1 && bad.findings().get(0).startsWith("1.8:")
                             && bad.findings().get(0).contains("class net/minecraft/entity/Gone")
-                            && bad.findings().get(0).contains("fixture/Mod#use"),
+                            && bad.findings().get(0).contains("Mod.java:47 (fixture/Mod#use)"),
                     "linkage:a class absent on one release of the range fails there, naming the class, the version and where it is used: " + bad.findings());
+            SelfTest.that(statusOf(bad, "1.8").getAsJsonObject("linkage").getAsJsonArray("unresolved").get(0).getAsString()
+                            .contains("Mod.java:47 (fixture/Mod#use)"),
+                    "linkage:the broken-version report carries the same source line as the finding");
             SelfTest.that(statusOf(bad, "1.8").getAsJsonObject("linkage").get("status").getAsString().equals("broken")
                             && statusOf(bad, "1.8.8").getAsJsonObject("linkage").get("status").getAsString().equals("linked"),
                     "linkage:only that release is broken");
