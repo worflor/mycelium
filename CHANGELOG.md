@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-19 - Retain paired corpus worker evidence
+
+Corpus aggregates now retain the control and mutant summaries alongside the baseline, including each full report's
+SHA-256. A generated Java 8 corpus runs through the actual worker launcher, mutation and aggregate pipeline and checks
+all three recorded hashes against the report files. This changes the maintainer lab's evidence, not analyzer behavior.
+
 ## 2026-10-19 - Canonicalize requirement witnesses
 
 Requirement joins now choose a stable minimum read site for each field. Combining the same dispatch targets in a
@@ -7,6 +13,11 @@ different order previously chose a different witness, even when the underlying r
 permutation control reproduces that difference before the fix. Requirement propagation now uses the same join at direct
 reads, calls and callback exposure, keeping diagnostic provenance independent of traversal order.
 The focused suites passed 724 assertions on Java 25 and 507 on Java 17.
+The aggregate public `check` passed in 14m 5s with 1,717 plugin assertions, 55 source-wrapper assertions, 19 consumer-hook
+assertions and the 24-contract era matrix on Java 8, 16, 17, 21 and 25. Independent consumers built Java 8, 17 and 25
+artifacts on Java 17 and 25 hosts. All 47 fresh-state runtime witnesses passed on Java 8, 17 and 25.
+The frozen analyzer completed all seven pinned Modrinth experiments: controls had zero injected candidates, mutants
+had one, and every original jar remained unchanged. The receipt records the analyzer, runtime and library fingerprints.
 
 ## 2026-10-19 - Interpret exceptional outcomes and binding dependencies
 

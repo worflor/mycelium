@@ -151,6 +151,8 @@ public final class BehaviorLab {
                         result.add("slot", new GsonBuilder().create().toJsonTree(mutation.slot));
                         JsonObject control = worker(launcher, mutation.control, target, directory.resolve("control.json"));
                         JsonObject broken = worker(launcher, mutation.mutant, target, directory.resolve("mutant.json"));
+                        result.add("control", control);
+                        result.add("mutant", broken);
                         int controlCandidates = candidates(control, mutation.slot), brokenCandidates = candidates(broken, mutation.slot);
                         boolean detected = controlCandidates == 0 && brokenCandidates > 0
                                 && control.has("complete") && control.get("complete").getAsBoolean()

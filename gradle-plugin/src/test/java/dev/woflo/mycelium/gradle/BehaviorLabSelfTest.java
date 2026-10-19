@@ -65,6 +65,25 @@ public final class BehaviorLabSelfTest {
             int mutantCandidates = BehaviorLab.candidates(mutantAnalysis, first.slot());
             check(controlCandidates == 0 && mutantCandidates == 1,
                     "analyzer reports C1=0 on control and C1=1 on mutant (got " + controlCandidates + " and " + mutantCandidates + ")");
+            JsonObject plan = new JsonObject(), artifact = new JsonObject();
+            plan.addProperty("schema", 1);
+            artifact.addProperty("path", original.toString());
+            artifact.addProperty("filename", original.getFileName().toString());
+            artifact.addProperty("sha512", originalHash);
+            artifact.addProperty("size", Files.size(original));
+            artifact.addProperty("target_java", 8);
+            var artifacts = new com.google.gson.JsonArray(); artifacts.add(artifact); plan.add("artifacts", artifacts);
+            Path planFile = root.resolve("plan.json"), scanned = root.resolve("scanned");
+            BehaviorLab.write(planFile, plan);
+            BehaviorLab.scan(planFile, scanned);
+            var receipt = com.google.gson.JsonParser.parseString(Files.readString(scanned.resolve("report.json"))).getAsJsonObject();
+            check(receipt.get("complete").getAsBoolean() && receipt.get("failures").getAsInt() == 0,
+                    "generated corpus completes its full worker and mutation pipeline");
+            var recorded = receipt.getAsJsonArray("artifacts").get(0).getAsJsonObject();
+            for (String outcome : java.util.List.of("baseline", "control", "mutant"))
+                check(recorded.getAsJsonObject(outcome).get("fullReportSha256").getAsString()
+                                .equals(BehaviorLab.digest(scanned.resolve("000/" + outcome + ".json"), "SHA-256")),
+                        "aggregate receipt binds the " + outcome + " worker report");
 
             // Boundary is parent-loaded from its own directory, which is never put in either tested jar.
             try (var trusted = new URLClassLoader(new URL[]{boundaryClasses.toUri().toURL()}, BehaviorLabSelfTest.class.getClassLoader())) {
