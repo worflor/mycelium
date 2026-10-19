@@ -96,14 +96,26 @@ public final class BehaviorLab {
         if (input.get("schema").getAsInt() != 1 || input.getAsJsonArray("artifacts").isEmpty())
             throw new IllegalArgumentException("Expected a nonempty schema-1 corpus plan");
         Files.createDirectories(output);
+        Files.deleteIfExists(output.resolve("report.json"));
         Path launcher = launcher(output.resolve("worker-launcher.jar"));
         JsonObject report = new JsonObject();
         report.addProperty("schema", 1);
         report.addProperty("plannedArtifacts", input.getAsJsonArray("artifacts").size());
         report.addProperty("scope", SCOPE);
         report.addProperty("planSha256", digest(plan, "SHA-256"));
-        report.addProperty("analyzerSha256", digest(Path.of(CallbackInitialization.class.getProtectionDomain().getCodeSource().getLocation().toURI())
-                .resolve("dev/woflo/mycelium/gradle/CallbackInitialization.class"), "SHA-256"));
+        report.addProperty("analyzerSha256", analyzerFingerprint(Path.of(CallbackInitialization.class.getProtectionDomain().getCodeSource().getLocation().toURI())));
+        JsonObject environment = new JsonObject();
+        environment.addProperty("javaRuntime", System.getProperty("java.runtime.version"));
+        environment.addProperty("vendor", System.getProperty("java.vendor"));
+        Path image = Path.of(System.getProperty("java.home"), "lib", "modules");
+        if (Files.isRegularFile(image)) environment.addProperty("platformRuntimeSha256", digest(image, "SHA-256"));
+        JsonObject libraries = new JsonObject();
+        for (Class<?> library : List.of(ClassReader.class, ClassNode.class, Analyzer.class)) {
+            Path location = Path.of(library.getProtectionDomain().getCodeSource().getLocation().toURI());
+            libraries.addProperty(library.getName(), Fingerprint.ofDirectory(location));
+        }
+        environment.add("libraries", libraries);
+        report.add("analysisEnvironment", environment);
         JsonArray artifacts = new JsonArray();
         int failures = 0, index = 0;
         report.add("artifacts", artifacts);
@@ -184,6 +196,18 @@ public final class BehaviorLab {
         return count;
     }
 
+    static String analyzerFingerprint(Path code) throws Exception {
+        if (Files.isRegularFile(code)) return digest(code, "SHA-256");
+        try (var files = Files.list(code.resolve("dev/woflo/mycelium/gradle"))) {
+            var implementation = files.filter(file -> {
+                String name = file.getFileName().toString();
+                return name.equals("CallbackInitialization.class") || (name.startsWith("CallbackInitialization$") && name.endsWith(".class"));
+            }).sorted().toList();
+            if (implementation.isEmpty()) throw new IllegalArgumentException("No analyzer classes at " + code);
+            return Fingerprint.ofDirectories(implementation);
+        }
+    }
+
     static Path launcher(Path file) throws Exception {
         Manifest manifest = new Manifest();
         var attributes = manifest.getMainAttributes();
@@ -259,6 +283,7 @@ public final class BehaviorLab {
         }
         summary.add("findings", witnesses);
         summary.addProperty("fullReport", file.getFileName().toString());
+        summary.addProperty("fullReportSha256", digest(file, "SHA-256"));
         return summary;
     }
 

@@ -61,15 +61,52 @@ final class CallbackInitialization {
             return owner + "." + name;
         }
     }
-    record Escape(String registration, Method callback, Field dependency, String read, boolean cleared) {
+    record Escape(String registration, Method callback, Field dependency, String read, boolean cleared, Set<Parameter> conditional) {
+        Escape(String registration, Method callback, Field dependency, String read, boolean cleared) {
+            this(registration, callback, dependency, read, cleared, Set.of());
+        }
+        Escape { conditional = Set.copyOf(conditional); }
     }
     record ParameterEscape(int local, String registration, Set<Field> bound, Set<Field> clears,
-                           Signature invocation) {}
+                           Signature invocation, Map<Field, Set<Parameter>> conditional) {
+        ParameterEscape(int local, String registration, Set<Field> bound, Set<Field> clears, Signature invocation) {
+            this(local, registration, bound, clears, invocation, Map.of());
+        }
+        ParameterEscape { conditional = freezeSets(conditional); }
+    }
+    record Thrown(String type, boolean exact) {}
+    enum Relation { YES, NO, UNKNOWN }
+    enum Coverage { DISJOINT, POSSIBLE, COVERS }
+    /** Known null paths and formal dependencies; absence is not a non-null proof. */
+    record ReferenceDependencies(boolean nullable, Set<Parameter> parameters) {
+        static final ReferenceDependencies NONE = new ReferenceDependencies(false, Set.of());
+        ReferenceDependencies { parameters = Set.copyOf(parameters); }
+        ReferenceDependencies join(ReferenceDependencies other) {
+            if ((nullable || !other.nullable) && parameters.containsAll(other.parameters)) return this;
+            if ((other.nullable || !nullable) && other.parameters.containsAll(parameters)) return other;
+            Set<Parameter> joined = new HashSet<>(parameters); joined.addAll(other.parameters);
+            return new ReferenceDependencies(nullable || other.nullable, joined);
+        }
+    }
+    record ExitEffects(Set<Field> bound, Set<Field> clears, BitSet initialized, Map<Field, Set<Parameter>> conditional) {
+        ExitEffects(Set<Field> bound, Set<Field> clears, BitSet initialized) { this(bound, clears, initialized, Map.of()); }
+        ExitEffects {
+            bound = Set.copyOf(bound);
+            clears = Set.copyOf(clears);
+            initialized = (BitSet) initialized.clone();
+            conditional = freezeSets(conditional);
+        }
+    }
+    record ConditionalRead(Field dependency, String read, Set<Parameter> parameters) {
+        ConditionalRead { parameters = Set.copyOf(parameters); }
+    }
     record Summary(Map<Field, String> needs, Set<Field> ensures, Set<Field> clears, Set<Escape> escapes,
-                   Set<ParameterEscape> parameterEscapes, BitSet initializedClasses, Set<Field> invalidatedNeeds, boolean returnsNormally) {
-        Summary { initializedClasses = (BitSet) initializedClasses.clone(); }
+                   Set<ParameterEscape> parameterEscapes, BitSet initializedClasses, Set<Field> invalidatedNeeds,
+                   boolean returnsNormally, Map<Thrown, ExitEffects> exceptionalExits,
+                   Map<Field, Set<Parameter>> conditional, ReferenceDependencies returnedReference, Set<ConditionalRead> conditionalReads) {
+        Summary { conditionalReads = Set.copyOf(conditionalReads); initializedClasses = (BitSet) initializedClasses.clone(); exceptionalExits = Map.copyOf(exceptionalExits); conditional = freezeSets(conditional); }
         static Summary empty() {
-            return new Summary(Map.of(), Set.of(), Set.of(), Set.of(), Set.of(), new BitSet(), Set.of(), false);
+            return new Summary(Map.of(), Set.of(), Set.of(), Set.of(), Set.of(), new BitSet(), Set.of(), false, Map.of(), Map.of(), ReferenceDependencies.NONE, Set.of());
         }
     }
     record Finding(Method root, String registration, Method callback, Field dependency, String read) {
@@ -88,13 +125,28 @@ final class CallbackInitialization {
     record Value(Set<AbstractInsnNode> origins) {
         static Value of(SourceValue value) { return new Value(Set.copyOf(value.insns)); }
     }
-    record State(Set<Field> bound, Set<Value> nonnull, BitSet initialized, Set<Field> cleared) {
+    record State(Set<Field> bound, Set<Value> nonnull, BitSet initialized, Set<Field> cleared,
+                 Map<AbstractInsnNode, Set<Thrown>> caught, Map<Field, Set<Parameter>> conditional,
+                 Map<AbstractInsnNode, ReferenceDependencies> references) {
+        State(Set<Field> bound, Set<Value> nonnull, BitSet initialized, Set<Field> cleared) {
+            this(bound, nonnull, initialized, cleared, Map.of(), Map.of(), Map.of());
+        }
         State {
             bound = Set.copyOf(bound);
             nonnull = Set.copyOf(nonnull);
             initialized = (BitSet) initialized.clone();
             cleared = Set.copyOf(cleared);
+            caught = freezeSets(caught);
+            conditional = freezeSets(conditional);
+            references = Map.copyOf(references);
         }
+    }
+    record FlowPoint(int instruction, Map<AbstractInsnNode, Set<Thrown>> caught) {}
+    static <K, V> Map<K, Set<V>> freezeSets(Map<K, Set<V>> values) {
+        if (values.isEmpty()) return Map.of();
+        Map<K, Set<V>> snapshot = new HashMap<>();
+        values.forEach((key, set) -> snapshot.put(key, Set.copyOf(set)));
+        return Map.copyOf(snapshot);
     }
     final Map<String, ClassNode> classes = new TreeMap<>();
     final Map<String, Integer> classIds = new HashMap<>();
@@ -112,6 +164,10 @@ final class CallbackInitialization {
     final List<Finding> findings = new ArrayList<>();
     final Set<Method> entryRoots = new LinkedHashSet<>();
     final Map<AbstractInsnNode, Parameter> parameters = new IdentityHashMap<>();
+    final Map<TryCatchBlockNode, AbstractInsnNode> exceptionMarkers = new IdentityHashMap<>();
+    final Map<AbstractInsnNode, String> exceptionTypes = new IdentityHashMap<>();
+    final Map<String, String> exceptionParents = new HashMap<>();
+    final Set<String> missingExceptionTypes = new HashSet<>();
     final Map<AbstractInsnNode, Frame<SourceValue>> instructionFrames = new IdentityHashMap<>();
     final Map<Field, Set<Method>> fieldCallbacks = new HashMap<>();
     final Set<Field> writtenFields = new HashSet<>();
@@ -123,7 +179,6 @@ final class CallbackInitialization {
     final Map<String, Set<Method>> constructedCallbackCache = new HashMap<>();
     final Map<String, Set<String>> concreteSubtypes = new HashMap<>();
     final Map<MethodInsnNode, Set<Method>> callTargetCache = new IdentityHashMap<>();
-    final Map<Method, Map<Field, Integer>> parameterWriteCache = new HashMap<>();
     final Map<Method, int[]> sourceLines = new HashMap<>();
     final Map<Method, Set<Signature>> functionalSignatures = new HashMap<>();
     final Map<Parameter, Set<Method>> contextValues = new HashMap<>();
@@ -195,6 +250,11 @@ final class CallbackInitialization {
                             AbstractInsnNode marker = new InsnNode(Opcodes.NOP);
                             parameters.put(marker, new Parameter(k, local));
                             return new SourceValue(type.getSize(), marker);
+                        }
+                        @Override public SourceValue newExceptionValue(TryCatchBlockNode block, Frame<SourceValue> frame, Type type) {
+                            AbstractInsnNode marker = exceptionMarkers.computeIfAbsent(block, ignored -> new InsnNode(Opcodes.NOP));
+                            exceptionTypes.put(marker, type.getInternalName());
+                            return new SourceValue(1, marker);
                         }
                         // Keep the producing instruction through loads, stores and casts.
                         @Override public SourceValue copyOperation(AbstractInsnNode i, SourceValue v) {
@@ -458,7 +518,8 @@ final class CallbackInitialization {
         }
         BitSet initialized = initializationReachability.getOrDefault(key, behavior.initializedClasses);
         return new Summary(behavior.needs, behavior.ensures, behavior.clears, behavior.escapes,
-                behavior.parameterEscapes, initialized, behavior.invalidatedNeeds, behavior.returnsNormally);
+                behavior.parameterEscapes, initialized, behavior.invalidatedNeeds, behavior.returnsNormally, behavior.exceptionalExits,
+                behavior.conditional, behavior.returnedReference, behavior.conditionalReads);
     }
     Summary specialized(Method target, MethodInsnNode call, Frame<SourceValue> frame, boolean recordInitialization) {
         Summary base = summary(target);
@@ -494,21 +555,31 @@ final class CallbackInitialization {
         BitSet initializedClasses = new BitSet();
         Set<Field> invalidatedNeeds = new HashSet<>();
         boolean returnsNormally = false;
+        Map<Thrown, ExitEffects> exceptional = new HashMap<>();
+        Map<Field, Set<Parameter>> conditional = new HashMap<>();
+        ReferenceDependencies returnedReference = ReferenceDependencies.NONE;
+        Set<ConditionalRead> conditionalReads = new LinkedHashSet<>();
         for (Method target : targets) {
             Summary summary = specialized(target, call, frame, recordInitialization);
             summary.needs.forEach(needs::putIfAbsent);
+            conditionalReads.addAll(summary.conditionalReads);
             if (summary.returnsNormally) {
                 returnsNormally = true;
                 if (ensures == null) ensures = new HashSet<>(summary.ensures);
                 else ensures.retainAll(summary.ensures);
+                joinConditional(conditional, summary.conditional);
+                returnedReference = returnedReference.join(summary.returnedReference);
             }
             clears.addAll(summary.clears);
             escapes.addAll(summary.escapes);
             parameterEscapes.addAll(summary.parameterEscapes);
             initializedClasses.or(summary.initializedClasses);
             invalidatedNeeds.addAll(summary.invalidatedNeeds);
+            summary.exceptionalExits.forEach((type, effect) -> joinExit(exceptional, type, effect));
         }
-        return new Summary(Map.copyOf(needs), ensures == null ? Set.of() : Set.copyOf(ensures), Set.copyOf(clears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), initializedClasses, Set.copyOf(invalidatedNeeds), returnsNormally);
+        conditional.keySet().retainAll(ensures == null ? Set.of() : ensures);
+        return new Summary(Map.copyOf(needs), ensures == null ? Set.of() : Set.copyOf(ensures), Set.copyOf(clears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), initializedClasses, Set.copyOf(invalidatedNeeds), returnsNormally, exceptional,
+                Map.copyOf(conditional), returnedReference, conditionalReads);
     }
 
     SourceValue argument(MethodInsnNode call, Frame<SourceValue> frame, int local) {
@@ -558,30 +629,6 @@ final class CallbackInitialization {
         return false;
     }
 
-    Map<Field, Integer> parameterWrites(Method key) {
-        Map<Field, Integer> cached = parameterWriteCache.get(key);
-        if (cached != null) return cached;
-        Map<Field, Integer> writes = computeParameterWrites(key);
-        parameterWriteCache.put(key, writes);
-        return writes;
-    }
-
-    Map<Field, Integer> computeParameterWrites(Method key) {
-        MethodNode body = methods.get(key);
-        Frame<SourceValue>[] frames = sourceFrames.get(key);
-        if (body == null || frames == null || !body.tryCatchBlocks.isEmpty()) return Map.of();
-        Map<Field, Integer> writes = new LinkedHashMap<>();
-        for (int i = 0; i < body.instructions.size(); i++) {
-            AbstractInsnNode instruction = body.instructions.get(i);
-            if (instruction instanceof JumpInsnNode || instruction instanceof TableSwitchInsnNode || instruction instanceof LookupSwitchInsnNode) return Map.of();
-            if (frames[i] == null || !(instruction instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.PUTSTATIC) continue;
-            SourceValue value = top(frames[i]);
-            Parameter parameter = value.insns.size() == 1 ? parameters.get(value.insns.iterator().next()) : null;
-            if (parameter != null && parameter.method.equals(key)) writes.put(field(field), parameter.local);
-            else writes.remove(field(field));
-        }
-        return writes;
-    }
     SourceValue top(Frame<SourceValue> f) {
         return f.getStack(f.getStackSize()-1);
     }
@@ -593,10 +640,16 @@ final class CallbackInitialization {
         for (Field f:fs)if (!bound.contains(f))needs.putIfAbsent(f, where);
     }
     void requireReceiver(Map<Field, String> needs, Set<Field> bound, SourceValue receiver, Set<Value> nonnull,
-                         Set<Field> clears, Set<Field> invalidatedNeeds, String where) {
+                         Set<Field> clears, Set<Field> invalidatedNeeds, Map<Field, Set<Parameter>> conditional,
+                         Set<ConditionalRead> conditionalReads, String where) {
         if (nonnull.contains(Value.of(receiver))) return;
         Set<Field> fields = origins(receiver);
         require(needs, bound, fields, where);
+        for (Field field : fields) {
+            Set<Parameter> parameters = conditional.getOrDefault(field, Set.of());
+            if (bound.contains(field) && !parameters.isEmpty())
+                conditionalReads.add(new ConditionalRead(field, where, parameters));
+        }
         for (Field field : fields) if (!bound.contains(field) && clears.contains(field)) invalidatedNeeds.add(field);
     }
 
@@ -609,20 +662,25 @@ final class CallbackInitialization {
             if (instruction instanceof FieldInsnNode write && write.getOpcode() == Opcodes.PUTSTATIC && field(write).equals(field)) return false;
             if (instruction instanceof MethodInsnNode call) {
                 Summary effects = combined(callTargets(call, instructionFrames.get(call)), call, instructionFrames.get(call), false);
-                if (effects != null && (effects.clears.contains(field) || effects.ensures.contains(field))) return false;
+                if (effects != null && (effects.clears.contains(field) || effects.ensures.contains(field)
+                        || effects.exceptionalExits.values().stream().anyMatch(exit -> exit.clears.contains(field) || exit.bound.contains(field)))) return false;
             }
         }
         return true;
     }
     void callback(Map<Field, String> needs, Set<Field> bound, Set<Field> clears, Set<Escape> escapes, BitSet initializedClasses,
-                  Method root, String registration, Method target, boolean emit) {
+                  Map<Field, Set<Parameter>> conditional, Method root, String registration, Method target, boolean emit) {
         Summary s=summary(target);
         Set<Field> atInvocation = new HashSet<>(bound);
         if (emit) atInvocation.addAll(immutableBindings);
         if (emit && !initializedClasses.get(classId(target.owner))) atInvocation.addAll(entryBindings(target.owner));
         for (var e:s.needs.entrySet()) {
             if (emit && !initializedClasses.get(classId(e.getKey().owner))) atInvocation.addAll(entryBindings(e.getKey().owner));
-            if (atInvocation.contains(e.getKey()) && !s.invalidatedNeeds.contains(e.getKey())) continue;
+            if (atInvocation.contains(e.getKey()) && !s.invalidatedNeeds.contains(e.getKey())) {
+                Set<Parameter> dependencies = conditional.getOrDefault(e.getKey(), Set.of());
+                if (!dependencies.isEmpty()) escapes.add(new Escape(registration, target, e.getKey(), e.getValue(), false, dependencies));
+                continue;
+            }
             needs.putIfAbsent(e.getKey(), e.getValue());
             escapes.add(new Escape(registration, target, e.getKey(), e.getValue(), clears.contains(e.getKey()) || s.invalidatedNeeds.contains(e.getKey())));
             if (emit)findings.add(new Finding(root, registration, target, e.getKey(), e.getValue()));
@@ -637,7 +695,8 @@ final class CallbackInitialization {
             if (reference(argument.getDescriptor())) parameters.add(new ParameterEscape(local, null, Set.of(), Set.of(), null));
             local += argument.getSize();
         }
-        return new Summary(Map.of(), Set.of(), Set.of(), Set.of(), Set.copyOf(parameters), directEntryClasses(key.owner), Set.of(), true);
+        return new Summary(Map.of(), Set.of(), Set.of(), Set.of(), Set.copyOf(parameters), directEntryClasses(key.owner), Set.of(), true,
+                Map.of(new Thrown("java/lang/Throwable", false), new ExitEffects(Set.of(), Set.of(), directEntryClasses(key.owner))), Map.of(), ReferenceDependencies.NONE, Set.of());
     }
     Summary flow(Method k, boolean emit) {
         MethodNode m=methods.get(k);
@@ -646,8 +705,11 @@ final class CallbackInitialization {
         AbstractInsnNode[] ins=m.instructions.toArray();
         Map<AbstractInsnNode, Integer> ix=new IdentityHashMap<>();
         for (int i=0;i<ins.length;i++)ix.put(ins[i], i);
-        Map<Integer, State> states = new HashMap<>();
-        Deque<Integer> work=new ArrayDeque<>();
+        Map<FlowPoint, State> states = new HashMap<>();
+        Deque<FlowPoint> work=new ArrayDeque<>();
+        Set<AbstractInsnNode> rethrown = new HashSet<>();
+        for (int i = 0; i < ins.length; i++) if (ins[i].getOpcode() == Opcodes.ATHROW && ff[i] != null)
+            rethrown.addAll(top(ff[i]).insns);
         // A class initializer is not a global event. Only the entry class and its parents are initialized here.
         ClassNode owner = classes.get(k.owner);
         boolean initializer = k.name.equals("<clinit>");
@@ -655,26 +717,36 @@ final class CallbackInitialization {
         String entryOwner = initializer && owner != null ? owner.superName : k.owner;
         BitSet entryClasses = emit ? entryClasses(entryOwner) : directEntryClasses(entryOwner);
         entryClasses.set(classId(k.owner));
-        states.put(0, new State(entryBindings, Set.of(), entryClasses, Set.of()));
-        work.add(0);
+        FlowPoint entry = new FlowPoint(0, Map.of());
+        states.put(entry, new State(entryBindings, Set.of(), entryClasses, Set.of()));
+        work.add(entry);
         Map<Field, String> needs=new LinkedHashMap<>();
-        Set<Field> exits = null, touchedClears = new HashSet<>(), invalidatedNeeds = new HashSet<>();
+        Set<Field> exits = null, normalClears = new HashSet<>(), invalidatedNeeds = new HashSet<>();
+        Map<Field, Set<Parameter>> normalConditional = new HashMap<>();
+        ReferenceDependencies returnedReference = ReferenceDependencies.NONE;
+        Set<ConditionalRead> conditionalReads = new LinkedHashSet<>();
+        Map<Thrown, ExitEffects> exceptionalExits = new HashMap<>();
         Set<Escape> escapes=new LinkedHashSet<>();
         Set<ParameterEscape> parameterEscapes = new LinkedHashSet<>();
         BitSet touchedClasses = (BitSet) entryClasses.clone();
         while (!work.isEmpty()) {
             if ((++dataflowSteps & 1023) == 0) progressPoint();
-            int i=work.remove();
+            FlowPoint point = work.remove();
+            int i = point.instruction;
             if (ff[i]==null)continue;
-            State before = states.get(i);
+            State before = states.get(point);
             Set<Field> bound = new HashSet<>(before.bound), clears = new HashSet<>(before.cleared);
             Set<Value> nonnull = new HashSet<>(before.nonnull);
+            Map<Field, Set<Parameter>> conditional = new HashMap<>(before.conditional);
+            Map<AbstractInsnNode, ReferenceDependencies> references = new HashMap<>(before.references);
             BitSet initialized = before.initialized;
             AbstractInsnNode n=ins[i];
             nonnull.removeIf(value -> value.origins.contains(n));
             Frame<SourceValue> f=ff[i];
             int op=n.getOpcode();
             boolean continues = true;
+            Map<Thrown, State> thrown = new HashMap<>();
+            for (Thrown type : implicitExceptions(n)) thrown.put(type, before);
             String activeClass = activeClass(n);
             if (activeClass != null && !initialized.get(classId(activeClass))) {
                 if (emit) bound.addAll(entryBindings(activeClass));
@@ -682,21 +754,32 @@ final class CallbackInitialization {
                 touchedClasses.or(initialized);
             }
             if (n instanceof FieldInsnNode fi) {
+                if (op == Opcodes.GETSTATIC && reference(fi.desc)) {
+                    Field field = field(fi);
+                    boolean nil = !bound.contains(field) && (clears.contains(field)
+                            || nullable(new SourceValue(1, n), new HashSet<>()));
+                    references.put(n, new ReferenceDependencies(nil, conditional.getOrDefault(field, Set.of())));
+                }
                 if (op==Opcodes.PUTSTATIC && referenceFields.contains(field(fi))) {
                     SourceValue v=top(f);
-                    boolean nil = nullable(v, new HashSet<>());
+                    ReferenceDependencies value = referenceDependencies(v, before);
+                    boolean nil = value.nullable && !nonnull.contains(Value.of(v));
+                    conditional.remove(field(fi));
                     if (nil){
                         bound.remove(field(fi));
                         clears.add(field(fi));
-                    } else bound.add(field(fi));
+                    } else {
+                        bound.add(field(fi));
+                        if (!value.parameters.isEmpty() && !nonnull.contains(Value.of(v))) conditional.put(field(fi), value.parameters);
+                    }
                 }
-                if (op==Opcodes.GETFIELD)requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, site(k, i));
-                if (op==Opcodes.PUTFIELD)requireReceiver(needs, bound, f.getStack(f.getStackSize()-2), nonnull, clears, invalidatedNeeds, site(k, i));
+                if (op==Opcodes.GETFIELD)requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
+                if (op==Opcodes.PUTFIELD)requireReceiver(needs, bound, f.getStack(f.getStackSize()-2), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
             }
             if (n instanceof MethodInsnNode call) {
                 Type[] args=Type.getArgumentTypes(call.desc);
                 int first=f.getStackSize()-args.length;
-                if (op!=Opcodes.INVOKESTATIC)requireReceiver(needs, bound, f.getStack(first-1), nonnull, clears, invalidatedNeeds, site(k, i));
+                if (op!=Opcodes.INVOKESTATIC)requireReceiver(needs, bound, f.getStack(first-1), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
                 if (op == Opcodes.INVOKEINTERFACE || op == Opcodes.INVOKEVIRTUAL) {
                     // A call through a formal receiver executes the selected method synchronously.
                     // Keep its signature until a caller supplies the concrete callback value.
@@ -706,14 +789,17 @@ final class CallbackInitialization {
                             if (contextValues.containsKey(parameter)) {
                                 Signature signature = new Signature(call.name, call.desc);
                                 for (Method target : contextValues.get(parameter)) if (matches(target, signature))
-                                    callback(needs, bound, clears, escapes, initialized, k, site(k, i), target, false);
+                                    callback(needs, bound, clears, escapes, initialized, conditional, k, site(k, i), target, false);
                             } else parameterEscapes.add(new ParameterEscape(parameter.local, site(k, i),
-                                    Set.copyOf(bound), Set.copyOf(clears), new Signature(call.name, call.desc)));
+                                    Set.copyOf(bound), Set.copyOf(clears), new Signature(call.name, call.desc), Map.copyOf(conditional)));
                         }
                     }
                 }
                 Summary s = combined(callTargets(call, f), call, f);
                 if (s!=null) {
+                    State callState = new State(bound, nonnull, initialized, clears, before.caught, conditional, references);
+                    s.exceptionalExits.forEach((type, effects) -> thrown.merge(type,
+                            apply(callState, substitute(effects, call, f, callState)), CallbackInitialization::joinState));
                     continues = s.returnsNormally;
                     for (var e : s.needs.entrySet()) {
                         if (s.invalidatedNeeds.contains(e.getKey())) {
@@ -724,72 +810,95 @@ final class CallbackInitialization {
                             if (clears.contains(e.getKey())) invalidatedNeeds.add(e.getKey());
                         }
                     }
-                    for (Escape e:s.escapes)if (e.cleared || (!bound.contains(e.dependency)
-                            && !(emit && immutableBindings.contains(e.dependency)))) {
-                        escapes.add(e);
-                        if (emit)findings.add(new Finding(k, e.registration, e.callback, e.dependency, e.read));
+                    for (ConditionalRead read : s.conditionalReads) {
+                        ReferenceDependencies value = substitute(new ReferenceDependencies(false, read.parameters), call, f, callState);
+                        if (value.nullable) {
+                            needs.putIfAbsent(read.dependency, read.read);
+                            invalidatedNeeds.add(read.dependency);
+                        }
+                        if (!value.parameters.isEmpty())
+                            conditionalReads.add(new ConditionalRead(read.dependency, read.read, value.parameters));
+                    }
+                    for (Escape e:s.escapes) {
+                        if (!e.conditional.isEmpty()) {
+                            ReferenceDependencies value = substitute(new ReferenceDependencies(false, e.conditional), call, f, callState);
+                            if (value.nullable) {
+                                escapes.add(new Escape(e.registration, e.callback, e.dependency, e.read, true));
+                                if (emit) findings.add(new Finding(k, e.registration, e.callback, e.dependency, e.read));
+                            } else if (!value.parameters.isEmpty()) {
+                                escapes.add(new Escape(e.registration, e.callback, e.dependency, e.read, false, value.parameters));
+                            }
+                        } else if (e.cleared || (!bound.contains(e.dependency) && !(emit && immutableBindings.contains(e.dependency)))) {
+                            escapes.add(e);
+                            if (emit)findings.add(new Finding(k, e.registration, e.callback, e.dependency, e.read));
+                        }
                     }
                     for (ParameterEscape effect : s.parameterEscapes) {
                         SourceValue actual = argument(call, f, effect.local);
                         if (actual == null) continue;
                         String registration = effect.registration == null ? site(k, i) : effect.registration;
-                        Set<Field> atExposure = new HashSet<>(bound);
-                        atExposure.removeAll(effect.clears);
-                        atExposure.addAll(effect.bound);
+                        State atExposure = apply(callState, substitute(new ExitEffects(effect.bound, effect.clears,
+                                new BitSet(), effect.conditional), call, f, callState));
                         for (Method target : targets(actual)) {
                             if (effect.invocation != null && !matches(target, effect.invocation)) continue;
-                            callback(needs, atExposure, clears, escapes, initialized, k, registration, target, emit);
+                            callback(needs, atExposure.bound, atExposure.cleared, escapes, initialized, atExposure.conditional, k, registration, target, emit);
                         }
                         for (AbstractInsnNode origin : actual.insns) {
                             Parameter parameter = parameters.get(origin);
                             if (parameter != null && parameter.method.equals(k)) {
                                 parameterEscapes.add(new ParameterEscape(parameter.local, registration,
-                                        Set.copyOf(atExposure), Set.copyOf(clears), effect.invocation));
+                                        atExposure.bound, atExposure.cleared, effect.invocation, atExposure.conditional));
                             }
                         }
                     }
-                    bound.removeAll(s.clears);
-                    clears.addAll(s.clears);
-                    bound.addAll(s.ensures);
+                    ExitEffects effects = substitute(new ExitEffects(s.ensures, s.clears, s.initializedClasses, s.conditional), call, f, callState);
+                    bound.removeAll(effects.clears);
+                    clears.addAll(effects.clears);
+                    bound.addAll(effects.bound);
+                    for (Field field : effects.clears) conditional.remove(field);
+                    for (Field field : effects.bound) conditional.remove(field);
+                    conditional.putAll(effects.conditional);
+                    if (reference(Type.getReturnType(call.desc).getDescriptor()))
+                        references.put(n, substitute(s.returnedReference, call, f, callState));
                     if (emit) {
                         initialized = union(initialized, s.initializedClasses);
                         touchedClasses.or(s.initializedClasses);
                     }
-                    for (Method target : callTargets(call, f)) {
-                        for (var write : parameterWrites(target).entrySet()) {
-                            if (nullable(argument(call, f, write.getValue()), new HashSet<>())) {
-                                bound.remove(write.getKey());
-                                clears.add(write.getKey());
-                            }
-                        }
-                    }
                 } else {
+                    thrown.put(new Thrown("java/lang/Throwable", false), new State(bound, nonnull, initialized, clears, before.caught, conditional, references));
+                    if (reference(Type.getReturnType(call.desc).getDescriptor())) references.put(n, ReferenceDependencies.NONE);
                     for (int a=first;a<f.getStackSize();a++) {
                         SourceValue actual = f.getStack(a);
-                        for (Method target : targets(actual)) callback(needs, bound, clears, escapes, initialized, k, site(k, i), target, emit);
+                        for (Method target : targets(actual)) callback(needs, bound, clears, escapes, initialized, conditional, k, site(k, i), target, emit);
                         for (AbstractInsnNode origin : actual.insns) {
                             Parameter parameter = parameters.get(origin);
                             if (parameter != null && parameter.method.equals(k)) {
-                                parameterEscapes.add(new ParameterEscape(parameter.local, site(k, i), Set.copyOf(bound), Set.copyOf(clears), null));
+                                parameterEscapes.add(new ParameterEscape(parameter.local, site(k, i), Set.copyOf(bound), Set.copyOf(clears), null, Map.copyOf(conditional)));
                             }
                         }
                     }
                 }
             }
             if (op == Opcodes.ARRAYLENGTH || op == Opcodes.MONITORENTER || op == Opcodes.MONITOREXIT) {
-                requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, site(k, i));
+                requireReceiver(needs, bound, top(f), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
             }
             if (op >= Opcodes.IALOAD && op <= Opcodes.SALOAD) {
-                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 2), nonnull, clears, invalidatedNeeds, site(k, i));
+                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 2), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
             }
             if (op >= Opcodes.IASTORE && op <= Opcodes.SASTORE) {
-                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 3), nonnull, clears, invalidatedNeeds, site(k, i));
+                requireReceiver(needs, bound, f.getStack(f.getStackSize() - 3), nonnull, clears, invalidatedNeeds, conditional, conditionalReads, site(k, i));
             }
             if (op>=Opcodes.IRETURN&&op<=Opcodes.RETURN) {
                 if (exits==null)exits=new HashSet<>(bound);
                 else exits.retainAll(bound);
+                normalClears.addAll(clears);
+                joinConditional(normalConditional, conditional);
+                if (op == Opcodes.ARETURN) returnedReference = returnedReference.join(referenceDependencies(top(f), before));
             }
-            touchedClears.addAll(clears);
+            if (op == Opcodes.ATHROW) {
+                State throwState = new State(bound, nonnull, initialized, clears, before.caught, conditional, references);
+                for (Thrown type : thrownTypes(k, top(f), before)) thrown.merge(type, throwState, CallbackInitialization::joinState);
+            }
             List<Integer> next=new ArrayList<>();
             Map<Integer, Set<Field>> branch=new HashMap<>();
             Map<Integer, Set<Value>> branchValues = new HashMap<>();
@@ -814,23 +923,196 @@ final class CallbackInitialization {
                 next.add(ix.get(s.dflt));
                 for (LabelNode l:s.labels)next.add(ix.get(l));
             } else if (!(op>=Opcodes.IRETURN&&op<=Opcodes.RETURN)&&op!=Opcodes.ATHROW&&i+1<ins.length)next.add(i+1);
-            if (continues) for (int dest:next)merge(states, work, dest, new State(branch.getOrDefault(dest, bound), branchValues.getOrDefault(dest, nonnull), initialized, clears));
-            for (TryCatchBlockNode t:m.tryCatchBlocks)if (i>=ix.get(t.start)&&i<ix.get(t.end)) merge(states, work, ix.get(t.handler), before);
+            if (continues) for (int dest:next)merge(states, work, dest, new State(branch.getOrDefault(dest, bound), branchValues.getOrDefault(dest, nonnull), initialized, clears, before.caught, conditional, references));
+            for (var exceptional : thrown.entrySet()) {
+                Thrown type = exceptional.getKey();
+                State state = exceptional.getValue();
+                boolean handled = false;
+                for (TryCatchBlockNode handler : m.tryCatchBlocks) {
+                    if (i < ix.get(handler.start) || i >= ix.get(handler.end)) continue;
+                    Coverage match = catches(type, handler.type);
+                    if (match == Coverage.DISJOINT) continue;
+                    Map<AbstractInsnNode, Set<Thrown>> caught = new HashMap<>(state.caught);
+                    Thrown caughtType = !type.exact && handler.type != null && exceptionSubtype(handler.type, type.type) == Relation.YES
+                            ? new Thrown(handler.type, false) : type;
+                    AbstractInsnNode marker = exceptionMarkers.get(handler);
+                    if (rethrown.contains(marker)) caught.put(marker, Set.of(caughtType));
+                    merge(states, work, ix.get(handler.handler), new State(state.bound, state.nonnull, state.initialized, state.cleared, caught, state.conditional, state.references));
+                    if (match == Coverage.COVERS) { handled = true; break; }
+                }
+                if (!handled) joinExit(exceptionalExits, type, new ExitEffects(state.bound, state.cleared, state.initialized, state.conditional));
+            }
         }
-        return new Summary(Map.copyOf(needs), exits==null?Set.of():Set.copyOf(exits), Set.copyOf(touchedClears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), touchedClasses, Set.copyOf(invalidatedNeeds), exits != null);
+        normalConditional.keySet().retainAll(exits == null ? Set.of() : exits);
+        return new Summary(Map.copyOf(needs), exits==null?Set.of():Set.copyOf(exits), Set.copyOf(normalClears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), touchedClasses, Set.copyOf(invalidatedNeeds), exits != null, exceptionalExits,
+                Map.copyOf(normalConditional), returnedReference, conditionalReads);
     }
+    static State apply(State state, ExitEffects effect) {
+        Set<Field> bound = new HashSet<>(state.bound), cleared = new HashSet<>(state.cleared);
+        Map<Field, Set<Parameter>> conditional = new HashMap<>(state.conditional);
+        bound.removeAll(effect.clears);
+        bound.addAll(effect.bound);
+        cleared.addAll(effect.clears);
+        effect.clears.forEach(conditional::remove);
+        effect.bound.forEach(conditional::remove);
+        conditional.putAll(effect.conditional);
+        return new State(bound, state.nonnull, union(state.initialized, effect.initialized), cleared, state.caught, conditional, state.references);
+    }
+
+    ReferenceDependencies referenceDependencies(SourceValue value, State state) {
+        if (value == null || state.nonnull.contains(Value.of(value))) return ReferenceDependencies.NONE;
+        ReferenceDependencies result = ReferenceDependencies.NONE;
+        for (AbstractInsnNode origin : value.insns) {
+            Parameter parameter = parameters.get(origin);
+            if (parameter != null) result = result.join(new ReferenceDependencies(false, Set.of(parameter)));
+            else if (state.references.containsKey(origin)) result = result.join(state.references.get(origin));
+            else if (!(origin instanceof MethodInsnNode) && !(origin instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC))
+                result = result.join(new ReferenceDependencies(nullable(new SourceValue(value.size, origin), new HashSet<>()), Set.of()));
+        }
+        return result;
+    }
+
+    ReferenceDependencies substitute(ReferenceDependencies value, MethodInsnNode call, Frame<SourceValue> frame, State state) {
+        ReferenceDependencies resolved = new ReferenceDependencies(value.nullable, Set.of());
+        for (Parameter parameter : value.parameters)
+            resolved = resolved.join(referenceDependencies(argument(call, frame, parameter.local), state));
+        return resolved;
+    }
+
+    ExitEffects substitute(ExitEffects effect, MethodInsnNode call, Frame<SourceValue> frame, State state) {
+        Set<Field> bound = new HashSet<>(effect.bound), clears = new HashSet<>(effect.clears);
+        Map<Field, Set<Parameter>> conditional = new HashMap<>();
+        effect.conditional.forEach((field, parameters) -> {
+            ReferenceDependencies value = substitute(new ReferenceDependencies(false, parameters), call, frame, state);
+            if (value.nullable) { bound.remove(field); clears.add(field); }
+            else if (!value.parameters.isEmpty()) conditional.put(field, value.parameters);
+        });
+        return new ExitEffects(bound, clears, effect.initialized, conditional);
+    }
+
+    static void joinConditional(Map<Field, Set<Parameter>> target, Map<Field, Set<Parameter>> added) {
+        added.forEach((field, parameters) -> target.merge(field, parameters, (first, second) -> {
+            Set<Parameter> joined = new HashSet<>(first); joined.addAll(second); return Set.copyOf(joined);
+        }));
+    }
+
+    static void joinExit(Map<Thrown, ExitEffects> exits, Thrown type, ExitEffects incoming) {
+        exits.merge(type, incoming, (old, added) -> {
+            Set<Field> bound = new HashSet<>(old.bound), clears = new HashSet<>(old.clears);
+            bound.retainAll(added.bound);
+            clears.addAll(added.clears);
+            Map<Field, Set<Parameter>> conditional = new HashMap<>(old.conditional);
+            joinConditional(conditional, added.conditional);
+            conditional.keySet().retainAll(bound);
+            return new ExitEffects(bound, clears, union(old.initialized, added.initialized), conditional);
+        });
+    }
+
+    Coverage catches(Thrown thrown, String handler) {
+        if (handler == null || handler.equals("java/lang/Throwable")) return Coverage.COVERS;
+        Relation subtype = exceptionSubtype(thrown.type, handler);
+        if (subtype == Relation.YES) return Coverage.COVERS;
+        if (thrown.exact) return subtype == Relation.NO ? Coverage.DISJOINT : Coverage.POSSIBLE;
+        Relation reverse = exceptionSubtype(handler, thrown.type);
+        return subtype == Relation.NO && reverse == Relation.NO ? Coverage.DISJOINT : Coverage.POSSIBLE;
+    }
+
+    Relation exceptionSubtype(String type, String parent) {
+        Set<String> visited = new HashSet<>();
+        while (type != null && visited.add(type)) {
+            if (type.equals(parent)) return Relation.YES;
+            if (type.equals("java/lang/Object")) return Relation.NO;
+            ClassNode owned = classes.get(type);
+            if (owned != null) { type = owned.superName; continue; }
+            if (!exceptionParents.containsKey(type) && !missingExceptionTypes.contains(type)) {
+                // Platform headers are read without loading or initializing consumer code.
+                try (var stream = ClassLoader.getPlatformClassLoader().getResourceAsStream(type + ".class")) {
+                    if (stream == null) missingExceptionTypes.add(type);
+                    else exceptionParents.put(type, new ClassReader(stream).getSuperName());
+                } catch (java.io.IOException | IllegalArgumentException | SecurityException unavailable) { missingExceptionTypes.add(type); }
+            }
+            if (missingExceptionTypes.contains(type)) return Relation.UNKNOWN;
+            type = exceptionParents.get(type);
+        }
+        return type == null ? Relation.NO : Relation.UNKNOWN;
+    }
+
+    Set<Thrown> thrownTypes(Method method, SourceValue value, State state) {
+        Set<Thrown> types = new HashSet<>();
+        if (value == null || value.insns.isEmpty()) return Set.of(new Thrown("java/lang/Throwable", false));
+        for (AbstractInsnNode origin : value.insns) {
+            if (state.caught.containsKey(origin)) { types.addAll(state.caught.get(origin)); continue; }
+            if (exceptionTypes.containsKey(origin)) continue;
+            if (origin.getOpcode() == Opcodes.ACONST_NULL) {
+                types.add(new Thrown("java/lang/NullPointerException", true)); continue;
+            }
+            if (origin instanceof TypeInsnNode allocation && origin.getOpcode() == Opcodes.NEW) {
+                types.add(new Thrown(allocation.desc, true)); continue;
+            }
+            String descriptor = null;
+            if (origin instanceof FieldInsnNode field) descriptor = field.desc;
+            if (origin instanceof MethodInsnNode call) descriptor = Type.getReturnType(call.desc).getDescriptor();
+            Parameter parameter = parameters.get(origin);
+            if (parameter != null && parameter.method.equals(method)) {
+                int local = (methods.get(method).access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+                for (Type argument : Type.getArgumentTypes(method.desc)) {
+                    if (local == parameter.local) { descriptor = argument.getDescriptor(); break; }
+                    local += argument.getSize();
+                }
+            }
+            String type = exceptionTypes.get(origin);
+            if (type == null && descriptor != null && descriptor.startsWith("L")) type = Type.getType(descriptor).getInternalName();
+            types.add(new Thrown(type == null ? "java/lang/Throwable" : type, false));
+            if (!exceptionTypes.containsKey(origin)) types.add(new Thrown("java/lang/NullPointerException", true));
+        }
+        return types;
+    }
+
+    static Set<Thrown> implicitExceptions(AbstractInsnNode instruction) {
+        int op = instruction.getOpcode();
+        Set<Thrown> types = new HashSet<>();
+        if (instruction instanceof MethodInsnNode || instruction instanceof FieldInsnNode
+                || instruction instanceof TypeInsnNode || instruction instanceof InvokeDynamicInsnNode
+                || op == Opcodes.LDC || op == Opcodes.MULTIANEWARRAY) types.add(new Thrown("java/lang/Error", false));
+        if (op == Opcodes.INVOKEVIRTUAL || op == Opcodes.INVOKEINTERFACE || op == Opcodes.INVOKESPECIAL
+                || op == Opcodes.GETFIELD || op == Opcodes.PUTFIELD || op == Opcodes.ARRAYLENGTH
+                || op == Opcodes.MONITORENTER || op == Opcodes.MONITOREXIT
+                || (op >= Opcodes.IALOAD && op <= Opcodes.SALOAD) || (op >= Opcodes.IASTORE && op <= Opcodes.SASTORE))
+            types.add(new Thrown("java/lang/NullPointerException", true));
+        if ((op >= Opcodes.IALOAD && op <= Opcodes.SALOAD) || (op >= Opcodes.IASTORE && op <= Opcodes.SASTORE))
+            types.add(new Thrown("java/lang/ArrayIndexOutOfBoundsException", true));
+        if (op == Opcodes.AASTORE) types.add(new Thrown("java/lang/ArrayStoreException", true));
+        if (op == Opcodes.IDIV || op == Opcodes.LDIV || op == Opcodes.IREM || op == Opcodes.LREM)
+            types.add(new Thrown("java/lang/ArithmeticException", true));
+        if (op == Opcodes.CHECKCAST) types.add(new Thrown("java/lang/ClassCastException", true));
+        if (op == Opcodes.NEWARRAY || op == Opcodes.ANEWARRAY || op == Opcodes.MULTIANEWARRAY)
+            types.add(new Thrown("java/lang/NegativeArraySizeException", true));
+        if (op == Opcodes.MONITOREXIT) types.add(new Thrown("java/lang/IllegalMonitorStateException", true));
+        if (op == Opcodes.INVOKEDYNAMIC) types.add(new Thrown("java/lang/Throwable", false));
+        return types;
+    }
+
     static BitSet union(BitSet current, BitSet added) {
         BitSet result = (BitSet) current.clone();
         result.or(added);
         return result.equals(current) ? current : result;
     }
-    static void merge(Map<Integer, State> states, Deque<Integer> work, int dest, State incoming) {
-        State old = states.get(dest);
+    static void merge(Map<FlowPoint, State> states, Deque<FlowPoint> work, int dest, State incoming) {
+        FlowPoint point = new FlowPoint(dest, incoming.caught);
+        State old = states.get(point);
         if (old == null) {
-            states.put(dest, incoming);
-            work.add(dest);
+            states.put(point, incoming);
+            work.add(point);
             return;
         }
+        State joined = joinState(old, incoming);
+        if (!joined.equals(old)) {
+            states.put(point, joined);
+            work.add(point);
+        }
+    }
+    static State joinState(State old, State incoming) {
+        if (old.equals(incoming)) return old;
         Set<Field> bound = new HashSet<>(old.bound);
         bound.retainAll(incoming.bound);
         Set<Value> values = new HashSet<>(old.nonnull);
@@ -838,11 +1120,16 @@ final class CallbackInitialization {
         BitSet initialized = union(old.initialized, incoming.initialized);
         Set<Field> cleared = new HashSet<>(old.cleared);
         cleared.addAll(incoming.cleared);
-        State joined = new State(bound, values, initialized, cleared);
-        if (!joined.equals(old)) {
-            states.put(dest, joined);
-            work.add(dest);
-        }
+        Map<AbstractInsnNode, Set<Thrown>> caught = new HashMap<>(old.caught);
+        incoming.caught.forEach((origin, types) -> caught.merge(origin, types, (first, second) -> {
+            Set<Thrown> joined = new HashSet<>(first); joined.addAll(second); return Set.copyOf(joined);
+        }));
+        Map<Field, Set<Parameter>> conditional = new HashMap<>(old.conditional);
+        joinConditional(conditional, incoming.conditional);
+        conditional.keySet().retainAll(bound);
+        Map<AbstractInsnNode, ReferenceDependencies> references = new HashMap<>(old.references);
+        incoming.references.forEach((origin, value) -> references.merge(origin, value, ReferenceDependencies::join));
+        return new State(bound, values, initialized, cleared, caught, conditional, references);
     }
     List<Method> initialOrder() {
         record Visit(Method method, boolean exit) {}
@@ -974,7 +1261,9 @@ final class CallbackInitialization {
         return second != null && first.needs.equals(second.needs) && first.ensures.equals(second.ensures)
                 && first.clears.equals(second.clears) && first.escapes.equals(second.escapes)
                 && first.parameterEscapes.equals(second.parameterEscapes) && first.invalidatedNeeds.equals(second.invalidatedNeeds)
-                && first.returnsNormally == second.returnsNormally;
+                && first.returnsNormally == second.returnsNormally && first.exceptionalExits.equals(second.exceptionalExits)
+                && first.conditional.equals(second.conditional) && first.returnedReference.equals(second.returnedReference)
+                && first.conditionalReads.equals(second.conditionalReads);
     }
     void solveInitialization() {
         Map<Object, Summary> nodes = new LinkedHashMap<>(summaries);

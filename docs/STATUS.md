@@ -30,10 +30,10 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
   effects, captured instance aliases, reflective entrypoints and external scheduling still need analysis
   or runtime evidence. Implicit initializer effects need a may/must initialization-state model: a class initializer
   that clears another class's service can currently escape diagnosis. Reentrant initialization also needs that model;
-  inherited member resolution alone does not establish initializer completion. Interprocedural summaries lose
-  effects on exceptional exits: a helper can clear a service, throw, and expose its callback through a caller's catch
-  or finally block without a C1 candidate. Independent JVM witnesses confirm the failure and safe rebinding controls.
-  Summaries need separate normal and exceptional outcomes, with handler routing and path-specific effects.
+  inherited member resolution alone does not establish initializer completion. Exceptional effects now have separate
+  outcome summaries and typed handler routing. Complete fault preconditions, external field effects, exception-argument
+  specialization and target-specific platform exception ancestry remain open; host platform headers are not a complete
+  target JVM model.
   The must-binding lattice loses
   correlations between factory returns and later branches; executable controls retain that precision limit.
   Large content-mod inputs need continued scaling validation. Investigate convergence through worklist telemetry
@@ -41,6 +41,8 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
   executable counterexamples and safe controls.
   Compact context-node tables would make large graph exports easier to query without repeating long argument labels.
   See the [inspection checks](plugin.md#inspecting-an-existing-mod).
+  [Research priors and experiments](reference/behavioral-analysis-research.md) connect the next semantic steps to
+  established analyzers and executable controls.
 
 ## Data and verification
 

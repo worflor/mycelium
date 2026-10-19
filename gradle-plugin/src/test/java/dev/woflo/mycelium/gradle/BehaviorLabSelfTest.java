@@ -93,6 +93,18 @@ public final class BehaviorLabSelfTest {
         synthetic.add("findings", findings);
         BehaviorLab.write(reportFile, synthetic);
         JsonObject summary = BehaviorLab.workerSummary(reportFile);
+        check(summary.get("fullReportSha256").getAsString().equals(BehaviorLab.digest(reportFile, "SHA-256")),
+                "worker receipt binds its full report bytes");
+        Path implementation = Files.createDirectories(root.resolve("implementation/dev/woflo/mycelium/gradle"));
+        Files.writeString(implementation.resolve("CallbackInitialization.class"), "outer");
+        Files.writeString(implementation.resolve("CallbackInitialization$Summary.class"), "nested");
+        String originalImplementation = BehaviorLab.analyzerFingerprint(root.resolve("implementation"));
+        Files.writeString(implementation.resolve("Unrelated.class"), "unrelated");
+        check(originalImplementation.equals(BehaviorLab.analyzerFingerprint(root.resolve("implementation"))),
+                "analyzer fingerprint excludes unrelated classes");
+        Files.writeString(implementation.resolve("CallbackInitialization$Summary.class"), "changed");
+        check(!originalImplementation.equals(BehaviorLab.analyzerFingerprint(root.resolve("implementation"))),
+                "analyzer fingerprint includes nested domain implementations");
         check(summary.get("rootsCount").getAsInt() == 2 && summary.get("dependenciesCount").getAsInt() == 3,
                 "worker summary counts roots and dependencies while discarding their graphs");
         check(summary.getAsJsonArray("findings").size() == 2

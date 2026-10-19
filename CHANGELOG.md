@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-10-19 - Interpret exceptional outcomes and binding dependencies
+
+Method summaries now separate normal and typed exceptional effects. Calls apply the matching outcome before routing
+through ordered handlers. Shared catches and multi-catch rethrows retain exception-type/effect relationships; normal-only
+writes no longer contaminate exceptional guarantees. Explicit throws, conservative implicit faults, recursion, callback
+contexts, finally overrides and resource closure use the same flow model.
+
+Replaced the straight-line parameter-write shortcut with argument-dependent binding effects. Known-null paths and
+formal dependencies travel through reference-origin snapshots, returned values and callback exposures. Call-site
+substitution handles nullable writes on normal and exceptional exits, reads within helpers, forwarding and wide
+argument slots. Later field overwrites preserve previously captured values. These dependency facts are not non-nullness proofs.
+
+The analysis host runtime and module image are declared inputs and recorded in C1 reports. Corpus receipts fingerprint
+nested analyzer classes, library and runtime inputs, and full worker reports. Added a primary-source research reference
+connecting the implementation and next initialization-state work to ByteBack, OPAL, WALA, Tai-e, GraalVM, Infer,
+abstract machines, IFDS/IDE, CEGAR and incorrectness logic.
+
+The focused suites passed 723 assertions on Java 25 and 506 on Java 17. All 47 new entries also passed with fresh
+class loaders on actual Java 8, 17 and 25 runtimes, checking both failures and callback invocation counts. A separate
+consumer built Java 8, 17 and 25 artifacts and verified C1 reports on Java 25 and Java 17 build hosts.
+The public aggregate `check` passed in 14m 34s with 1,716 plugin assertions, source-wrapper and consumer-hook tests,
+bridge linkage, and all 24 contract packages on Java 8, 16, 17, 21 and 25.
+
 ## 2026-10-19 - Bind evidence to its producers and archive bytes
 
 Artifact evidence now tracks prerequisite report files and Gradle completion facts. A changed usage report invalidates

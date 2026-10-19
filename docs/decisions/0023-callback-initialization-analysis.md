@@ -61,6 +61,33 @@ convergence and invariance. The focused `behaviorSelfTest` task supports a Java 
 Java 7 bytecode fixtures compiled on Java 17. These tests establish bytecode-analysis behavior, not native Minecraft
 support on those eras.
 
+## Outcome summaries and rethrows (2026-10-19)
+
+Field effects now distinguish normal completion from typed exceptional exits. A callee's exceptional effects apply at
+the caller's invocation site before exception-table routing. Explicit throws retain exact allocation types when known;
+other references carry type bounds. Conservative implicit faults and unresolved calls contribute exceptional paths.
+Missing ancestry is unknown; platform hierarchy headers come from the analysis host and do not establish every target
+JVM's hierarchy or fault conditions.
+
+An initial typed-outcome implementation still merged different exception kinds in a shared catch. The executable
+`correlatedSafe` control then inherited a clear from the other kind's path. Flow nodes now retain separate environments
+for caught values used by a later throw. Multi-catch source origins absent from that environment contribute no thrown
+value. The distinction comes from the counterexample; other catch state can still join normally. There is no fixed
+partition or iteration cap.
+
+A further witness stored a nullable argument before throwing. The previous straight-line parameter-write scan applied
+only after normal calls and could not handle exceptional exits or in-callee exposure. Bindings now carry formal
+dependencies through normal returns, exceptional effects, reads within helpers and callback exposure. Reference-origin snapshots preserve
+earlier reads across later overwrites, and return facts allow argument forwarding. Call-site substitution uses the
+same mechanism for each outcome. Join-law and immutability controls check this domain independently of fixture output.
+
+`ExceptionBehaviorOracle` exercises normal-only clears, exceptional repair, typed handler order, shared and multi-catch
+rethrows, callbacks, recursion, implicit arithmetic faults, finally overrides and resource closure. Each entry executes
+with a fresh class loader and checks whether the callback ran. These experiments validate the supported fragment;
+external effects, fault feasibility and initialization completion remain separate open problems. The
+[research notes](../reference/behavioral-analysis-research.md) explain the connection to explicit exceptional control flow
+in ByteBack and to selective context refinement.
+
 ## Evidence
 
 The independent fixtures compile as Java 8 bytecode. They exercise early exposure, prior binding, delayed writers,

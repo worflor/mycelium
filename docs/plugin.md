@@ -405,11 +405,30 @@ classes using the target's era Java, or the Gradle JVM when no Minecraft target 
 selected compilation output. C1 uses the existing check levels and allowances; keep the external ordering evidence with
 any allowance reason.
 
+Calls carry separate normal and exceptional field effects. Explicit throws and conservative implicit-fault edges route
+through the class file's exception table in order; a possible partial type match retains an unhandled possibility.
+Caught values that can be rethrown retain type/effect partitions, including shared multi-catch handlers. Normal-return
+writes do not become exceptional guarantees. Missing ancestry remains unknown. Consumer exception headers come from the
+selected input; platform exception headers come from the analysis host without initializing consumer code. The report's
+`exceptionFlow` records that host Java version and the supported separation. Fault predicates and arbitrary external
+field effects are incomplete, so these paths remain diagnostics rather than feasible-witness or safety proofs.
+Binding dependencies on reference arguments are substituted at calls, for reads within helpers, on normal and
+exceptional exits and at callback exposures. Reference-origin snapshots preserve captured values across later field
+overwrites; return dependencies can forward an argument through an identity helper. These are known-null and dependency facts, not complete alias or
+non-nullness proofs.
+The analysis host runtime version and module image are task inputs, so changing the platform ancestry source invalidates
+cached results. The report records the image hash. A host without an available module image reruns the task rather than
+reusing a report on an untracked platform.
+
 For linter development, `./gradlew -p gradle-plugin behaviorSelfTest` runs the focused executable regression suite
 on a Java 17 toolchain, including Java 7 anonymous-class bytecode. Use `'-Pmycelium.testJava=25'` to run it on Java 25
 and compile the newer fixture targets. These are JVM analysis regressions, not game runs for those Minecraft eras.
 The full plugin `selfTest` also runs the suite with its own JVM. Generated programs compare the diagnostic with actual
 JVM execution for both values of each boolean branch; the expected result comes from execution rather than analyzer rules.
+`ExceptionBehaviorOracle` adds fresh-state entries for catch/finally, ordered handlers, rethrow correlations, recursion,
+callback contexts, implicit faults and resource closure, checking both failures and callback invocation counts.
+The [research notes](reference/behavioral-analysis-research.md) record the relevant priors, their assumptions and the
+experiments they motivate.
 
 For larger static experiments, the maintainer tool `tools/behavior_corpus.py` resolves exact game/loader targets through
 the Modrinth API and downloads hash-pinned jars. Python is needed only for this maintainer tool. The committed

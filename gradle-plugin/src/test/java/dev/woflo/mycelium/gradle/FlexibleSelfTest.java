@@ -583,6 +583,10 @@ final class FlexibleSelfTest {
                 "behavior: an explicit run consumes compiled main classes and brings their compiler dependency");
         that(Checks.decode(((BehaviorTask) behavior).getChecks().get()).level("C1") == Checks.Level.WARN,
                 "behavior: C1 defaults to a warning in the consumer task");
+        that(behavior.getInputs().getFiles().getFiles().contains(new java.io.File(System.getProperty("java.home"), "lib/modules")),
+                "behavior: platform ancestry bytes are tracked task inputs");
+        that(behavior.getInputs().getProperties().get("analysisRuntime").equals(((BehaviorTask) behavior).getAnalysisRuntime()),
+                "behavior: the analysis runtime identity is an explicit input");
     }
 
     static void derivedContracts(Path root, Path tmp) throws Exception {

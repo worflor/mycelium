@@ -20,6 +20,21 @@ import java.nio.file.Files;
 
 /** Experimental, opt-in behavioral diagnostics over the selected target's compiled consumer code. */
 public abstract class BehaviorTask extends DefaultTask {
+    public BehaviorTask() {
+        getOutputs().upToDateWhen(task -> ((BehaviorTask) task).getPlatformRuntimeImages().stream().allMatch(java.io.File::isFile));
+    }
+
+    @Input
+    public String getAnalysisRuntime() {
+        return System.getProperty("java.runtime.version") + " / " + System.getProperty("java.vendor");
+    }
+
+    @InputFiles
+    @PathSensitive(PathSensitivity.NONE)
+    public java.util.List<java.io.File> getPlatformRuntimeImages() {
+        return java.util.List.of(new java.io.File(System.getProperty("java.home"), "lib/modules"));
+    }
+
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getClasses();
@@ -76,10 +91,25 @@ public abstract class BehaviorTask extends DefaultTask {
         report.addProperty("nativeEventOrderProven", false);
         report.addProperty("assignmentIsNotNullnessProof", true);
         report.addProperty("externalScheduling", "unknown");
+        JsonObject exceptions = new JsonObject();
+        exceptions.addProperty("separateOutcomeEffects", true);
+        exceptions.addProperty("handlerOrder", "class-file exception table");
+        exceptions.addProperty("rethrowPartitions", "caught exception origins and types");
+        exceptions.addProperty("argumentDependentBindings", true);
+        exceptions.addProperty("referenceOriginSnapshots", true);
+        exceptions.addProperty("platformAncestryJava", Runtime.version().feature());
+        exceptions.addProperty("analysisRuntime", getAnalysisRuntime());
+        var image = getPlatformRuntimeImages().get(0);
+        if (image.isFile()) exceptions.addProperty("platformRuntimeSha256", Fingerprint.ofFile(image.toPath()));
+        exceptions.addProperty("implicitFaultConditionsProven", false);
+        exceptions.addProperty("externalFieldEffectsKnown", false);
+        report.add("exceptionFlow", exceptions);
         JsonArray limits = new JsonArray();
         for (String limit : java.util.List.of("reflective entrypoints", "captured instance aliases",
                 "complete runtime dispatch targets", "native method bodies", "unknown callback targets and effects",
-                "implicit initializer cross-owner effects and reentrant initialization", "native event ordering")) limits.add(limit);
+                "implicit initializer cross-owner effects and reentrant initialization",
+                "complete implicit fault conditions and asynchronous exceptions",
+                "target platform ancestry differences from the analysis host", "native event ordering")) limits.add(limit);
         report.add("unmodeled", limits);
         report.addProperty("rootSelection", "public methods, plus class initializers that expose callbacks");
         JsonArray roots = new JsonArray();
@@ -100,7 +130,7 @@ public abstract class BehaviorTask extends DefaultTask {
             candidates.add(item);
             found.add("C1", candidate.registration(), candidate.registration() + ": callback " + candidate.callback()
                     + " can dereference " + candidate.dependency() + " at " + candidate.read()
-                    + " before this path establishes its binding. Bind before exposure or verify the external API's ordering guarantee.");
+                    + " without an established and preserved binding on this path. Check nullable writes and the external API's ordering guarantee.");
         }
         report.add("candidates", candidates);
         JsonArray errors = new JsonArray();
