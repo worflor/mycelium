@@ -72,6 +72,24 @@ final class BehaviorSelfTest {
                     public static void schedulerBindsLateUnsafe() { invokeBeforeBinding(Cases::read); }
                     public static void relayedInvocationUnsafe() { relayInvoke(Cases::read); }
                     public static void notAnInvocationSafe() { describe(Cases::read); }
+                    private static void unusedCaller() { externallyCalledUnsafe(); }
+                    public static void externallyCalledUnsafe() { Api.register(Cases::read); }
+                    public static void callbackBindsSafe() { invoke(Cases::bind); Api.register(Cases::read); }
+                    public static void callbackClearsUnsafe() { bind(); invoke(() -> service = null); Api.register(Cases::read); }
+                    public static void callbackRebindsSafe() { invoke(() -> service = null); invoke(Cases::bind); Api.register(Cases::read); }
+                    public static void callbackClearsLateUnsafe() { invoke(Cases::bind); invoke(() -> service = null); Api.register(Cases::read); }
+                    public static void relayedBindingSafe() { relayInvoke(Cases::bind); Api.register(Cases::read); }
+                    static Runnable maybe(boolean clear) { return clear ? null : () -> {}; }
+                    public static void nullableFactoryUnsafe() { service = maybe(true); Api.register(Cases::read); }
+                    static void recurse(Runnable callback, int depth) {
+                        if (depth == 0) callback.run(); else recurse(callback, depth - 1);
+                    }
+                    public static void recursiveBindingSafe() { recurse(Cases::bind, 3); Api.register(Cases::read); }
+                    public static void recursiveClearUnsafe() { bind(); recurse(() -> service = null, 3); Api.register(Cases::read); }
+                    static void fail() { throw new IllegalStateException(); }
+                    public static void unreachableExposure() { fail(); Api.register(Cases::read); }
+                    static Runnable nullableAlias = maybe(true);
+                    public static void nullableAliasUnsafe() { service = nullableAlias; Api.register(Cases::read); }
                 }
                 """, StandardCharsets.UTF_8);
         Path classes = scratch.resolve("classes");
@@ -81,10 +99,17 @@ final class BehaviorSelfTest {
                 "-d", classes.toString(), api.toString(), source.toString());
         SelfTest.that(exit == 0, "behavior: the independent callback programs compile for Java 8");
         var result = CallbackInitialization.inspect(List.of(classes.resolve("fixture")));
+        boolean cancelled = false;
+        try {
+            CallbackInitialization.inspect(List.of(classes.resolve("fixture")), 8, progress -> Thread.currentThread().interrupt());
+        } catch (java.util.concurrent.CancellationException expected) { cancelled = true; }
+        finally { Thread.interrupted(); }
+        SelfTest.that(cancelled, "behavior: cancellation interrupts analysis instead of manufacturing a completed report");
         Set<String> roots = result.findings().stream().map(f -> f.root().name()).collect(Collectors.toSet());
         SelfTest.that(result.analysisErrors().isEmpty(), "behavior: all fixture bodies have valid control flow: " + result.analysisErrors());
         SelfTest.that(roots.equals(Set.of("early", "delayedWriter", "partial", "factoryEarly", "helperEarly", "anonymousEarly", "cleared", "exceptional",
-                        "synchronousUnsafe", "schedulerBindsLateUnsafe", "relayedInvocationUnsafe")),
+                        "synchronousUnsafe", "schedulerBindsLateUnsafe", "relayedInvocationUnsafe", "externallyCalledUnsafe",
+                        "callbackClearsUnsafe", "callbackClearsLateUnsafe", "nullableFactoryUnsafe", "nullableAliasUnsafe", "recursiveClearUnsafe")),
                 "behavior: risky paths are found while binding, guards, both branches and staged factories remain quiet: " + roots);
         SelfTest.that(result.findings().stream().allMatch(f -> f.dependency().name().equals("service")
                         && f.read().contains("Cases.java:") && f.registration().contains("Cases.java:")),
@@ -104,22 +129,45 @@ final class BehaviorSelfTest {
             SelfTest.that(failed, "behavior: the planted early callback actually dereferences null under an eager scheduler");
             cases.getMethod("reset").invoke(null);
             cases.getMethod("safe").invoke(null);
-            for (String unsafe : List.of("synchronousUnsafe", "schedulerBindsLateUnsafe", "relayedInvocationUnsafe")) {
+            for (String unsafe : List.of("synchronousUnsafe", "schedulerBindsLateUnsafe", "relayedInvocationUnsafe",
+                    "externallyCalledUnsafe", "callbackClearsUnsafe", "callbackClearsLateUnsafe", "nullableFactoryUnsafe", "nullableAliasUnsafe", "recursiveClearUnsafe")) {
                 cases.getMethod("reset").invoke(null);
                 boolean nullDereference = false;
                 try { cases.getMethod(unsafe).invoke(null); }
                 catch (InvocationTargetException exception) { nullDereference = exception.getCause() instanceof NullPointerException; }
                 SelfTest.that(nullDereference, "behavior: synchronous witness actually fails: " + unsafe);
             }
-            for (String safe : List.of("synchronousSafe", "schedulerBindsSafe", "notAnInvocationSafe")) {
+            for (String safe : List.of("synchronousSafe", "schedulerBindsSafe", "notAnInvocationSafe",
+                    "callbackBindsSafe", "callbackRebindsSafe", "relayedBindingSafe", "recursiveBindingSafe")) {
                 cases.getMethod("reset").invoke(null);
                 cases.getMethod(safe).invoke(null);
                 SelfTest.that(true, "behavior: synchronous control executes safely: " + safe);
             }
+            boolean stopped = false;
+            try { cases.getMethod("unreachableExposure").invoke(null); }
+            catch (InvocationTargetException exception) { stopped = exception.getCause() instanceof IllegalStateException; }
+            SelfTest.that(stopped, "behavior: a non-returning helper prevents the later exposure from executing");
             cases.getMethod("reset").invoke(null);
             cases.getMethod("nullGuard").invoke(null);
             SelfTest.that(true, "behavior: initialized and null-guarded programs actually run safely");
         }
+
+        SelfTest.that(result.callbackContexts() > 0 && result.dependencies().stream().anyMatch(edge -> edge.factType().equals("callback-context")),
+                "behavior: callback specializations are explicit dependency-worklist nodes");
+        Path permuted = scratch.resolve("permuted-fixture");
+        try (var files = Files.walk(classes.resolve("fixture"))) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".class")).toList()) {
+                var node = new org.objectweb.asm.tree.ClassNode();
+                new org.objectweb.asm.ClassReader(Files.readAllBytes(file)).accept(node, 0);
+                java.util.Collections.reverse(node.methods);
+                var output = new org.objectweb.asm.ClassWriter(0); node.accept(output);
+                Path destination = permuted.resolve(classes.relativize(file));
+                Files.createDirectories(destination.getParent()); Files.write(destination, output.toByteArray());
+            }
+        }
+        var permutedResult = CallbackInitialization.inspect(List.of(permuted.resolve("fixture")), 8);
+        SelfTest.that(permutedResult.analysisErrors().isEmpty() && permutedResult.findings().equals(result.findings()),
+                "behavior: callback specialization findings survive method-order permutation");
 
         Path advanced = scratch.resolve("advanced/Advanced.java");
         Path seed = scratch.resolve("advanced/UnrelatedSeed.java");
@@ -178,6 +226,10 @@ final class BehaviorSelfTest {
                     }
                     public static void lazyInitSafe() { Api.register(Ready::read); }
                     public static void resetInitializedUnsafe() { Ready.value = null; Api.register(Ready::read); }
+                    static void clearReadyInHelper() { Ready.value = null; }
+                    static void bindReadyInHelper() { Ready.value = () -> {}; }
+                    public static void transitiveInitResetUnsafe() { clearReadyInHelper(); Api.register(Ready::read); }
+                    public static void transitiveInitBindingSafe() { bindReadyInHelper(); Api.register(Ready::read); }
                     static class Singleton {
                         static final Singleton INSTANCE = new Singleton();
                         void use() {}
@@ -216,13 +268,25 @@ final class BehaviorSelfTest {
         SelfTest.that(adversarial.analysisErrors().isEmpty(), "behavior: adversarial bodies have valid frames: " + adversarial.analysisErrors());
         SelfTest.that(advancedRoots.equals(Set.of("parameterUnsafe", "callbackFieldUnsafe", "returnedNullUnsafe",
                         "parameterNullUnsafe", "defaultAliasUnsafe", "mergedGuardUnsafe", "staleGuardUnsafe",
-                        "clearsInsideUnsafe", "inheritedUnsafe", "dispatchUnsafe", "resetInitializedUnsafe",
+                        "clearsInsideUnsafe", "inheritedUnsafe", "dispatchUnsafe", "resetInitializedUnsafe", "transitiveInitResetUnsafe",
                         "arrayReadUnsafe", "arrayWriteUnsafe")),
                 "behavior: red-team regressions are detected while guarded values, prior bindings and lazy class initialization stay quiet: " + advancedRoots);
         SelfTest.that(adversarial.findings().stream().anyMatch(f -> f.root().owner().endsWith("$UnsafeInitializer")
                         && f.root().name().equals("<clinit>"))
                         && adversarial.findings().stream().noneMatch(f -> f.root().owner().endsWith("$SafeInitializer")),
                 "behavior: a class initializer cannot borrow its own future assignment");
+
+        SelfTest.that(adversarial.initializationPropagations() > 0
+                        && adversarial.dependencies().stream().anyMatch(edge -> edge.factType().equals("initialization-reachability")),
+                "behavior: transitive initialization has its own graph closure and dependency edges");
+        try (URLClassLoader loader = new URLClassLoader(new java.net.URL[]{attacks.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+            Class<?> type = loader.loadClass("advanced.Advanced");
+            boolean failed = false;
+            try { type.getMethod("transitiveInitResetUnsafe").invoke(null); }
+            catch (InvocationTargetException exception) { failed = exception.getCause() instanceof NullPointerException; }
+            type.getMethod("transitiveInitBindingSafe").invoke(null);
+            SelfTest.that(failed, "behavior: transitive initializer activation cannot hide a helper's reset; bound control succeeds");
+        }
 
         Path stripped = scratch.resolve("stripped");
         exit = compiler.run(null, null, null, "--release", "8", "-Xlint:-options", "-g:none",
@@ -246,8 +310,8 @@ final class BehaviorSelfTest {
         Path chainSource = scratch.resolve("chain/Chain.java");
         Files.createDirectories(chainSource.getParent());
         StringBuilder chain = new StringBuilder("package chain; import external.Api; public class Chain { static Runnable service;");
-        for (int i = 0; i < 160; i++) chain.append("static void step").append(i).append("() { step").append(i + 1).append("(); }");
-        chain.append("static void step160() { service.run(); } public static void entry() { Api.register(Chain::step0); } }");
+        for (int i = 0; i < 640; i++) chain.append("static void step").append(i).append("() { step").append(i + 1).append("(); }");
+        chain.append("static void step640() { service.run(); } public static void entry() { Api.register(Chain::step0); } }");
         Files.writeString(chainSource, chain, StandardCharsets.UTF_8);
         Path chainClasses = scratch.resolve("chain-classes");
         int chainExit = compiler.run(null, null, null, "--release", "8", "-Xlint:-options", "-d", chainClasses.toString(),
@@ -255,12 +319,18 @@ final class BehaviorSelfTest {
         var deep = CallbackInitialization.inspect(List.of(chainClasses.resolve("chain")), 8);
         SelfTest.that(chainExit == 0 && deep.analysisErrors().isEmpty() && deep.findings().size() == 1
                         && deep.findings().get(0).root().name().equals("entry"),
-                "behavior: a reverse-ordered 160-call dependency chain reaches a fixed point");
-        SelfTest.that(deep.dependencyEdges() >= 160 && deep.summaryEvaluations() < 10 * deep.methods(),
+                "behavior: a reverse-ordered 640-call dependency chain reaches a fixed point");
+        SelfTest.that(deep.dependencyEdges() >= 640 && deep.summaryEvaluations() < 10 * deep.methods(),
                 "behavior: changed summaries revisit their dependents instead of rescanning the entire program");
         SelfTest.that(deep.dependencies().stream().anyMatch(edge -> edge.factType().equals("method-summary")
                         && edge.fact().equals("chain/Chain#step1()V") && edge.dependent().name().equals("step0")),
                 "behavior: the dependency graph retains the prerequisite direction of an actual call");
+        try (URLClassLoader loader = new URLClassLoader(new java.net.URL[]{chainClasses.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+            boolean failed = false;
+            try { loader.loadClass("chain.Chain").getMethod("entry").invoke(null); }
+            catch (InvocationTargetException exception) { failed = exception.getCause() instanceof NullPointerException; }
+            SelfTest.that(failed, "behavior: the long dependency chain actually reaches the null dereference");
+        }
         var chainNode = new org.objectweb.asm.tree.ClassNode();
         new org.objectweb.asm.ClassReader(Files.readAllBytes(chainClasses.resolve("chain/Chain.class")))
                 .accept(chainNode, 0);
@@ -353,6 +423,10 @@ final class BehaviorSelfTest {
         var duplicates = CallbackInitialization.inspect(List.of(classes.resolve("fixture"), stripped.resolve("fixture")));
         SelfTest.that(duplicates.analysisErrors().stream().anyMatch(error -> error.contains("duplicate class fixture/Cases")),
                 "behavior: ambiguous class definitions record an incomplete analysis");
+        BehaviorOracle.run();
+        NativeBehaviorOracle.run();
+        ClassInitializationOracle.run();
+        BehaviorLabSelfTest.run();
         var empty = CallbackInitialization.inspect(List.of(scratch.resolve("absent")));
         SelfTest.that(empty.analyzedBodies() == 0 && empty.classes() == 0,
                 "behavior: absent compiled input is not reported as inspected code");

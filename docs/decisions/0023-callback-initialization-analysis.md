@@ -22,7 +22,8 @@ integration but add a second source of compatibility knowledge to maintain.
 
 ## Decision
 
-Add an opt-in experimental linter, `myceliumBehavior`, for static reference dependencies exposed through callbacks.
+Use abstract interpretation of compiled bytecode to analyze static reference dependencies exposed through callbacks.
+The opt-in experimental linter, `myceliumBehavior`, is the diagnostic interface to that analysis layer.
 ASM's analysis module supplies operand provenance; the compiler propagates bindings through branches and direct-call summaries and
 follows callback factories, forwarded parameters, static callback fields and locally constructed interface implementations,
 including inherited handlers. Guard facts belong to the checked value; unrelated class initializers cannot bind a root
@@ -40,13 +41,19 @@ callback is reachable on a particular loader before another event. A confirmed e
 A fixed number of whole-program passes can stop before a long call chain reaches its fixed point. The solver now
 records which summaries read each method summary, returned callback set, callback field and class initializer.
 Changed facts enqueue their dependents. Operand provenance still comes from ASM; the interprocedural relationships
-come from those actual reads. The report exposes sorted typed dependency edges and the evaluation count. Exhausting
-its work budget records an incomplete analysis.
+come from those actual reads. The report exposes sorted typed dependency edges and the evaluation count. The solver runs until its worklist is
+empty or the caller cancels. Progress telemetry exposes repeated work; arbitrary instruction and iteration caps do not
+define the supported program size.
 
 A parameter invoked as a receiver carries the invoked method signature through forwarding summaries. At a concrete
 call site, only matching callback methods contribute requirements. This distinguishes invocation from merely calling
-`Object.toString` on the callback. Scheduler-local binding order is retained. Complete substitution of callback-owned
-write effects is not implemented; the diagnostic remains potential rather than a scheduler proof.
+`Object.toString` on the callback. Scheduler-local binding order is retained. Known callback arguments now specialize
+consumer-owned scheduler summaries, including synchronous writes and clears. Specializations are dependency-worklist
+nodes, including recursive calls; normal-return reachability separates a non-returning path from one that establishes
+a binding. Initialization sets use immutable snapshots of bitsets, preserving set operations while reducing large-input
+copy costs. Initialization reachability is closed separately over direct activations and synchronous call edges. Its
+union growth does not invalidate unchanged bytecode effects. Public methods, including package-private interface implementations, remain roots even when they also have internal callers. Mixed known
+null and non-null factory returns invalidate the receiving binding.
 
 Independent regressions compile anonymous callbacks and lambdas across compiler releases. Unsafe and safe witnesses
 execute on the JVM. A reverse-ordered dependency chain and a permutation of its class-file method order check
@@ -72,10 +79,10 @@ These scans are analysis evidence, not runtime compatibility claims.
 
 ## Consequences
 
-The compiler gains one bounded behavioral diagnostic, not a general proof of cross-loader behavior. Reflection,
+The compiler gains one scoped behavioral diagnostic, not a general proof of cross-loader behavior. Reflection,
 captured instance aliases, a closed set of runtime dispatch targets and native scheduler semantics remain outside its
-model. It tracks forwarded callbacks and matching synchronous receiver invocations, but not complete callback-owned
-write effects. Assignment is
+model. It tracks forwarded callbacks and matching synchronous receiver invocations with known callback effects.
+Unknown targets and effects remain uncertain. Assignment is
 tracked separately from a full nullness proof. Existing range, linkage, bridge conformance and production runtime
 validation remain necessary. Future diagnostics should derive from program facts or declared contracts with rejection
 fixtures, rather than accumulate loader-name exceptions.

@@ -376,20 +376,30 @@ class or method location. A filename from a class file is not an inferred path i
 For an initialization risk, the **experimental linter** runs with `./gradlew myceliumBehavior` after configuring the
 normal target build. It follows calls within the input classes, field bindings, control-flow branches, callback factories,
 callback parameters and locally constructed interface implementations, including inherited handlers.
-It derives callback dependencies from compiled code rather than a list of loader events. Findings connect a callback's
+The analysis layer uses abstract interpretation of bytecode: operand provenance, control-flow states and interprocedural
+summaries. The experimental linter presents its diagnostics. It derives callback dependencies from compiled code rather
+than a list of loader events. Findings connect a callback's
 registration site to its shared-state read. Null guards constrain the relevant branch; a write inside one registered
 callback does not establish that it runs before another callback.
 
-This is an advisory analysis of static reference fields. It infers public entry roots and class initializers that expose
+This is an advisory analysis of static reference fields. It treats public methods as possible entry roots, including implementations on package-private classes, even when called internally, and includes class initializers that expose
 callbacks, and resolves available class hierarchies. Private entrypoints reached only through annotations or external
 reflection can be missed. It does not establish a closed set of runtime virtual targets, captured instance aliases
 or an external scheduler's behavior. Forwarding callbacks to an external API is tracked; a consumer-written scheduler
-is followed when its body invokes a forwarded callback through a matching method signature. Callback-owned writes are
-not substituted as complete synchronous state transformers, so this does not prove arbitrary scheduler effects.
-A write establishes assignment, not full non-nullness. A candidate remains
+is followed when its body invokes a forwarded callback through a matching method signature. Known callback arguments
+specialize that body's summary, carrying synchronous writes in program order. Those specializations are dependency
+nodes themselves, so recursive forwarding reaches a fixed point without unfolding the call stack. Normal-return
+reachability prevents a non-returning helper from exposing later callbacks. Unknown targets and external scheduling
+do not gain a guarantee. Known null return paths invalidate bindings, including mixed null
+and non-null returns. Static member activation follows its resolved declaring owner, including inherited primitive
+fields and native method declarations. Missing hierarchy branches remain unresolved. An assignment from an unknown
+factory still does not prove non-nullness. Implicit initializer effects that clear another class's fields, and reentrant
+initialization, are not fully modeled; a run without candidates can miss those failures. The must-binding analysis can warn on
+infeasible null-return branches and loses correlations between a factory's result and a later repairing branch. A candidate remains
 potential even when all analyzed bodies have valid frames. The report lists roots and analysis errors, reports empty
 input as unchecked, and explicitly records `nativeEventOrderProven: false`. It is not part of `check` unless the consumer
-adds that dependency. Its report stays separate from the jar's evidence manifest. Archive inputs select multi-release
+adds that dependency. Its report stays separate from the jar's evidence manifest. C1's `conclusion` is `undetermined`: `complete` describes
+analysis completion, while a rule-level safety or violation proof has not been established. Archive inputs select multi-release
 classes using the target's era Java, or the Gradle JVM when no Minecraft target is set; directory inputs are already the
 selected compilation output. C1 uses the existing check levels and allowances; keep the external ordering evidence with
 any allowance reason.
@@ -397,13 +407,35 @@ any allowance reason.
 For linter development, `./gradlew -p gradle-plugin behaviorSelfTest` runs the focused executable regression suite
 on a Java 17 toolchain, including Java 7 anonymous-class bytecode. Use `'-Pmycelium.testJava=25'` to run it on Java 25
 and compile the newer fixture targets. These are JVM analysis regressions, not game runs for those Minecraft eras.
-The full plugin `selfTest` also runs the suite with its own JVM.
+The full plugin `selfTest` also runs the suite with its own JVM. Generated programs compare the diagnostic with actual
+JVM execution for both values of each boolean branch; the expected result comes from execution rather than analyzer rules.
 
-The solver uses a dependency-driven worklist. A changed method summary, returned callback set, callback field or class
-initializer invalidates the summaries that read it. Binding guarantees intersect at control-flow joins; potential
+For larger static experiments, the maintainer tool `tools/behavior_corpus.py` resolves exact game/loader targets through
+the Modrinth API and downloads hash-pinned jars. Python is needed only for this maintainer tool. The committed
+`tools/behavior-corpus.lock.json` is a reproducible sample; resolving again explicitly selects newer published versions.
+
+```sh
+python -m unittest discover -s tools -p test_behavior_corpus.py
+python tools/behavior_corpus.py fetch --lock tools/behavior-corpus.lock.json --cache build/behavior-lab/cache --output build/behavior-lab/plan.json
+./gradlew -p gradle-plugin behaviorLab '-Pmycelium.behaviorLab.plan=/absolute/path/to/build/behavior-lab/plan.json'
+```
+
+The lab reads third-party bytecode without executing it. Each artifact runs in an isolated, cancellable worker and records progress in its log. It compares a local control with a deterministic mutation that removes one definite static reference binding,
+retaining the original archive unchanged. Reports preserve failures, selected fields, hashes and analysis gaps under
+`gradle-plugin/build/behavior-lab`. A generated trusted fixture independently executes the same mutation as part of
+`behaviorSelfTest`. The corpus experiment establishes detection of the injected defect, not correctness of the mod or
+compatibility with its native loader. Baseline candidates require investigation and are not automatically mod bugs.
+
+The solver uses a dependency-driven worklist for callback behavior. Direct class activations and selected synchronous
+calls form a separate initialization graph; a monotone bitset closure solves their transitive reachability after behavior
+summaries settle. Initialization growth therefore does not reinterpret unchanged bytecode effects. A changed method summary, returned callback set, callback field or class
+initializer invalidates the summaries that read it, including callback specializations. Binding guarantees intersect at control-flow joins; potential
 dependencies accumulate. The report records `summaryDependencies` as typed prerequisite-to-dependent edges, together
-with `summaryEvaluations` and `dependencyEdges`. This is an analysis dependency graph, not a native event graph. A
-resource budget limits pathological inputs; exhaustion records an incomplete analysis rather than a clean result.
+with `summaryEvaluations`, `callbackContexts`, `initializationPropagations` and `dependencyEdges`. Context edges retain a stable `dependentContext`
+identifier as well as the owning method. This is an analysis dependency graph, not a native event graph. The solver has no fixed pass, instruction, context or elapsed-time cap. Prerequisite-first scheduling and prioritized
+callback contexts reduce repeated work. Progress includes queue size, interpreted instructions and the most frequently
+changed summary, so expensive convergence can be investigated. Cancellation stops analysis without producing a
+completed report. Reports retain `dataflowSteps` as work telemetry.
 
 Linkage establishes name availability, not lifecycle ordering. A method that exists can still be called before its
 service is initialized. Inspect the selected bridge's SPEC and native registration points, and test cold startup,

@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -65,32 +66,45 @@ final class CallbackInitialization {
     record ParameterEscape(int local, String registration, Set<Field> bound, Set<Field> clears,
                            Signature invocation) {}
     record Summary(Map<Field, String> needs, Set<Field> ensures, Set<Field> clears, Set<Escape> escapes,
-                   Set<ParameterEscape> parameterEscapes, Set<String> initializedClasses, Set<Field> invalidatedNeeds) {
+                   Set<ParameterEscape> parameterEscapes, BitSet initializedClasses, Set<Field> invalidatedNeeds, boolean returnsNormally) {
+        Summary { initializedClasses = (BitSet) initializedClasses.clone(); }
         static Summary empty() {
-            return new Summary(Map.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+            return new Summary(Map.of(), Set.of(), Set.of(), Set.of(), Set.of(), new BitSet(), Set.of(), false);
         }
     }
     record Finding(Method root, String registration, Method callback, Field dependency, String read) {
     }
     record Parameter(Method method, int local) {}
     record ReturnedCallbacks(Method method) {}
-    record Dependency(String factType, String fact, Method dependent) {}
+    record Dependency(String factType, String fact, Method dependent, String dependentContext) {}
+    record Context(Method method, Map<Parameter, Set<Method>> arguments) {
+        public String toString() {
+            return method + arguments.entrySet().stream().sorted(Comparator.comparingInt(entry -> entry.getKey().local))
+                    .map(entry -> entry.getKey().local + "=" + entry.getValue().stream().map(Method::toString).sorted().toList())
+                    .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        }
+    }
     record Signature(String name, String descriptor) {}
     record Value(Set<AbstractInsnNode> origins) {
         static Value of(SourceValue value) { return new Value(Set.copyOf(value.insns)); }
     }
-    record State(Set<Field> bound, Set<Value> nonnull, Set<String> initialized, Set<Field> cleared) {
+    record State(Set<Field> bound, Set<Value> nonnull, BitSet initialized, Set<Field> cleared) {
         State {
             bound = Set.copyOf(bound);
             nonnull = Set.copyOf(nonnull);
-            initialized = Set.copyOf(initialized);
+            initialized = (BitSet) initialized.clone();
             cleared = Set.copyOf(cleared);
         }
     }
     final Map<String, ClassNode> classes = new TreeMap<>();
+    final Map<String, Integer> classIds = new HashMap<>();
+    int classId(String name) { return classIds.computeIfAbsent(name, ignored -> classIds.size()); }
     final Map<Method, MethodNode> methods = new LinkedHashMap<>();
     final Map<Method, Frame<SourceValue>[]> sourceFrames = new HashMap<>();
     final Set<Field> referenceFields = new HashSet<>();
+    final Set<Field> declaredFields = new HashSet<>();
+    final Map<Field, Field> resolvedFields = new HashMap<>();
+    final Map<Method, Method> resolvedStaticMethods = new HashMap<>();
     final Map<Method, Set<Method>> returned = new HashMap<>();
     final Map<Method, Summary> summaries = new HashMap<>();
     final List<String> analysisErrors = new ArrayList<>();
@@ -105,22 +119,53 @@ final class CallbackInitialization {
     final Set<Field> finalReferences = new HashSet<>();
     final Set<Field> immutableBindings = new HashSet<>();
     final Map<String, Set<String>> lineageCache = new HashMap<>();
+    final Map<Method, Set<Method>> virtualDispatchCache = new HashMap<>();
+    final Map<String, Set<Method>> constructedCallbackCache = new HashMap<>();
+    final Map<String, Set<String>> concreteSubtypes = new HashMap<>();
     final Map<MethodInsnNode, Set<Method>> callTargetCache = new IdentityHashMap<>();
     final Map<Method, Map<Field, Integer>> parameterWriteCache = new HashMap<>();
-    final Map<SourceValue, Boolean> nullCache = new IdentityHashMap<>();
     final Map<Method, int[]> sourceLines = new HashMap<>();
     final Map<Method, Set<Signature>> functionalSignatures = new HashMap<>();
-    final Map<Object, Set<Method>> dependents = new HashMap<>();
-    final Deque<Method> pendingSummaries = new ArrayDeque<>();
-    final Set<Method> queuedSummaries = new HashSet<>();
-    Method evaluating;
-    int summaryEvaluations;
+    final Map<Parameter, Set<Method>> contextValues = new HashMap<>();
+    final Map<Context, Summary> contextSummaries = new HashMap<>();
+    final Map<Object, Set<Object>> dependents = new HashMap<>();
+    final Deque<Object> pendingSummaries = new ArrayDeque<>();
+    final Set<Object> queuedSummaries = new HashSet<>();
+    Object evaluating;
+    final Map<Object, Set<Object>> initializationCalls = new HashMap<>();
+    final Map<Object, BitSet> initializationReachability = new HashMap<>();
+    Set<Object> currentInitializationCalls = new LinkedHashSet<>();
+    long initializationPropagations;
+    int initializationPending;
+    String phase = "bytecode provenance";
+    long summaryEvaluations;
+    final Map<Object, Long> summaryUpdates = new HashMap<>();
+    Object hottestSummary;
+    long mostUpdates;
+    long dataflowSteps;
+    record Progress(long summaryEvaluations, int pendingSummaries, int callbackContexts, long dataflowSteps,
+                    String hottestSummary, long summaryUpdates, String phase, int initializationPending, long initializationPropagations) {}
+    java.util.function.Consumer<Progress> progress;
+    long lastProgress;
+    boolean progressStarted;
+    void progressPoint() {
+        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Bytecode analysis cancelled");
+        if (progress != null && (!progressStarted || System.nanoTime() - lastProgress >= 5_000_000_000L)) {
+            lastProgress = System.nanoTime();
+            progressStarted = true;
+            progress.accept(new Progress(summaryEvaluations, pendingSummaries.size(), contextSummaries.size(), dataflowSteps,
+                    hottestSummary == null ? "" : hottestSummary.toString(), mostUpdates, phase, initializationPending, initializationPropagations));
+        }
+    }
 
     void dependOn(Object fact) {
         if (evaluating != null) dependents.computeIfAbsent(fact, ignored -> new LinkedHashSet<>()).add(evaluating);
     }
-    void enqueue(Method method) {
-        if (queuedSummaries.add(method)) pendingSummaries.addLast(method);
+    void enqueue(Object method) {
+        if (queuedSummaries.add(method)) {
+            if (method instanceof Context) pendingSummaries.addFirst(method);
+            else pendingSummaries.addLast(method);
+        }
     }
     void changed(Object fact) {
         dependents.getOrDefault(fact, Set.of()).forEach(this::enqueue);
@@ -132,6 +177,7 @@ final class CallbackInitialization {
     void prepare() {
         for (ClassNode c : classes.values()) {
             for (FieldNode f : c.fields) {
+                declaredFields.add(new Field(c.name, f.name, f.desc));
                 if ((f.access & Opcodes.ACC_STATIC) != 0 && reference(f.desc)) {
                     Field key = new Field(c.name, f.name, f.desc);
                     referenceFields.add(key);
@@ -183,11 +229,62 @@ final class CallbackInitialization {
         return d.startsWith("L")||d.startsWith("[");
     }
     Field field(FieldInsnNode i) {
-        for (String owner : lineage(i.owner)) {
-            Field candidate = new Field(owner, i.name, i.desc);
-            if (referenceFields.contains(candidate)) return candidate;
+        Field symbolic = new Field(i.owner, i.name, i.desc);
+        Field resolved = resolveField(symbolic);
+        return resolved == null ? symbolic : resolved;
+    }
+    Field resolveField(Field symbolic) {
+        if (resolvedFields.containsKey(symbolic)) return resolvedFields.get(symbolic);
+        Deque<String> work = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        work.push(symbolic.owner);
+        Field resolved = null;
+        while (!work.isEmpty()) {
+            String owner = work.pop();
+            if (!seen.add(owner)) continue;
+            ClassNode node = classes.get(owner);
+            // An absent earlier branch might contain the declaration. Do not credit a later one.
+            if (node == null) break;
+            Field candidate = new Field(owner, symbolic.name, symbolic.desc);
+            if (declaredFields.contains(candidate)) { resolved = candidate; break; }
+            if (node.superName != null && (node.access & Opcodes.ACC_INTERFACE) == 0) work.push(node.superName);
+            for (int index = node.interfaces.size() - 1; index >= 0; index--) work.push(node.interfaces.get(index));
         }
-        return new Field(i.owner, i.name, i.desc);
+        resolvedFields.put(symbolic, resolved);
+        return resolved;
+    }
+    Method staticMethod(Method symbolic) {
+        if (resolvedStaticMethods.containsKey(symbolic)) return resolvedStaticMethods.get(symbolic);
+        Set<String> seen = new HashSet<>();
+        String owner = symbolic.owner;
+        Method resolved = null;
+        while (owner != null && seen.add(owner)) {
+            ClassNode node = classes.get(owner);
+            if (node == null) break;
+            Method candidate = new Method(owner, symbolic.name, symbolic.desc);
+            MethodNode body = methods.get(candidate);
+            if (body != null) {
+                if ((body.access & Opcodes.ACC_STATIC) != 0) resolved = candidate;
+                break;
+            }
+            if ((node.access & Opcodes.ACC_INTERFACE) != 0) break;
+            owner = node.superName;
+        }
+        resolvedStaticMethods.put(symbolic, resolved);
+        return resolved;
+    }
+    String activeClass(AbstractInsnNode instruction) {
+        int opcode = instruction.getOpcode();
+        if (instruction instanceof TypeInsnNode type && opcode == Opcodes.NEW) return type.desc;
+        if (instruction instanceof FieldInsnNode field && (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC)) {
+            Field resolved = resolveField(new Field(field.owner, field.name, field.desc));
+            return resolved == null ? null : resolved.owner;
+        }
+        if (instruction instanceof MethodInsnNode call && opcode == Opcodes.INVOKESTATIC) {
+            Method resolved = staticMethod(method(call));
+            return resolved == null ? null : resolved.owner;
+        }
+        return null;
     }
     static Method method(MethodInsnNode i) {
         return new Method(i.owner, i.name, i.desc);
@@ -205,6 +302,8 @@ final class CallbackInitialization {
         Set<Method> out = new LinkedHashSet<>();
         if (v == null) return out;
         for (AbstractInsnNode p : v.insns) {
+            Parameter parameter = parameters.get(p);
+            if (parameter != null) out.addAll(contextValues.getOrDefault(parameter, Set.of()));
             if (p instanceof InvokeDynamicInsnNode d && d.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")) {
                 for (Object arg : d.bsmArgs) {
                     if (arg instanceof Handle h) {
@@ -213,33 +312,47 @@ final class CallbackInitialization {
                             int count = Type.getArgumentTypes(d.desc).length;
                             SourceValue receiver = frame != null && count > 0 ? frame.getStack(frame.getStackSize() - count) : null;
                             out.addAll(dispatch(method(h), receiver));
+                        } else if (h.getTag() == Opcodes.H_INVOKESTATIC) {
+                            Method resolved = staticMethod(method(h));
+                            if (resolved != null) out.add(resolved);
                         } else if (methods.containsKey(method(h))) out.add(method(h));
                     }
                 }
             }
             if (p instanceof MethodInsnNode m) {
-                dependOn(new ReturnedCallbacks(method(m)));
-                out.addAll(returned.getOrDefault(method(m), Set.of()));
+                Method resolved = m.getOpcode() == Opcodes.INVOKESTATIC ? staticMethod(method(m)) : method(m);
+                if (resolved != null) {
+                    dependOn(new ReturnedCallbacks(resolved));
+                    out.addAll(returned.getOrDefault(resolved, Set.of()));
+                }
             }
             if (p instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC) {
                 dependOn(field(f));
                 out.addAll(fieldCallbacks.getOrDefault(field(f), Set.of()));
             }
-            if (p instanceof TypeInsnNode n && n.getOpcode() == Opcodes.NEW && classes.containsKey(n.desc)
-                    && lineage(n.desc).stream().anyMatch(t -> classes.containsKey(t) && !classes.get(t).interfaces.isEmpty())) {
-                Set<String> signatures = new HashSet<>();
-                for (String type : lineage(n.desc)) {
-                    for (var m : methods.entrySet()) {
-                        if (m.getKey().owner.equals(type) && (m.getValue().access & Opcodes.ACC_PUBLIC) != 0
-                                && (m.getValue().access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) == 0
-                                && !m.getKey().name.startsWith("<") && signatures.add(m.getKey().name + m.getKey().desc)) {
-                            out.add(m.getKey());
-                        }
-                    }
-                }
-            }
+            if (p instanceof TypeInsnNode n && n.getOpcode() == Opcodes.NEW)
+                out.addAll(constructedCallbacks(n.desc));
         }
         return out;
+    }
+    Set<Method> constructedCallbacks(String type) {
+        return constructedCallbackCache.computeIfAbsent(type, owner -> {
+            if (!classes.containsKey(owner) || lineage(owner).stream()
+                    .noneMatch(parent -> classes.containsKey(parent) && !classes.get(parent).interfaces.isEmpty())) return Set.of();
+            Set<Method> selected = new LinkedHashSet<>();
+            Set<String> signatures = new HashSet<>();
+            for (String parent : lineage(owner)) {
+                ClassNode node = classes.get(parent);
+                if (node == null) continue;
+                for (MethodNode body : node.methods) {
+                    Method key = new Method(parent, body.name, body.desc);
+                    if (methods.containsKey(key) && (body.access & Opcodes.ACC_PUBLIC) != 0
+                            && (body.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) == 0
+                            && !body.name.startsWith("<") && signatures.add(body.name + body.desc)) selected.add(key);
+                }
+            }
+            return Set.copyOf(selected);
+        });
     }
     Set<Field> origins(SourceValue v) {
         Set<Field> out = new HashSet<>();
@@ -291,18 +404,19 @@ final class CallbackInitialization {
             }
         }
         if (!exact) {
+            Set<Method> cached = virtualDispatchCache.get(declaration);
+            if (cached != null) return cached;
             types.clear();
-            for (ClassNode candidate : classes.values()) {
-                if ((candidate.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) == 0
-                        && lineage(candidate.name).contains(declaration.owner)) types.add(candidate.name);
-            }
+            types.addAll(concreteSubtypes.getOrDefault(declaration.owner, Set.of()));
         }
         Set<Method> targets = new LinkedHashSet<>();
         for (String type : types) {
             Method selected = implementation(type, declaration);
             if (selected != null) targets.add(selected);
         }
-        return targets;
+        Set<Method> result = Set.copyOf(targets);
+        if (!exact) virtualDispatchCache.put(declaration, result);
+        return result;
     }
 
     Set<Method> callTargets(MethodInsnNode call, Frame<SourceValue> frame) {
@@ -310,7 +424,7 @@ final class CallbackInitialization {
         if (cached != null) return cached;
         Method declared = method(call);
         if (call.getOpcode() == Opcodes.INVOKESTATIC || call.getOpcode() == Opcodes.INVOKESPECIAL) {
-            Method selected = implementation(call.owner, declared);
+            Method selected = call.getOpcode() == Opcodes.INVOKESTATIC ? staticMethod(declared) : implementation(call.owner, declared);
             Set<Method> targets = selected == null ? Set.of() : Set.of(selected);
             callTargetCache.put(call, targets);
             return targets;
@@ -335,26 +449,66 @@ final class CallbackInitialization {
     }
 
     Summary combined(Set<Method> targets) {
+        return combined(targets, null, null);
+    }
+    Summary atCall(Object key, Summary behavior, boolean recordInitialization) {
+        if (evaluating != null) {
+            if (recordInitialization) currentInitializationCalls.add(key);
+            return behavior;
+        }
+        BitSet initialized = initializationReachability.getOrDefault(key, behavior.initializedClasses);
+        return new Summary(behavior.needs, behavior.ensures, behavior.clears, behavior.escapes,
+                behavior.parameterEscapes, initialized, behavior.invalidatedNeeds, behavior.returnsNormally);
+    }
+    Summary specialized(Method target, MethodInsnNode call, Frame<SourceValue> frame, boolean recordInitialization) {
+        Summary base = summary(target);
+        if (call == null || frame == null || base.parameterEscapes.isEmpty() || !sourceFrames.containsKey(target)) return atCall(target, base, recordInitialization);
+        Map<Parameter, Set<Method>> arguments = new HashMap<>();
+        for (ParameterEscape effect : base.parameterEscapes) {
+            Set<Method> values = targets(argument(call, frame, effect.local));
+            if (!values.isEmpty()) arguments.put(new Parameter(target, effect.local), Set.copyOf(values));
+        }
+        if (arguments.isEmpty()) return atCall(target, base, recordInitialization);
+        Context key = new Context(target, Map.copyOf(arguments));
+        dependOn(key);
+        if (!contextSummaries.containsKey(key)) {
+            if (evaluating == null) {
+                analysisErrors.add("callback context unresolved after fixed point; analysis incomplete");
+                return atCall(target, base, recordInitialization);
+            }
+            contextSummaries.put(key, Summary.empty());
+            enqueue(key);
+        }
+        return atCall(key, contextSummaries.get(key), recordInitialization);
+    }
+    Summary combined(Set<Method> targets, MethodInsnNode call, Frame<SourceValue> frame) {
+        return combined(targets, call, frame, true);
+    }
+    Summary combined(Set<Method> targets, MethodInsnNode call, Frame<SourceValue> frame, boolean recordInitialization) {
         if (targets.isEmpty()) return null;
         Map<Field, String> needs = new LinkedHashMap<>();
         Set<Field> ensures = null;
         Set<Field> clears = new HashSet<>();
         Set<Escape> escapes = new LinkedHashSet<>();
         Set<ParameterEscape> parameterEscapes = new LinkedHashSet<>();
-        Set<String> initializedClasses = new HashSet<>();
+        BitSet initializedClasses = new BitSet();
         Set<Field> invalidatedNeeds = new HashSet<>();
+        boolean returnsNormally = false;
         for (Method target : targets) {
-            Summary summary = summary(target);
+            Summary summary = specialized(target, call, frame, recordInitialization);
             summary.needs.forEach(needs::putIfAbsent);
-            if (ensures == null) ensures = new HashSet<>(summary.ensures);
-            else ensures.retainAll(summary.ensures);
+            if (summary.returnsNormally) {
+                returnsNormally = true;
+                if (ensures == null) ensures = new HashSet<>(summary.ensures);
+                else ensures.retainAll(summary.ensures);
+            }
             clears.addAll(summary.clears);
             escapes.addAll(summary.escapes);
             parameterEscapes.addAll(summary.parameterEscapes);
-            initializedClasses.addAll(summary.initializedClasses);
+            initializedClasses.or(summary.initializedClasses);
             invalidatedNeeds.addAll(summary.invalidatedNeeds);
         }
-        return new Summary(Map.copyOf(needs), Set.copyOf(ensures), Set.copyOf(clears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), Set.copyOf(initializedClasses), Set.copyOf(invalidatedNeeds));
+        return new Summary(Map.copyOf(needs), ensures == null ? Set.of() : Set.copyOf(ensures), Set.copyOf(clears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), initializedClasses, Set.copyOf(invalidatedNeeds), returnsNormally);
     }
 
     SourceValue argument(MethodInsnNode call, Frame<SourceValue> frame, int local) {
@@ -369,51 +523,39 @@ final class CallbackInitialization {
         return null;
     }
 
-    boolean definitelyNull(SourceValue value, Set<Method> visiting) {
-        if (visiting.isEmpty() && value != null) {
-            Boolean cached = nullCache.get(value);
-            if (cached != null) return cached;
-            boolean result = computeDefinitelyNull(value, visiting);
-            nullCache.put(value, result);
-            return result;
-        }
-        return computeDefinitelyNull(value, visiting);
-    }
-
-    boolean computeDefinitelyNull(SourceValue value, Set<Method> visiting) {
-        if (value == null || value.insns.isEmpty()) return false;
+    // A known null path invalidates a binding even when other returns are non-null.
+    // External factories remain unknown; this is evidence of null, not a non-null proof.
+    boolean nullable(SourceValue value, Set<Method> visiting) {
+        if (value == null) return false;
         for (AbstractInsnNode origin : value.insns) {
-            if (origin.getOpcode() == Opcodes.ACONST_NULL) continue;
+            if (origin.getOpcode() == Opcodes.ACONST_NULL) return true;
             if (origin instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
                     && referenceFields.contains(field(field)) && !writtenFields.contains(field(field))
-                    && !constantReferences.contains(field(field))) continue;
-            if (origin instanceof MethodInsnNode call) {
-                Set<Method> callees = callTargets(call, instructionFrames.get(call));
-                if (callees.isEmpty()) return false;
-                for (Method callee : callees) {
-                    if (!visiting.add(callee)) return false;
+                    && !constantReferences.contains(field(field))) return true;
+            if (origin instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC) {
+                Summary initializer = summary(new Method(field(field).owner, "<clinit>", "()V"));
+                if (initializer.clears.contains(field(field)) && !initializer.ensures.contains(field(field))) return true;
+            }
+            if (!(origin instanceof MethodInsnNode call)) continue;
+            for (Method callee : callTargets(call, instructionFrames.get(call))) {
+                if (!visiting.add(callee)) continue;
+                try {
                     MethodNode method = methods.get(callee);
                     Frame<SourceValue>[] frames = sourceFrames.get(callee);
-                    boolean returned = false;
-                    if (frames == null) return false;
+                    if (frames == null) continue;
                     for (int i = 0; i < method.instructions.size(); i++) {
                         if (method.instructions.get(i).getOpcode() != Opcodes.ARETURN || frames[i] == null) continue;
-                        returned = true;
                         SourceValue result = top(frames[i]);
-                        if (result.insns.size() == 1 && parameters.containsKey(result.insns.iterator().next())) {
-                            Parameter parameter = parameters.get(result.insns.iterator().next());
-                            Frame<SourceValue> callFrame = instructionFrames.get(call);
-                            if (callFrame == null || !definitelyNull(argument(call, callFrame, parameter.local), visiting)) return false;
-                        } else if (!definitelyNull(result, visiting)) return false;
+                        Parameter parameter = result.insns.size() == 1 ? parameters.get(result.insns.iterator().next()) : null;
+                        if (parameter != null && parameter.method.equals(callee)) {
+                            Frame<SourceValue> caller = instructionFrames.get(call);
+                            if (caller != null && nullable(argument(call, caller, parameter.local), visiting)) return true;
+                        } else if (nullable(result, visiting)) return true;
                     }
-                    visiting.remove(callee);
-                    if (!returned) return false;
-                }
-                continue;
+                } finally { visiting.remove(callee); }
             }
-            return false;
         }
-        return true;
+        return false;
     }
 
     Map<Field, Integer> parameterWrites(Method key) {
@@ -466,30 +608,41 @@ final class CallbackInitialization {
             AbstractInsnNode instruction = body.instructions.get(i);
             if (instruction instanceof FieldInsnNode write && write.getOpcode() == Opcodes.PUTSTATIC && field(write).equals(field)) return false;
             if (instruction instanceof MethodInsnNode call) {
-                Summary effects = combined(callTargets(call, instructionFrames.get(call)));
+                Summary effects = combined(callTargets(call, instructionFrames.get(call)), call, instructionFrames.get(call), false);
                 if (effects != null && (effects.clears.contains(field) || effects.ensures.contains(field))) return false;
             }
         }
         return true;
     }
-    void callback(Map<Field, String> needs, Set<Field> bound, Set<Field> clears, Set<Escape> escapes, Set<String> initializedClasses,
+    void callback(Map<Field, String> needs, Set<Field> bound, Set<Field> clears, Set<Escape> escapes, BitSet initializedClasses,
                   Method root, String registration, Method target, boolean emit) {
         Summary s=summary(target);
         Set<Field> atInvocation = new HashSet<>(bound);
         if (emit) atInvocation.addAll(immutableBindings);
-        if (emit && !initializedClasses.contains(target.owner)) atInvocation.addAll(entryBindings(target.owner));
+        if (emit && !initializedClasses.get(classId(target.owner))) atInvocation.addAll(entryBindings(target.owner));
         for (var e:s.needs.entrySet()) {
-            if (emit && !initializedClasses.contains(e.getKey().owner)) atInvocation.addAll(entryBindings(e.getKey().owner));
+            if (emit && !initializedClasses.get(classId(e.getKey().owner))) atInvocation.addAll(entryBindings(e.getKey().owner));
             if (atInvocation.contains(e.getKey()) && !s.invalidatedNeeds.contains(e.getKey())) continue;
             needs.putIfAbsent(e.getKey(), e.getValue());
             escapes.add(new Escape(registration, target, e.getKey(), e.getValue(), clears.contains(e.getKey()) || s.invalidatedNeeds.contains(e.getKey())));
             if (emit)findings.add(new Finding(root, registration, target, e.getKey(), e.getValue()));
         }
     }
+    Summary opaque(Method key) {
+        MethodNode body = methods.get(key);
+        if (body == null) return Summary.empty();
+        Set<ParameterEscape> parameters = new LinkedHashSet<>();
+        int local = (body.access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+        for (Type argument : Type.getArgumentTypes(key.desc)) {
+            if (reference(argument.getDescriptor())) parameters.add(new ParameterEscape(local, null, Set.of(), Set.of(), null));
+            local += argument.getSize();
+        }
+        return new Summary(Map.of(), Set.of(), Set.of(), Set.of(), Set.copyOf(parameters), directEntryClasses(key.owner), Set.of(), true);
+    }
     Summary flow(Method k, boolean emit) {
         MethodNode m=methods.get(k);
         Frame<SourceValue>[] ff=sourceFrames.get(k);
-        if (ff==null||m.instructions.size()==0)return Summary.empty();
+        if (ff==null||m.instructions.size()==0)return opaque(k);
         AbstractInsnNode[] ins=m.instructions.toArray();
         Map<AbstractInsnNode, Integer> ix=new IdentityHashMap<>();
         for (int i=0;i<ins.length;i++)ix.put(ins[i], i);
@@ -499,42 +652,39 @@ final class CallbackInitialization {
         ClassNode owner = classes.get(k.owner);
         boolean initializer = k.name.equals("<clinit>");
         Set<Field> entryBindings = emit ? entryBindings(initializer && owner != null ? owner.superName : k.owner) : Set.of();
-        Set<String> entryClasses = initializer && owner != null ? entryClasses(owner.superName) : entryClasses(k.owner);
-        entryClasses.add(k.owner);
+        String entryOwner = initializer && owner != null ? owner.superName : k.owner;
+        BitSet entryClasses = emit ? entryClasses(entryOwner) : directEntryClasses(entryOwner);
+        entryClasses.set(classId(k.owner));
         states.put(0, new State(entryBindings, Set.of(), entryClasses, Set.of()));
         work.add(0);
         Map<Field, String> needs=new LinkedHashMap<>();
         Set<Field> exits = null, touchedClears = new HashSet<>(), invalidatedNeeds = new HashSet<>();
         Set<Escape> escapes=new LinkedHashSet<>();
         Set<ParameterEscape> parameterEscapes = new LinkedHashSet<>();
-        Set<String> touchedClasses = new HashSet<>(entryClasses);
-        int steps=0;
+        BitSet touchedClasses = (BitSet) entryClasses.clone();
         while (!work.isEmpty()) {
-            if (++steps>100000) {
-                analysisErrors.add(k+": dataflow budget exceeded");
-                return Summary.empty();
-            }
+            if ((++dataflowSteps & 1023) == 0) progressPoint();
             int i=work.remove();
             if (ff[i]==null)continue;
             State before = states.get(i);
             Set<Field> bound = new HashSet<>(before.bound), clears = new HashSet<>(before.cleared);
             Set<Value> nonnull = new HashSet<>(before.nonnull);
-            Set<String> initialized = new HashSet<>(before.initialized);
+            BitSet initialized = before.initialized;
             AbstractInsnNode n=ins[i];
             nonnull.removeIf(value -> value.origins.contains(n));
             Frame<SourceValue> f=ff[i];
             int op=n.getOpcode();
-            String activeClass = n instanceof TypeInsnNode type && op == Opcodes.NEW ? type.desc
-                    : n instanceof FieldInsnNode field && (op == Opcodes.GETSTATIC || op == Opcodes.PUTSTATIC) ? field(field).owner
-                    : n instanceof MethodInsnNode call && op == Opcodes.INVOKESTATIC ? call.owner : null;
-            if (activeClass != null && !initialized.contains(activeClass)) {
+            boolean continues = true;
+            String activeClass = activeClass(n);
+            if (activeClass != null && !initialized.get(classId(activeClass))) {
                 if (emit) bound.addAll(entryBindings(activeClass));
-                initialized.addAll(entryClasses(activeClass));
+                initialized = union(initialized, emit ? entryClasses(activeClass) : directEntryClasses(activeClass));
+                touchedClasses.or(initialized);
             }
             if (n instanceof FieldInsnNode fi) {
                 if (op==Opcodes.PUTSTATIC && referenceFields.contains(field(fi))) {
                     SourceValue v=top(f);
-                    boolean nil = definitelyNull(v, new HashSet<>());
+                    boolean nil = nullable(v, new HashSet<>());
                     if (nil){
                         bound.remove(field(fi));
                         clears.add(field(fi));
@@ -553,13 +703,18 @@ final class CallbackInitialization {
                     for (AbstractInsnNode origin : f.getStack(first - 1).insns) {
                         Parameter parameter = parameters.get(origin);
                         if (parameter != null && parameter.method.equals(k)) {
-                            parameterEscapes.add(new ParameterEscape(parameter.local, site(k, i),
+                            if (contextValues.containsKey(parameter)) {
+                                Signature signature = new Signature(call.name, call.desc);
+                                for (Method target : contextValues.get(parameter)) if (matches(target, signature))
+                                    callback(needs, bound, clears, escapes, initialized, k, site(k, i), target, false);
+                            } else parameterEscapes.add(new ParameterEscape(parameter.local, site(k, i),
                                     Set.copyOf(bound), Set.copyOf(clears), new Signature(call.name, call.desc)));
                         }
                     }
                 }
-                Summary s = combined(callTargets(call, f));
+                Summary s = combined(callTargets(call, f), call, f);
                 if (s!=null) {
+                    continues = s.returnsNormally;
                     for (var e : s.needs.entrySet()) {
                         if (s.invalidatedNeeds.contains(e.getKey())) {
                             needs.putIfAbsent(e.getKey(), e.getValue());
@@ -577,17 +732,18 @@ final class CallbackInitialization {
                     for (ParameterEscape effect : s.parameterEscapes) {
                         SourceValue actual = argument(call, f, effect.local);
                         if (actual == null) continue;
+                        String registration = effect.registration == null ? site(k, i) : effect.registration;
                         Set<Field> atExposure = new HashSet<>(bound);
                         atExposure.removeAll(effect.clears);
                         atExposure.addAll(effect.bound);
                         for (Method target : targets(actual)) {
                             if (effect.invocation != null && !matches(target, effect.invocation)) continue;
-                            callback(needs, atExposure, clears, escapes, initialized, k, effect.registration, target, emit);
+                            callback(needs, atExposure, clears, escapes, initialized, k, registration, target, emit);
                         }
                         for (AbstractInsnNode origin : actual.insns) {
                             Parameter parameter = parameters.get(origin);
                             if (parameter != null && parameter.method.equals(k)) {
-                                parameterEscapes.add(new ParameterEscape(parameter.local, effect.registration,
+                                parameterEscapes.add(new ParameterEscape(parameter.local, registration,
                                         Set.copyOf(atExposure), Set.copyOf(clears), effect.invocation));
                             }
                         }
@@ -595,10 +751,13 @@ final class CallbackInitialization {
                     bound.removeAll(s.clears);
                     clears.addAll(s.clears);
                     bound.addAll(s.ensures);
-                    initialized.addAll(s.initializedClasses);
+                    if (emit) {
+                        initialized = union(initialized, s.initializedClasses);
+                        touchedClasses.or(s.initializedClasses);
+                    }
                     for (Method target : callTargets(call, f)) {
                         for (var write : parameterWrites(target).entrySet()) {
-                            if (definitelyNull(argument(call, f, write.getValue()), new HashSet<>())) {
+                            if (nullable(argument(call, f, write.getValue()), new HashSet<>())) {
                                 bound.remove(write.getKey());
                                 clears.add(write.getKey());
                             }
@@ -630,7 +789,6 @@ final class CallbackInitialization {
                 if (exits==null)exits=new HashSet<>(bound);
                 else exits.retainAll(bound);
             }
-            touchedClasses.addAll(initialized);
             touchedClears.addAll(clears);
             List<Integer> next=new ArrayList<>();
             Map<Integer, Set<Field>> branch=new HashMap<>();
@@ -656,10 +814,15 @@ final class CallbackInitialization {
                 next.add(ix.get(s.dflt));
                 for (LabelNode l:s.labels)next.add(ix.get(l));
             } else if (!(op>=Opcodes.IRETURN&&op<=Opcodes.RETURN)&&op!=Opcodes.ATHROW&&i+1<ins.length)next.add(i+1);
-            for (int dest:next)merge(states, work, dest, new State(branch.getOrDefault(dest, bound), branchValues.getOrDefault(dest, nonnull), initialized, clears));
+            if (continues) for (int dest:next)merge(states, work, dest, new State(branch.getOrDefault(dest, bound), branchValues.getOrDefault(dest, nonnull), initialized, clears));
             for (TryCatchBlockNode t:m.tryCatchBlocks)if (i>=ix.get(t.start)&&i<ix.get(t.end)) merge(states, work, ix.get(t.handler), before);
         }
-        return new Summary(Map.copyOf(needs), exits==null?Set.of():Set.copyOf(exits), Set.copyOf(touchedClears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), Set.copyOf(touchedClasses), Set.copyOf(invalidatedNeeds));
+        return new Summary(Map.copyOf(needs), exits==null?Set.of():Set.copyOf(exits), Set.copyOf(touchedClears), Set.copyOf(escapes), Set.copyOf(parameterEscapes), touchedClasses, Set.copyOf(invalidatedNeeds), exits != null);
+    }
+    static BitSet union(BitSet current, BitSet added) {
+        BitSet result = (BitSet) current.clone();
+        result.or(added);
+        return result.equals(current) ? current : result;
     }
     static void merge(Map<Integer, State> states, Deque<Integer> work, int dest, State incoming) {
         State old = states.get(dest);
@@ -672,8 +835,7 @@ final class CallbackInitialization {
         bound.retainAll(incoming.bound);
         Set<Value> values = new HashSet<>(old.nonnull);
         values.retainAll(incoming.nonnull);
-        Set<String> initialized = new HashSet<>(old.initialized);
-        initialized.addAll(incoming.initialized);
+        BitSet initialized = union(old.initialized, incoming.initialized);
         Set<Field> cleared = new HashSet<>(old.cleared);
         cleared.addAll(incoming.cleared);
         State joined = new State(bound, values, initialized, cleared);
@@ -682,7 +844,46 @@ final class CallbackInitialization {
             work.add(dest);
         }
     }
+    List<Method> initialOrder() {
+        record Visit(Method method, boolean exit) {}
+        Comparator<Method> order = Comparator.comparing(Method::owner).thenComparing(Method::name).thenComparing(Method::desc);
+        Set<Method> seen = new HashSet<>();
+        List<Method> result = new ArrayList<>();
+        for (Method root : methods.keySet().stream().sorted(order).toList()) {
+            Deque<Visit> work = new ArrayDeque<>();
+            work.push(new Visit(root, false));
+            while (!work.isEmpty()) {
+                progressPoint();
+                Visit visit = work.pop();
+                if (visit.exit) { result.add(visit.method); continue; }
+                if (!seen.add(visit.method)) continue;
+                work.push(new Visit(visit.method, true));
+                Set<Method> prerequisites = new java.util.TreeSet<>(order.reversed());
+                prerequisites.add(new Method(visit.method.owner, "<clinit>", "()V"));
+                MethodNode body = methods.get(visit.method);
+                Frame<SourceValue>[] frames = sourceFrames.get(visit.method);
+                if (frames != null) for (int i = 0; i < body.instructions.size(); i++) {
+                    if (frames[i] == null) continue;
+                    AbstractInsnNode instruction = body.instructions.get(i);
+                    if (instruction instanceof MethodInsnNode call) prerequisites.addAll(callTargets(call, frames[i]));
+                    if (instruction instanceof InvokeDynamicInsnNode || instruction.getOpcode() == Opcodes.NEW)
+                        prerequisites.addAll(targets(new SourceValue(1, instruction)));
+                    String active = activeClass(instruction);
+                    if (active != null) prerequisites.add(new Method(active, "<clinit>", "()V"));
+                }
+                for (Method prerequisite : prerequisites) if (methods.containsKey(prerequisite) && !seen.contains(prerequisite))
+                    work.push(new Visit(prerequisite, false));
+            }
+        }
+        return result;
+    }
+
     void analyze() {
+        for (ClassNode candidate : classes.values()) {
+            if ((candidate.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) != 0) continue;
+            for (String parent : lineage(candidate.name))
+                concreteSubtypes.computeIfAbsent(parent, ignored -> new LinkedHashSet<>()).add(candidate.name);
+        }
         for (Method k:methods.keySet()){
             returned.put(k, new LinkedHashSet<>());
             summaries.put(k, Summary.empty());
@@ -698,18 +899,22 @@ final class CallbackInitialization {
                 }
             }
         }
-        methods.keySet().forEach(this::enqueue);
-        long budget = Math.max(10000L, 100L * methods.size());
+        phase = "dependency ordering"; progressStarted = false;
+        initialOrder().forEach(this::enqueue);
+        phase = "behavior summaries"; progressStarted = false;
         while (!pendingSummaries.isEmpty()) {
-            if (++summaryEvaluations > budget) {
-                analysisErrors.add("interprocedural summary worklist budget exceeded; fixed point not established");
-                break;
-            }
-            Method key = pendingSummaries.removeFirst();
-            queuedSummaries.remove(key);
-            evaluating = key;
+            ++summaryEvaluations;
+            progressPoint();
+            Object node = pendingSummaries.removeFirst();
+            queuedSummaries.remove(node);
+            evaluating = node;
+            Context context = node instanceof Context value ? value : null;
+            Method key = context == null ? (Method) node : context.method;
+            contextValues.clear();
+            currentInitializationCalls = new LinkedHashSet<>();
+            if (context != null) contextValues.putAll(context.arguments);
             callTargetCache.clear();
-            nullCache.clear();
+
             Frame<SourceValue>[] frames = sourceFrames.get(key);
             MethodNode body = methods.get(key);
             if (frames != null) for (int i = 0; i < body.instructions.size(); i++) {
@@ -722,23 +927,25 @@ final class CallbackInitialization {
                             .addAll(targets(top(frames[i])))) changed(field(field));
             }
             Summary value = flow(key, false);
-            if (!value.equals(summaries.get(key))) {
-                summaries.put(key, value);
-                changed(key);
+            Summary previous = context == null ? summaries.put(key, value) : contextSummaries.put(context, value);
+            initializationCalls.put(node, Set.copyOf(currentInitializationCalls));
+            if (!sameBehavior(value, previous)) {
+                long updates = summaryUpdates.merge(node, 1L, Long::sum);
+                if (updates > mostUpdates) { mostUpdates = updates; hottestSummary = node; }
+                changed(node);
             }
-            if (key.name.equals("<clinit>")) {
-                Set<Field> previous = classInitializationBindings.put(key.owner, value.ensures);
-                if (!value.ensures.equals(previous)) changed(key.owner);
+            if (context == null && key.name.equals("<clinit>")) {
+                Set<Field> previousBindings = classInitializationBindings.put(key.owner, value.ensures);
+                if (!value.ensures.equals(previousBindings)) changed(key.owner);
             }
         }
         evaluating = null;
+        contextValues.clear();
         callTargetCache.clear();
-        nullCache.clear();
-        Set<Method> inbound=new HashSet<>();
-        for (MethodNode m:methods.values())for (AbstractInsnNode i:m.instructions) {
-            if (i instanceof MethodInsnNode call) inbound.addAll(callTargets(call, instructionFrames.get(i)));
-            if (i instanceof InvokeDynamicInsnNode d)for (Object arg:d.bsmArgs)if (arg instanceof Handle h)inbound.add(method(h));
-        }
+
+        phase = "initialization reachability"; progressStarted = false;
+        solveInitialization();
+        phase = "entry roots"; progressStarted = false;
         immutableBindings.addAll(constantReferences);
         for (var e : summaries.entrySet()) {
             Summary summary = e.getValue();
@@ -751,28 +958,80 @@ final class CallbackInitialization {
                 }
             }
         }
-        for (var e:methods.entrySet())if ((!inbound.contains(e.getKey())&&(e.getValue().access&Opcodes.ACC_PUBLIC)!=0)
+        for (var e:methods.entrySet())if (((e.getValue().access & Opcodes.ACC_PUBLIC) != 0)
                 || (e.getKey().name.equals("<clinit>") && !summaries.get(e.getKey()).escapes.isEmpty())) {
             entryRoots.add(e.getKey());
+            progressPoint();
             flow(e.getKey(), true);
         }
     }
     record Result(int classes, int methods, int analyzedBodies, List<Method> roots, List<Finding> findings, List<String> analysisErrors,
-                  int summaryEvaluations, List<Dependency> dependencies) {
+                  long summaryEvaluations, int callbackContexts, long dataflowSteps, long initializationPropagations, List<Dependency> dependencies) {
         int dependencyEdges() { return dependencies.size(); }
+    }
+
+    static boolean sameBehavior(Summary first, Summary second) {
+        return second != null && first.needs.equals(second.needs) && first.ensures.equals(second.ensures)
+                && first.clears.equals(second.clears) && first.escapes.equals(second.escapes)
+                && first.parameterEscapes.equals(second.parameterEscapes) && first.invalidatedNeeds.equals(second.invalidatedNeeds)
+                && first.returnsNormally == second.returnsNormally;
+    }
+    void solveInitialization() {
+        Map<Object, Summary> nodes = new LinkedHashMap<>(summaries);
+        nodes.putAll(contextSummaries);
+        String[] classNames = new String[classIds.size()];
+        classIds.forEach((name, id) -> classNames[id] = name);
+        Map<Object, Set<Object>> users = new HashMap<>();
+        for (var node : nodes.entrySet()) {
+            initializationReachability.put(node.getKey(), (BitSet) node.getValue().initializedClasses.clone());
+            Set<Object> prerequisites = new LinkedHashSet<>(initializationCalls.getOrDefault(node.getKey(), Set.of()));
+            BitSet direct = node.getValue().initializedClasses;
+            for (int id = direct.nextSetBit(0); id >= 0; id = direct.nextSetBit(id + 1)) {
+                Method initializer = new Method(classNames[id], "<clinit>", "()V");
+                if (nodes.containsKey(initializer)) prerequisites.add(initializer);
+            }
+            initializationCalls.put(node.getKey(), Set.copyOf(prerequisites));
+            for (Object prerequisite : prerequisites)
+                users.computeIfAbsent(prerequisite, ignored -> new LinkedHashSet<>()).add(node.getKey());
+        }
+        Deque<Object> work = new ArrayDeque<>(nodes.keySet());
+        Set<Object> queued = new HashSet<>(nodes.keySet());
+        while (!work.isEmpty()) {
+            initializationPending = work.size();
+            progressPoint();
+            Object prerequisite = work.removeFirst(); queued.remove(prerequisite);
+            BitSet facts = initializationReachability.get(prerequisite);
+            for (Object user : users.getOrDefault(prerequisite, Set.of())) {
+                BitSet previous = initializationReachability.get(user);
+                BitSet joined = union(previous, facts);
+                if (!joined.equals(previous)) {
+                    initializationReachability.put(user, joined);
+                    initializationPropagations++;
+                    if (queued.add(user)) work.addLast(user);
+                }
+            }
+        }
+        initializationPending = 0;
     }
 
     List<Dependency> dependencyGraph() {
         List<Dependency> edges = new ArrayList<>();
         dependents.forEach((fact, users) -> {
             String type = fact instanceof Method ? "method-summary" : fact instanceof ReturnedCallbacks ? "returned-callbacks"
-                    : fact instanceof Field ? "field-callbacks" : "class-initialization";
+                    : fact instanceof Field ? "field-callbacks" : fact instanceof Context ? "callback-context" : "class-initialization";
             String name = fact instanceof ReturnedCallbacks value ? value.method.toString()
                     : fact instanceof Field field ? field + ":" + field.desc : fact.toString();
-            users.forEach(user -> edges.add(new Dependency(type, name, user)));
+            users.forEach(user -> edges.add(new Dependency(type, name,
+                    user instanceof Context context ? context.method : (Method) user,
+                    user instanceof Context ? user.toString() : null)));
         });
+        initializationCalls.forEach((user, prerequisites) -> prerequisites.forEach(prerequisite -> edges.add(
+                new Dependency("initialization-reachability", prerequisite.toString(),
+                        user instanceof Context context ? context.method : (Method) user,
+                        user instanceof Context ? user.toString() : null))));
         return edges.stream().sorted(Comparator.comparing(Dependency::factType).thenComparing(Dependency::fact)
-                .thenComparing(edge -> edge.dependent.toString())).toList();
+                .thenComparing(edge -> edge.dependent.toString())
+                .thenComparing(edge -> edge.dependentContext == null ? "" : edge.dependentContext)).toList();
     }
 
     Set<Field> entryBindings(String owner) {
@@ -788,20 +1047,24 @@ final class CallbackInitialization {
         return bindings;
     }
 
-    Set<String> entryClasses(String owner) {
-        Set<String> initialized = new HashSet<>();
-        if (owner == null) return initialized;
-        Deque<String> pending = new ArrayDeque<>();
-        pending.add(owner);
-        while (!pending.isEmpty()) {
-            String type = pending.removeFirst();
-            if (!initialized.add(type)) continue;
+    BitSet directEntryClasses(String owner) {
+        BitSet initialized = new BitSet();
+        Set<String> parents = new HashSet<>();
+        for (String type = owner; type != null && parents.add(type); ) {
+            initialized.set(classId(type));
             ClassNode node = classes.get(type);
-            if (node != null && node.superName != null) pending.add(node.superName);
-            Method initializerKey = new Method(type, "<clinit>", "()V");
-            dependOn(initializerKey);
-            Summary initializer = summaries.get(initializerKey);
-            if (initializer != null) pending.addAll(initializer.initializedClasses);
+            type = node == null ? null : node.superName;
+        }
+        return initialized;
+    }
+    BitSet entryClasses(String owner) {
+        BitSet initialized = directEntryClasses(owner);
+        Set<String> parents = new HashSet<>();
+        for (String type = owner; type != null && parents.add(type); ) {
+            BitSet initializer = initializationReachability.get(new Method(type, "<clinit>", "()V"));
+            if (initializer != null) initialized.or(initializer);
+            ClassNode node = classes.get(type);
+            type = node == null ? null : node.superName;
         }
         return initialized;
     }
@@ -822,7 +1085,11 @@ final class CallbackInitialization {
     }
 
     static Result inspect(List<Path> roots, int targetJava) throws Exception {
+        return inspect(roots, targetJava, null);
+    }
+    static Result inspect(List<Path> roots, int targetJava, java.util.function.Consumer<Progress> progress) throws Exception {
         CallbackInitialization analysis = new CallbackInitialization();
+        analysis.progress = progress;
         for (Path root : roots) {
             if (Files.isDirectory(root)) {
                 try (var walk = Files.walk(root)) {
@@ -850,6 +1117,6 @@ final class CallbackInitialization {
         return new Result(analysis.classes.size(), analysis.methods.size(), analysis.sourceFrames.size(),
                 analysis.entryRoots.stream().sorted(Comparator.comparing(Method::toString)).toList(), findings,
                 analysis.analysisErrors.stream().distinct().sorted().toList(), analysis.summaryEvaluations,
-                analysis.dependencyGraph());
+                analysis.contextSummaries.size(), analysis.dataflowSteps, analysis.initializationPropagations, analysis.dependencyGraph());
     }
 }

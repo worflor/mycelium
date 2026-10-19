@@ -155,6 +155,9 @@ the tasks do is `docs/plugin.md`.
   `RefreshVersionsTask.java` (`myceliumRefreshVersions`), `RefreshNamesTask.java` (`myceliumRefreshNames`),
   `NameRefresh.java` (what the refresh does apart from the task).
 
+The maintainer corpus collector and its offline tests live in `tools/`; the bytecode lab is a plugin test tool.
+See [inspection checks](docs/plugin.md#inspecting-an-existing-mod) for its pinned inputs and limits.
+
 The self-tests, `gradle-plugin/src/test/java/dev/woflo/mycelium/gradle/SelfTest.java`, break a scratch copy of the
 repository in each way a check exists for, and prove the check names the break.
 

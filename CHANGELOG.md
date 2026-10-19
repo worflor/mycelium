@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-10-19 - Resolve static activation through declaring members
+
+Static fields and methods now activate their resolved declaring owner. Field lookup checks the declaring type,
+superinterfaces and superclass in JVM order, including primitive fields. Static methods follow the superclass chain
+without inheriting interface static methods; native declarations retain their owner. Missing earlier hierarchy branches
+remain unresolved. Inherited static factories and method handles also retain their callback targets.
+
+Fresh-class-loader controls reproduce five failing entries and two safe entries across Java 8, 17 and 25 compilation.
+Lookup controls cover interface priority, unavailable hierarchy branches, native declarations and 256 inheritance levels.
+The focused suites passed 425 assertions on Java 25 and 305 on Java 17. Reports and documentation now explicitly list
+implicit initializer cross-owner effects and reentrant initialization as unmodeled; declaring-member resolution does
+not resolve those separate gaps.
+
+The aggregate `check` passed in 10m 59s with 1,385 plugin assertions, source-lifecycle and consumer-hook checks,
+bridge linkage, and all 24 contracts on Java 8, 16, 17, 21 and 25. An independent consumer rebuilt and verified C1
+reports for Java 8, 17 and 25. The seven pinned corpus experiments passed again: each control had zero injected-field
+candidates and its mutant had one; every original archive remained unchanged.
+
+## 2026-10-18 - Bytecode effects and initialization reachability
+
+Callback arguments now specialize consumer-owned method summaries as dependency-worklist nodes. Recursive invocation,
+callback-owned writes and resets, and normal-return reachability are modeled without unfolding the call stack. Opaque
+native bodies may return and may forward callback arguments. Public implementations on package-private classes stay
+visible as entry roots; known nullable factory and initializer paths invalidate bindings.
+
+Initialization reachability has its own monotone bitset closure over direct class activations and selected synchronous
+calls. Growing that graph no longer reinterprets unchanged bytecode effects. The solver has no fixed pass, instruction,
+context or elapsed-time cap. It reports progress and supports cancellation. C1 remains an opt-in experimental diagnostic
+with an undetermined conclusion, separate from rule-level safety or violation proofs.
+
+Added a hash-pinned Modrinth corpus collector, streaming receipts, isolated analysis workers, deterministic local binding
+mutations and executable trusted controls. The collector has no fixed artifact or metadata size ceiling. Original jars
+remain unchanged and third-party mod code is never executed by the lab.
+
+Focused suites passed 392 assertions on Java 25 and 281 on Java 17, including a 640-call dependency chain, hidden public
+handlers, recursive callback effects, opaque native calls and transitive class initialization. Generated programs cover
+55 unsafe and 45 safe programs per compiler release, each exercised with both boolean values; one known
+branch-correlation false positive is retained.
+All seven pinned corpus experiments passed their pristine scans and control/mutant comparisons, covering JEI, Lithium,
+Sodium and Create across Minecraft 1.12.2 through 26.3 on Forge, Fabric and NeoForge. These establish static-analysis and
+injected-defect behavior, not native game compatibility. Eleven offline collector tests passed.
+
 ## 2026-10-18 - Resume compiler development in the canonical checkouts
 
 Carried the reviewed source wrapper, consumer templates, adoption skill, Java 25 compiler work and reusable contracts

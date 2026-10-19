@@ -75,5 +75,17 @@ tasks.register<JavaExec>("behaviorSelfTest") {
         languageVersion = JavaLanguageVersion.of(providers.gradleProperty("mycelium.testJava").getOrElse("17").toInt())
     }
 }
+tasks.register<JavaExec>("behaviorLab") {
+    group = "verification"
+    description = "Scans a pinned Modrinth corpus and checks deterministic local bytecode mutations."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "dev.woflo.mycelium.gradle.BehaviorLab"
+    maxHeapSize = "512m"
+    val plan = providers.gradleProperty("mycelium.behaviorLab.plan")
+    doFirst {
+        require(plan.isPresent) { "Set -Pmycelium.behaviorLab.plan to a behavior_corpus.py fetch plan." }
+        args(file(plan.get()).absolutePath, layout.buildDirectory.dir("behavior-lab").get().asFile.absolutePath)
+    }
+}
 // No test framework, so Gradle's JUnit task has nothing to discover; selfTest runs the test sources instead.
 tasks.named<Test>("test") { enabled = false }

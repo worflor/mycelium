@@ -36,7 +36,12 @@ public abstract class BehaviorTask extends DefaultTask {
     @TaskAction
     public void run() throws Exception {
         var inputs = getClasses().getFiles().stream().map(java.io.File::toPath).sorted().toList();
-        var result = CallbackInitialization.inspect(inputs, getTargetJava().get());
+        var result = CallbackInitialization.inspect(inputs, getTargetJava().get(),
+                progress -> getLogger().lifecycle(
+                        "Mycelium bytecode analysis [{}]: {} summaries, {} pending, {} contexts, {} instructions, {} initialization updates; busiest={} ({} updates)",
+                        progress.phase(), progress.summaryEvaluations(), progress.pendingSummaries() + progress.initializationPending(),
+                        progress.callbackContexts(), progress.dataflowSteps(), progress.initializationPropagations(),
+                        progress.hottestSummary().replaceFirst("\\[\\d+=.*", " [callback context]"), progress.summaryUpdates()));
         JsonObject report = new JsonObject();
         report.addProperty("schema", 1);
         report.addProperty("experimental", true);
@@ -46,18 +51,24 @@ public abstract class BehaviorTask extends DefaultTask {
         report.addProperty("checked", checked);
         report.addProperty("complete", checked && result.analysisErrors().isEmpty());
         report.addProperty("completenessScope", "supported bytecode model only");
+        report.addProperty("conclusion", "undetermined");
+        report.addProperty("conclusionReason", "C1 reports potential callback risks; external effects and scheduling remain unknown.");
         report.addProperty("classFiles", result.classes());
         report.addProperty("methods", result.methods());
         report.addProperty("analyzedBodies", result.analyzedBodies());
         report.addProperty("solver", "dependency-driven interprocedural worklist");
         report.addProperty("summaryEvaluations", result.summaryEvaluations());
         report.addProperty("dependencyEdges", result.dependencyEdges());
+        report.addProperty("callbackContexts", result.callbackContexts());
+        report.addProperty("dataflowSteps", result.dataflowSteps());
+        report.addProperty("initializationPropagations", result.initializationPropagations());
         JsonArray dependencies = new JsonArray();
         for (var edge : result.dependencies()) {
             JsonObject item = new JsonObject();
             item.addProperty("factType", edge.factType());
             item.addProperty("fact", edge.fact());
             item.addProperty("dependent", edge.dependent().toString());
+            if (edge.dependentContext() != null) item.addProperty("dependentContext", edge.dependentContext());
             dependencies.add(item);
         }
         report.add("summaryDependencies", dependencies);
@@ -67,9 +78,10 @@ public abstract class BehaviorTask extends DefaultTask {
         report.addProperty("externalScheduling", "unknown");
         JsonArray limits = new JsonArray();
         for (String limit : java.util.List.of("reflective entrypoints", "captured instance aliases",
-                "complete runtime dispatch targets", "callback-owned synchronous write effects", "native event ordering")) limits.add(limit);
+                "complete runtime dispatch targets", "native method bodies", "unknown callback targets and effects",
+                "implicit initializer cross-owner effects and reentrant initialization", "native event ordering")) limits.add(limit);
         report.add("unmodeled", limits);
-        report.addProperty("rootSelection", "public methods without inferred callers, plus class initializers that expose callbacks");
+        report.addProperty("rootSelection", "public methods, plus class initializers that expose callbacks");
         JsonArray roots = new JsonArray();
         result.roots().forEach(root -> roots.add(root.toString()));
         report.add("roots", roots);
@@ -98,8 +110,10 @@ public abstract class BehaviorTask extends DefaultTask {
         report.add("findings", found.toJson());
         var directory = getReportDir().get().getAsFile().toPath();
         Files.createDirectories(directory);
-        Files.writeString(directory.resolve("behavior.json"), new GsonBuilder().setPrettyPrinting()
-                .disableHtmlEscaping().create().toJson(report) + "\n", StandardCharsets.UTF_8);
+        try (var output = Files.newBufferedWriter(directory.resolve("behavior.json"), StandardCharsets.UTF_8)) {
+            new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(report, output);
+            output.write("\n");
+        }
         getLogger().lifecycle("Mycelium experimental linter: callback initialization: {} method bodies, {} potential dependencies, {} analysis error(s); native event order not proven",
                 result.analyzedBodies(), result.findings().size(), result.analysisErrors().size());
         found.conclude(getLogger(), "callback initialization");

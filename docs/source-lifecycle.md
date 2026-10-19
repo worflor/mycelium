@@ -21,8 +21,10 @@ From the Mycelium checkout, build the independently shipped wrapper bundle with:
 ./gradlew -p gradle-plugin :source-wrapper:consumerBundle
 ```
 
+Paths prefixed by `<consumer>` below belong to the consuming mod's repository.
+
 Copy the bundle's consumer template into the consumer repository. Keep `mycelium-wrapper.jar`, its source JAR, and the
-license files together under `tools/mycelium/`, along with the maintained consumer hook. The template includes the
+license files together under `<consumer>/tools/mycelium/`, along with the maintained consumer hook. The template includes the
 `mycelium` and `mycelium.cmd` launchers, `consumer.gradle`, and `settings.gradle`; use those maintained files instead of
 writing another hook. The settings hook locates the selected checkout before Gradle loads `dev.woflo.mycelium` and
 includes its `gradle-plugin` build. The consumer hook runs the source check from `check` and before producing artifact
@@ -32,7 +34,7 @@ It also sets `mycelium.root` to the verified checkout and rejects a conflicting 
 refer to the same compiler.
 
 Merge the template's root `.gitattributes` entries with any existing attributes. Preserve the attributes under
-`tools/mycelium/` so Git does not change patch bytes during a Windows checkout. The bundle includes this guide;
+`<consumer>/tools/mycelium/` so Git does not change patch bytes during a Windows checkout. The bundle includes this guide;
 upgrading the wrapper refreshes it from the same maintained source.
 
 The consumer's default checkout remains `.mycelium` at its repository root. Prepare it using the committed recipe before
@@ -54,7 +56,7 @@ checkout and reports its measured identity. An explicit source override can also
 The consumer commits `mycelium.lock` with schema `2`. It records the repository URL or path, a full lowercase 40-character
 Git revision, an optional patch path and its SHA-256 digest, the effective Git tree identity, and a completion policy:
 `locked` or `development`. The patch and digest appear together. A patch is content-addressed under
-`tools/mycelium/patches/` by its digest. It represents the consumer's reviewed changes on top of the selected base
+`<consumer>/tools/mycelium/patches/` by its digest. It represents the consumer's reviewed changes on top of the selected base
 revision; `effective_tree` identifies the complete resulting source.
 
 Local repository paths resolve from the consumer root, independently of the preparation destination. Capture records

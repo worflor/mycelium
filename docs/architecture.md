@@ -49,6 +49,21 @@ Mycelium owns the contract models, reusable bridges, and build machinery (L2, L2
 kernels, composition, native extensions, and game-test evidence. The goal of the whole arrangement is a small platform layer
 and a large pure layer, with the pure layer proven on every era automatically (`docs/eras.md`).
 
+## Behavioral analysis and conclusions
+
+The bytecode analysis layer interprets abstract program facts, such as possible callback targets and guaranteed
+bindings. A dependency worklist computes summaries; the experimental linter is its diagnostic interface. This layer
+uses JVM semantics and the selected program, rather than loader names as substitutes for behavior.
+
+A rule must distinguish a violation established from modeled facts, a property established within its explicit
+scope, and an undetermined result whose required facts are unavailable. Conclusions need their premises and scope.
+Reaching a fixed point or reading every method body does not prove a rule. Cancellation or a failed run cannot
+establish safety. An external scheduler's unknown ordering stays unknown.
+
+C1 currently reports potential initialization risks, not either proof category. Its coverage, uncertainty and
+executable counterexamples are described in [the inspection checks](plugin.md#inspecting-an-existing-mod).
+Other behavioral rules need their own laws, witnesses and safe controls before making stronger claims.
+
 ## Principles
 
 These are the invariants every change keeps. Each says what keeps it.

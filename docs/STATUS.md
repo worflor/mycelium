@@ -26,9 +26,16 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
   overlays for a jar spanning resource schemas is not implemented.
 - **Range evidence from test runs:** keystones are declared by the consumer. The plugin cannot infer which game tests
   ran; ranges without keystones warn and remain `interpolated`.
-- **Behavioral analysis:** the experimental linter diagnoses callback initialization dependencies. Complete callback
-  effect substitution, captured instance aliases, reflective entrypoints and external scheduling still need analysis
-  or runtime evidence. Extend it with executable counterexamples and safe controls, rather than loader-name rules.
+- **Behavioral analysis:** the experimental linter diagnoses callback initialization dependencies. Unknown callback
+  effects, captured instance aliases, reflective entrypoints and external scheduling still need analysis
+  or runtime evidence. Implicit initializer effects need a may/must initialization-state model: a class initializer
+  that clears another class's service can currently escape diagnosis. Reentrant initialization also needs that model;
+  inherited member resolution alone does not establish initializer completion. The must-binding lattice loses
+  correlations between factory returns and later branches; executable controls retain that precision limit.
+  Large content-mod inputs need continued scaling validation. Investigate convergence through worklist telemetry
+  and constrain callback surfaces with available type facts; keep the stress inputs in the corpus. Extend rules with
+  executable counterexamples and safe controls.
+  Compact context-node tables would make large graph exports easier to query without repeating long argument labels.
   See the [inspection checks](plugin.md#inspecting-an-existing-mod).
 
 ## Data and verification
