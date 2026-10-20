@@ -40,6 +40,82 @@ public final class EvidenceSelfTest {
         outcomes();
         subjects();
         consumer(root);
+        classLoaders(root);
+    }
+
+    /**
+     * Two subprojects that load this plugin in two classloaders, as a mod with a Fabric and a
+     * NeoForge subproject does: their plugin classpaths differ, so Gradle loads the jar twice.
+     * The completion-fact service is keyed by name, so one name per build gave the second copy the
+     * first copy's instance ({@code TaskOutcomes$Inject_ cannot be cast to TaskOutcomes}), and a
+     * build-scoped registration flag left that second service without a listener.
+     */
+    static void classLoaders(Path root) throws Exception {
+        Path fixture = Files.createTempDirectory("mycelium-evidence-loaders-");
+        boolean complete = false;
+        try {
+            Properties metadata = new Properties();
+            try (var stream = Files.newInputStream(root.resolve("gradle-plugin/build/pluginUnderTestMetadata/plugin-under-test-metadata.properties"))) {
+                metadata.load(stream);
+            }
+            List<String> entries = List.of(metadata.getProperty("implementation-classpath")
+                    .split(java.util.regex.Pattern.quote(File.pathSeparator)));
+            String shared = entries.stream().map(EvidenceSelfTest::quote).collect(java.util.stream.Collectors.joining(","));
+            // A harmless extra entry: the second project's buildscript classpath differs, which is
+            // what makes Gradle load the plugin again instead of reusing the first classloader.
+            Path spacer = fixture.resolve("spacer.jar");
+            try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(spacer))) {
+                zip.putNextEntry(new java.util.zip.ZipEntry("spacer"));
+                zip.closeEntry();
+            }
+            write(fixture.resolve("settings.gradle"), "rootProject.name='loaders-fixture'\ninclude 'first', 'second'\n");
+            write(fixture.resolve("first/build.gradle"), module(shared, root, "first"));
+            write(fixture.resolve("second/build.gradle"), module(shared + "," + quote(spacer.toString()), root, "second"));
+            for (String name : List.of("first", "second")) {
+                write(fixture.resolve(name + "/src/main/java/fixture/Mod.java"), "package fixture; public class Mod {}");
+                write(fixture.resolve(name + "/kernel/fixture/kernel/Kernel.java"),
+                        "package fixture.kernel; public class Kernel { public static long value() { return 1; } }");
+            }
+            String output = gradle(root, fixture, "jar");
+            List<String> loaders = output.lines().filter(line -> line.startsWith("mycelium-loader:"))
+                    .map(line -> line.substring(line.lastIndexOf(':') + 1)).distinct().toList();
+            that(loaders.size() == 2, "evidence integration: the fixture really loads the plugin twice, so this proves something"
+                    + " (saw " + loaders.size() + " classloader(s))");
+            for (String name : List.of("first", "second")) {
+                that(Files.isRegularFile(fixture.resolve(name + "/build/mycelium/evidence/evidence.json")),
+                        "evidence integration: each separately loaded copy of the plugin writes its own evidence: " + name);
+            }
+            // The facts must be observed, not defaulted: a service without a listener never sees a producer.
+            for (String name : List.of("first", "second")) {
+                try (var jar = new java.util.zip.ZipFile(fixture.resolve(name + "/build/libs/" + name + ".jar").toFile())) {
+                    var entry = jar.getEntry("META-INF/mycelium/evidence.json");
+                    that(entry != null, "evidence integration: a separately loaded copy embeds its manifest: " + name);
+                }
+            }
+            that(gradle(root, fixture, "jar", "--info").contains("Configuration cache entry reused"),
+                    "evidence integration: per-classloader service names are stable, so the configuration cache still matches");
+            complete = true;
+        } finally {
+            if (complete) SelfTest.delete(fixture);
+            else System.err.println("Multi-classloader consumer and Gradle logs retained at " + fixture);
+        }
+    }
+
+    static String module(String classpath, Path root, String namespace) {
+        return """
+                buildscript { dependencies { classpath files(%s) } }
+                apply plugin: 'java'
+                apply plugin: 'dev.woflo.mycelium'
+                println 'mycelium-loader:' + project.name + ':' + Integer.toHexString(System.identityHashCode(
+                        Class.forName('dev.woflo.mycelium.gradle.TaskOutcomes').getClassLoader()))
+                mycelium {
+                    root = file(%s)
+                    namespace = 'fixture.loaders.%s'
+                    verify = false
+                    pure { sources.from(file('kernel')); release = 17 }
+                    eras = [%d]
+                }
+                """.formatted(classpath, quote(root.toAbsolutePath().toString()), namespace, Runtime.version().feature());
     }
 
     static void outcomes() throws Exception {

@@ -45,18 +45,50 @@ public final class MyceliumPlugin implements Plugin<Project> {
         this.buildEvents = buildEvents;
     }
 
+    /**
+     * The build service that collects completion facts, named for this loaded copy of the plugin.
+     *
+     * <p>One build can load this plugin in more than one classloader: a mod with a Fabric and a
+     * NeoForge subproject gives each a different plugin classpath, and Gradle then loads this jar
+     * once per project. A build service is keyed by its name alone, so a single name hands the
+     * second copy the first copy's instance, whose class belongs to the other classloader, and
+     * reading it fails with {@code TaskOutcomes$Inject_ cannot be cast to TaskOutcomes}. Worse, a
+     * build-scoped "already registered" flag would leave that second service with no listener at
+     * all, waiting forever on a completion no one reports.
+     *
+     * <p>So each copy registers its own service and its own listener. Every listener is told about
+     * every task in the build, so each copy sees the same facts. The index is allocated in project
+     * configuration order, which is stable, so the names stay the same from build to build and the
+     * configuration cache still matches. Only the names are shared between copies, as plain
+     * strings: handing a copy anything of the other's types is the bug being fixed.
+     */
+    private Provider<TaskOutcomes> taskOutcomes(Project project) {
+        var extras = project.getRootProject().getExtensions().getExtraProperties();
+        String registry = "dev.woflo.mycelium.taskOutcomesNames";
+        @SuppressWarnings("unchecked")
+        java.util.Map<Object, String> allocated = extras.has(registry)
+                ? (java.util.Map<Object, String>) extras.get(registry)
+                : new java.util.IdentityHashMap<>();
+        if (!extras.has(registry)) extras.set(registry, allocated);
+        // The Class object is this copy's identity: a distinct instance in each classloader.
+        String name = allocated.get(TaskOutcomes.class);
+        boolean mine = name == null;
+        if (mine) {
+            name = allocated.isEmpty() ? "myceliumTaskOutcomes" : "myceliumTaskOutcomes#" + (allocated.size() + 1);
+            allocated.put(TaskOutcomes.class, name);
+        }
+        Provider<TaskOutcomes> outcomes = project.getGradle().getSharedServices()
+                .registerIfAbsent(name, TaskOutcomes.class, ignored -> {});
+        if (mine) buildEvents.onTaskCompletion(outcomes);
+        return outcomes;
+    }
+
     @Override
     public void apply(Project project) {
         if (org.gradle.util.GradleVersion.current().compareTo(org.gradle.util.GradleVersion.version("8.3")) < 0) {
             throw new org.gradle.api.GradleException("Mycelium requires Gradle 8.3 or newer for build-tree task identities");
         }
-        Provider<TaskOutcomes> outcomes = project.getGradle().getSharedServices().registerIfAbsent(
-                "myceliumTaskOutcomes", TaskOutcomes.class, ignored -> {});
-        var rootExtras = project.getRootProject().getExtensions().getExtraProperties();
-        if (!rootExtras.has("dev.woflo.mycelium.taskOutcomesRegistered")) {
-            buildEvents.onTaskCompletion(outcomes);
-            rootExtras.set("dev.woflo.mycelium.taskOutcomesRegistered", true);
-        }
+        Provider<TaskOutcomes> outcomes = taskOutcomes(project);
         List<String> exclusions = List.copyOf(project.getGradle().getStartParameter().getExcludedTaskNames());
         MyceliumExtension ext = project.getExtensions().create("mycelium", MyceliumExtension.class);
         ext.project = project;

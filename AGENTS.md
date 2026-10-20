@@ -153,8 +153,8 @@ the tasks do is `docs/plugin.md`.
   `CapsuleTask.java` (`myceliumCapsule`), `RuntimeBootClasspath.java` (an optional buildscript helper that resolves
   ordered Java 8 bootstrap roots from a toolchain launcher).
 - **Evidence.** `EvidenceTask.java` (`myceliumEvidence`, artifact prerequisites), `VerificationEvidenceTask.java`
-  (`myceliumVerificationEvidence`, external reports and finished archive hashes), `TaskOutcomes.java` (build-scoped
-  producer completion facts), `Fingerprint.java` (stable SHA-256 over files and directories, for inputs and evidence).
+  (`myceliumVerificationEvidence`, external reports and finished archive hashes), `TaskOutcomes.java` (producer completion
+  facts; one service and one listener for each loaded copy of the plugin), `Fingerprint.java` (stable SHA-256 over files and directories, for inputs and evidence).
 - **This repository only.** `MyceliumRepositoryPlugin.java` (`dev.woflo.mycelium.repository`), `RepositoryCheck.java`
   (the repository against what it states), `LawCoverage.java` (every law label a harness asserts has a rejection-matrix entry or a reasoned
   allowance in the package's `unmutated.json`), `RepositoryCheckTask.java` (`myceliumRepository`),

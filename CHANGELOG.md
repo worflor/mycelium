@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-10-19 - One completion-fact service for each loaded copy of the plugin
+
+A build can load this plugin in more than one classloader. A mod with a Fabric subproject and a
+NeoForge subproject gives each a different plugin classpath, so Gradle loads the jar twice, and the
+two copies do not share classes. The completion-fact build service was registered under one name,
+`myceliumTaskOutcomes`, and a build service is keyed by its name alone: the second copy received the
+first copy's instance and failed with `TaskOutcomes$Inject_ cannot be cast to TaskOutcomes`. The
+`onTaskCompletion` registration was also guarded by a build-scoped flag on the root project, so even
+with distinct names that second service would have had no listener and would have waited forever on
+a completion nothing reported. A consumer in this shape could not run a build over both subprojects
+at all; `myceliumEvidence` failed in whichever project configured second.
+
+Each loaded copy now registers its own service and its own listener. Every listener is told about
+every task in the build, so each copy observes the same facts. Names are allocated in project
+configuration order, so they are stable from build to build and the configuration cache still
+matches, and only those names are shared between copies - handing a copy a value of the other
+copy's types is the defect itself. A build that loads the plugin once is unchanged, service name
+included.
+
+Validation: `./gradlew check myceliumBridgeLinkage` passed on JDK 25 in 13m 51s, including 1,792
+plugin self-test assertions, 24 contract packages with 344 rejection-matrix entries and 636 law
+labels, the era gates, and bridge linkage with 0 groups failing to link (77 of 149 versions linked,
+72 unlinked for missing pinned name data). The evidence self-test gained a two-subproject consumer
+whose plugin classpaths differ by one entry, which is what makes Gradle load the plugin twice: it
+asserts that two classloaders really occurred, that each copy writes and embeds its own evidence,
+and that a second build reuses the configuration cache. Against the previous code that fixture
+reproduces the exact cast failure across two `InstrumentingVisitableURLClassLoader` instances; with
+this change the evidence self-test passes all 37 assertions.
+
 ## 2026-10-19 - Resolve exception ancestry against the target release
 
 Behavioural analysis now reads platform ancestry through javac's requested `--release` model instead of the build
