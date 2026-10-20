@@ -145,6 +145,14 @@
       "path": "block-catalog",
       "package": "mycelium.block_catalog.v1",
       "status": "reference",
+      "provenance": "written for WorldPrompt"
+    },
+    {
+      "id": "block.catalog@2",
+      "path": "block-catalog-2",
+      "package": "mycelium.block_catalog.v2",
+      "status": "reference",
+      "supersedes": "block.catalog@1",
       "bridges": ["block-catalog"],
       "provenance": "written for WorldPrompt"
     },

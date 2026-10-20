@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-19 - block.catalog@2: property domains in the capture's order
+
+`@1` sorted every property domain alphabetically. That reorders a direction enum, and it states a false
+adjacency for numeric values: `0, 1, 10, 11, ... , 15, 2, 3`. The sort is lossy, so a consumer cannot undo
+it — no rule recovers `0 ... 15`, and the integer heuristic that would destroys the enum orders. `@2` keeps
+each domain in the order the capture offered it and makes that law C6, caught by a `SortsDomainsFactory`
+that sorts exactly as `@1` did. Block identifiers and property names stay sorted, so iterating a snapshot
+is still deterministic. `C1` now asserts membership only, since `C6` owns order; the types, methods and
+labels `C1`-`C5` are otherwise unchanged, and `@1` keeps its own guarantee for its consumers.
+
+The `block-catalog` bridge realizes `@2`: its native capture no longer sorts `getPossibleValues()`, which
+is already the game's declared order. Its conformance cases compare domains as ordered lists instead of
+sets, and a new case fails if the running game declares no unsorted domain at all, so the comparison cannot
+pass vacuously. The bridge moved with the port, so `@1` keeps its model, laws and harness but no longer has
+a native half; a mod that needs the registry capture gets `@2` along with it.
+
 ## 2026-10-18 - Resume compiler development in the canonical checkouts
 
 Carried the reviewed source wrapper, consumer templates, adoption skill, Java 25 compiler work and reusable contracts

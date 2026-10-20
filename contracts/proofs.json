@@ -5,6 +5,7 @@
   "contracts": {
     "agent.link@1": "b66b5f8770fe90e9ad6c53f6a95c844f47e5bb4ff9cdc2428babf2b360ce0382",
     "block.catalog@1": "cf27a9f70b0924959437558aa6e6597eae0b269708e32bec18a6a67fa448966b",
+    "block.catalog@2": "cc30ba8a840cfd3b9ccf2da81533ab0135f1cfd00590d358a036beed5e633d3d",
     "block.presentation@1": "11de0520772b25cbba8e2616d879931130e7dbcf2be691e2db52646ef7ac2904",
     "chat.coverage@1": "47406a76f658c28bfd53e238f539f6bccfcf45ee4f63e139f304b914b602f99f",
     "chat.invocation@1": "408b92e09ca5a897800e6995078d731689c3edd68eae9e901882bf05ffddd899",

@@ -13,7 +13,8 @@ This index is maintained by review. The [package guide](../CONTRACT-PACKAGE.md) 
 | [`item.component@1`](item-component/SPEC.md) | Typed item state across data components and legacy NBT, with preservation and quarantine rules (Rosetta) |
 | [`item.presentation@1`](item-presentation/SPEC.md) | State-driven item assets and selectors, with stable legacy codes (the Sigil); requires `item.component@1` |
 | [`block.presentation@1`](block-presentation/SPEC.md) | Independent model parts compiled from component fields, with an exact model manifest (the Mosaic) |
-| [`block.catalog@1`](block-catalog/SPEC.md) | Immutable finite block registry snapshots with exact state-property domains and defaults (WorldPrompt) |
+| [`block.catalog@2`](block-catalog-2/SPEC.md) | Immutable finite block registry snapshots whose property domains keep the capture's order (WorldPrompt) |
+| [`block.catalog@1`](block-catalog/SPEC.md) | Immutable finite block registry snapshots with sorted state-property domains; superseded by `@2` |
 | [`state.lifecycle@1`](state-lifecycle/SPEC.md) | Slot policies across host transitions, stale-reference rejection, and release callbacks (the Threshold); requires `item.component@1` |
 | [`chunk.hold@1`](chunk-hold/SPEC.md) | Independent holders over an engine that deduplicates chunk tickets |
 | [`dimension.travel@2`](dimension-travel-2/SPEC.md) | Journaled return trips that recover after the process stops |
@@ -51,7 +52,7 @@ Bridges implement contract ports as target-selected source. Selection and packag
 | [`world-clock`](../bridges/world-clock/bridge.json) | `ClockPort` | Native world clocks or emulation over day time and saved data |
 | [`lifecycle`](../bridges/lifecycle/bridge.json) | `LifecyclePort` | Player and server state, bound through loader event overlays |
 | [`command-authorization`](../bridges/command-authorization/bridge.json) | `AuthorizationPort` | Command-source permission decisions on 26.3 through Fabric and NeoForge overlays |
-| [`block-catalog`](../bridges/block-catalog/bridge.json) | `CatalogSource` | Complete block identifiers, state-property domains, and defaults from the native registry |
+| [`block-catalog`](../bridges/block-catalog/bridge.json) | `CatalogSource` | Complete block identifiers, state-property domains in the registry's own order, and defaults from the native registry |
 
 `eras/minecraft.json` owns the version ranges. Linkage covers pinned game data; loader APIs and game conformance are
 checked by consumers. A realization row and a compiled conformance case do not establish a successful game run.

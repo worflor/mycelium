@@ -4,6 +4,12 @@ A finite, immutable snapshot of the blocks available in one game version, includ
 domains and default state. Written for WorldPrompt so an operation can validate a block identifier and fully normalize
 its supplied properties before reaching the game registry.
 
+**Superseded by [`block.catalog@2`](../block-catalog-2/SPEC.md)**, which keeps each property domain in the order the
+capture offered it instead of sorting it. `@1` keeps its sorted domains, its model and its laws unchanged. The
+`block-catalog` bridge moved with the port and now realizes `@2`, so `@1` has no native half: a mod that needs the
+registry capture references that bridge and gets `@2`, writes its own `CatalogSource`, or moves to `@2`. A build
+imports one of the two, never both.
+
 ## Model
 
 - `BlockCatalog(version, blocks)`: a validated catalog snapshot. `blocks()` is keyed by canonical block id in sorted
