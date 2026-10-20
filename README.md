@@ -95,7 +95,7 @@ the reference result and whether each broken implementation was `CAUGHT` for its
 
 | | |
 |---|---|
-| Status | Contracts: 24 packages, 344 rejection fixtures. `./gradlew check` runs the harnesses, era gates, bridge linkage, and repository checks. [Open work](docs/STATUS.md), [history](CHANGELOG.md). |
+| Status | Contracts: 25 packages, 351 rejection fixtures. `./gradlew check` runs the harnesses, era gates, bridge linkage, and repository checks. [Open work](docs/STATUS.md), [history](CHANGELOG.md). |
 | Java | Contract models and harness: Java 17 source, checked on every era's Java. Gradle plugin: Java 17 bytecode. See [era gates](docs/eras.md). |
 | Targets | `eras/minecraft.json` records version, Java, loader, naming, and realization data. An era row describes a target; it does not prove a mod or bridge works there. |
 | Dependencies | Contracts and harness use the JDK only. The plugin uses Gson and ASM; era gates resolve JvmDowngrader and JDKs as needed. Bridge linkage reads pinned game archives. |

@@ -1,6 +1,6 @@
 package mycelium.bridges.block_catalog.conformance;
 
-import mycelium.block_catalog.v1.model.BlockCatalog;
+import mycelium.block_catalog.v2.model.BlockCatalog;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;

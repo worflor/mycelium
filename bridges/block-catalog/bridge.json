@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "block-catalog",
-  "contract": "block.catalog@1",
+  "contract": "block.catalog@2",
   "port": "CatalogSource",
   "implementation": "MinecraftBlockCatalog",
   "package": "mycelium.bridges.block_catalog",
