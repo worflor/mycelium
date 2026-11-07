@@ -111,7 +111,13 @@ public final class SelfTest {
         that(metadata.getAsJsonObject("overlays").getAsJsonArray("entries").asList().stream()
                 .allMatch(e -> e.getAsJsonObject().has("formats") && e.getAsJsonObject().has("min_format")), "pack overlays: every mixed-era entry has both schemas");
         JsonObject modern = PackOverlayPlan.compile(eras, JsonParser.parseString(declaration.replace("\"1.20.6\",", "")).getAsJsonObject());
-        that(!modern.getAsJsonObject("pack_mcmeta").getAsJsonObject("pack").has("supported_formats"), "pack overlays: modern-only excludes forbidden legacy fields");
+        that(modern.getAsJsonObject("pack_mcmeta").getAsJsonObject("pack").get("min_format").toString().equals("[64,0]")
+                && modern.getAsJsonArray("empty_overlays").size() == 1, "pack overlays: modern combined minimum75 bridges the two typed readers at64");
+        that(modern.getAsJsonObject("pack_mcmeta").getAsJsonObject("overlays").getAsJsonArray("entries").asList().stream()
+                .allMatch(e -> e.getAsJsonObject().has("formats")), "pack overlays: compatibility entry enables old overlay fields for both readers");
+        JsonObject newer = PackOverlayPlan.compile(eras, JsonParser.parseString("{\"schema\":1,\"description\":\"Sample\",\"targets\":[\"26.3\"]}").getAsJsonObject());
+        that(!newer.getAsJsonObject("pack_mcmeta").getAsJsonObject("pack").has("supported_formats")
+                && newer.getAsJsonArray("empty_overlays").isEmpty(), "pack overlays: shared minimum97 needs no bridge or legacy fields");
         for (String broken : List.of(declaration.replace("\"1.20.6\"", "\"1.20.1\""),
                 declaration.replace("\"1.20.6\"", "\"26.3\""), declaration.replace("\"schema\":1", "\"schema\":2"),
                 declaration.replace("\"targets\":", "\"typo\":true,\"targets\":"),

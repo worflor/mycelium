@@ -148,8 +148,9 @@ final class FlexibleSelfTest {
         that(f1218.get("pack_format").getAsInt() == 81 && f1218.getAsJsonArray("supported_formats").get(0).getAsInt() == 64,
                 "packMeta:1.21.8 is still the pack_format schema: " + f1218);
         JsonObject f1219 = pack(eras, "1.21.9");
-        that(f1219.get("min_format").getAsInt() == 69 && f1219.get("max_format").getAsInt() == 88 && !f1219.has("pack_format"),
-                "packMeta:1.21.9 is the min_format/max_format schema with no pack_format: " + f1219);
+        that(f1219.get("min_format").getAsInt() == 64 && f1219.get("max_format").getAsInt() == 88 && f1219.has("pack_format")
+                        && f1219.getAsJsonArray("supported_formats").get(0).getAsInt() == 64,
+                "packMeta:1.21.9 combined metadata bridges resource69/data88 at64 for both typed readers: " + f1219);
         JsonObject f263 = pack(eras, "26.3");
         that(f263.get("min_format").getAsInt() == 97 && f263.get("max_format").getAsInt() == 121 && !f263.has("pack_format"),
                 "packMeta:26.3 is min_format 97, max_format 121, as Somnium wrote it by hand: " + f263);

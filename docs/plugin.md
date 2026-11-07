@@ -250,7 +250,8 @@ the same whether a setting came from the root or the project.
 - **`pack.mcmeta`.** `mycelium { packMeta { description = "My mod resources" } }` has `myceliumPackMeta` write it into the
   resources, in the schema the version reads: before 1.20.2 a `pack_format`; 1.20.2 to 1.21.8 a `pack_format` and
   `supported_formats` [resource, data]; from 1.21.9 `min_format` and `max_format` (resource and data majors; a major covers its
-  minors) and no `pack_format`. The `packFormat` rows name the game's own `version.json` `pack_version`; each row's `source` says
+  minors). A shared minimum in 65..81 uses the compatibility floor at 64 so both typed readers accept the same file; newer
+  shared minima omit `pack_format`. The `packFormat` rows name the game's own `version.json` `pack_version`; each row's `source` says
   whether it was read from a game jar or from minecraft.wiki's "Pack format" table, and `myceliumRepository` proves every real
   version from 1.6.1 (the first with resource packs) falls in exactly one row. Forge serves a mod's data only with a
   `pack.mcmeta`; Fabric and NeoForge make their own, so declare it in the Forge buildscript.
@@ -280,7 +281,11 @@ the same whether a setting came from the root or the project.
 This opt-in task works without the Java plugin. The era table supplies separate exact data/resource formats,
 including minor versions. The output contains `pack_mcmeta`, target formats and per-kind overlay directories.
 Mixed-era plans include the old `pack_format`/`supported_formats` and overlay `formats` fields alongside
-`min_format`/`max_format`; modern-only plans omit the forbidden old fields. Targets before overlays existed,
+`min_format`/`max_format`. Combined minima in 65..81 need an outer minimum 64 and one resource-free compatibility overlay:
+the resource and data readers have different old-format cutoffs, and each overlay reader checks the global minimum.
+The plan lists that directory in `empty_overlays`; create it with no `data/` or `assets/` content (a plain explanatory
+file is harmless). Actual payload overlays retain their exact formats. Shared minima above 81 omit the old fields.
+Targets before overlays existed,
 empty selections, duplicate targets and unknown declaration fields are refused.
 
 The consumer puts each target's `data/` or `assets/` tree under the planned directory, and may share byte-identical

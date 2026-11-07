@@ -55,7 +55,7 @@ public final class PackOverlayPlan {
                 if (format.major() < 0 || format.minor() < 0) fail("Invalid pack format on " + version);
                 minimum = minimum == null || ordering.compare(format, minimum) < 0 ? format : minimum;
                 maximum = maximum == null || ordering.compare(format, maximum) > 0 ? format : maximum;
-                legacy |= format.major() < (kind.equals("data") ? 82 : Eras.PackFormat.RANGE_FORMATS_FROM);
+                legacy |= format.major() < (kind.equals("data") ? Eras.PackFormat.DATA_RANGE_FORMATS_FROM : Eras.PackFormat.RANGE_FORMATS_FROM);
                 String directory = kind + "_" + format.major() + "_" + format.minor();
                 JsonObject group = groups.get(directory);
                 if (group == null) {
@@ -71,6 +71,9 @@ public final class PackOverlayPlan {
             }
             targets.add(target);
         }
+        int sharedMinimum = Eras.PackFormat.sharedMinimum(minimum.major());
+        boolean bridge = sharedMinimum != minimum.major();
+        if (bridge) { minimum = new Eras.Format(sharedMinimum, 0); legacy = true; }
         JsonObject pack = new JsonObject();
         pack.addProperty("description", request.get("description").getAsString());
         pack.add("min_format", pair(minimum));
@@ -81,6 +84,15 @@ public final class PackOverlayPlan {
             pack.add("supported_formats", supported);
         }
         JsonArray entries = new JsonArray(), overlayPlan = new JsonArray();
+        JsonArray emptyOverlays = new JsonArray();
+        if (bridge) {
+            // The overlay parser also takes a GLOBAL minimum across both number spaces.
+            // This resource-free entry makes both typed readers accept legacy formats fields.
+            String directory = "metadata_compat_" + sharedMinimum;
+            JsonObject entry = new JsonObject(); entry.addProperty("directory", directory);
+            entry.add("min_format", pair(minimum)); entry.add("max_format", pair(minimum));
+            entry.addProperty("formats", sharedMinimum); entries.add(entry); emptyOverlays.add(directory);
+        }
         for (JsonObject group : groups.values()) {
             JsonObject entry = new JsonObject();
             entry.addProperty("directory", group.get("directory").getAsString());
@@ -93,7 +105,7 @@ public final class PackOverlayPlan {
         JsonObject metadata = new JsonObject(); metadata.add("pack", pack); metadata.add("overlays", overlays);
         JsonObject result = new JsonObject(); result.addProperty("schema", 1);
         result.addProperty("scope", "Exact requested targets; equal pack formats share an overlay and must have identical effective content. No translation, migration or game certification.");
-        result.add("targets", targets); result.add("overlays", overlayPlan); result.add("pack_mcmeta", metadata);
+        result.add("targets", targets); result.add("overlays", overlayPlan); result.add("empty_overlays", emptyOverlays); result.add("pack_mcmeta", metadata);
         return result;
     }
 

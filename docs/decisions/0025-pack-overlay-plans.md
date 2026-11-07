@@ -16,6 +16,12 @@ effective content. The consumer assembles and resolves the archive, checks byte 
 in the game. Planning does not translate schemas or migrate saved objects. The metadata's outer range is not a claim
 that unlisted releases were tested.
 
+Both metadata readers must agree about legacy fields. The resource cutoff is 64 and the data cutoff 81, so a combined
+minimum in 65..81 is ambiguous. The shared metadata minimum is lowered to 64, and overlay plans add one empty entry at 64
+so the global overlay minimum also agrees. Actual payload selections are unchanged. The single-target combined
+`packMeta` writer uses the same minimum rule. This follows the typed codec validation in official 1.21.11 and 26.3 jars;
+calling a request modern-only does not remove the two number spaces.
+
 The schema rules follow Mojang's [1.20.2](https://www.minecraft.net/en-us/article/minecraft-java-edition-1-20-2)
 and [1.21.9](https://www.minecraft.net/en-us/article/minecraft-java-edition-1-21-9) release notes. Plugin self-tests
 exercise mixed/modern metadata, minor versions, equal formats and malformed/unsupported declarations. Consumer

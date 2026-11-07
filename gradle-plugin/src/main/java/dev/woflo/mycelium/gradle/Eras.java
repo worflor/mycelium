@@ -159,6 +159,12 @@ public final class Eras {
 
         /** From this resource format a pack names the range it reads ({@code min_format}/{@code max_format}); `pack_format` is gone. */
         static final int RANGE_FORMATS_FROM = 65;
+        static final int DATA_RANGE_FORMATS_FROM = 82;
+
+        /** Both typed readers must agree whether the common metadata uses legacy fields. */
+        static int sharedMinimum(int minimum) {
+            return minimum >= RANGE_FORMATS_FROM && minimum < DATA_RANGE_FORMATS_FROM ? RANGE_FORMATS_FROM - 1 : minimum;
+        }
 
         /** Resource pack formats that begin {@code supported_formats} (1.20.2). */
         static final int SUPPORTED_FORMATS_FROM = 18;
@@ -168,7 +174,7 @@ public final class Eras {
          * <ul>
          *   <li>before 1.20.2: `pack_format` (the data format when there is one, else the resource format);</li>
          *   <li>1.20.2 to 1.21.8: `pack_format` plus `supported_formats` [resource, data];</li>
-         *   <li>1.21.9 on: `min_format` and `max_format` (resource and data majors; a major covers its minors), no `pack_format`.</li>
+         *   <li>1.21.9 on: `min_format` and `max_format`; a shared minimum in65..81 needs the legacy64 metadata bridge.</li>
          * </ul>
          */
         public String mcmeta(String description) {
@@ -177,8 +183,14 @@ public final class Eras {
             JsonObject pack = new JsonObject();
             pack.addProperty("description", description);
             if (res >= RANGE_FORMATS_FROM) {
-                pack.addProperty("min_format", Math.min(res, dat));
+                int minimum = sharedMinimum(Math.min(res, dat));
+                pack.addProperty("min_format", minimum);
                 pack.addProperty("max_format", Math.max(res, dat));
+                if (minimum < RANGE_FORMATS_FROM) {
+                    pack.addProperty("pack_format", minimum);
+                    JsonArray range = new JsonArray(); range.add(minimum); range.add(Math.max(res, dat));
+                    pack.add("supported_formats", range);
+                }
             } else {
                 pack.addProperty("pack_format", dat);
                 if (res >= SUPPORTED_FORMATS_FROM) {

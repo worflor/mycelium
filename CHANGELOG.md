@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-07 - shared metadata across the two typed readers
+
+Combined modern-only packs with a shared minimum in 65..81 previously satisfied neither reader consistently: data
+metadata requires the old fields there, while resource metadata rejects them. The shared minimum now uses 64, and
+overlay plans add a resource-free entry at 64 so their global minimum also agrees. Actual payload ranges stay exact.
+The single-target combined `packMeta` writer shares the same minimum rule. The plan reports `empty_overlays` so an
+assembler can create the compatibility directory without data or assets.
+
+Validation: `gradlew check` passed, including 1574 plugin assertions. A modern-only standalone consumer was loaded as
+both data and resources by unmodified 1.21.11 and 26.3 clients/servers; an actual upgraded legacy-model card was visually
+checked in 1.21.11. The broader eleven-target consumer's metadata and payload selections are unchanged.
+
 ## 2026-11-07 - exact-format pack overlay plans
 
 `myceliumPackOverlays` and its standalone compiler entrance generate explicit data/resource overlay plans from the
