@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-07 - exact-format pack overlay plans
+
+`myceliumPackOverlays` and its standalone compiler entrance generate explicit data/resource overlay plans from the
+era table. Mixed-era metadata carries both schema generations; minor versions are retained, equal formats are
+grouped for consumer equality checks, and malformed or unsupported declarations fail. The existing target-selecting
+`overlays { }` option is unchanged. No dependency or runtime was added. Archive assembly, content equality and actual
+game compatibility remain consumer checks; see [the decision](docs/decisions/0025-pack-overlay-plans.md).
+
+Validation: `gradlew check` passed, including the plugin self-test (1572 assertions), repository gates, bridge linkage,
+contract/Java era gates and source-wrapper tests. A standalone vanilla pack consumer built the combined archive and
+ran it on ten exact official releases, with 50 game checks each; stock resource loading was separately exercised on
+old and modern clients. That consumer evidence does not certify arbitrary content compiled by this planner.
+
 ## 2026-10-19 - block.catalog@2: property domains in the capture's order
 
 `@1` sorted every property domain alphabetically. That reorders a direction enum, and it states a false

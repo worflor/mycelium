@@ -267,7 +267,33 @@ the same whether a setting came from the root or the project.
   refused by name.
 - **Resource overlays per schema era.** `overlays { base(file("src/main/resources-1211")); from("26.1", file("src/main/resources-2601")) }`
   adds to the resources the directory whose version is the newest at or below the target. It chooses by version bound, not by
-  data; overlays inside one jar (`overlays` in `pack.mcmeta`) are not generated yet (`docs/STATUS.md`).
+  data. For format-selected overlays inside one archive, use the explicit planner below; it does not alter this target-selection option.
+
+### Multi-version pack overlay plans
+
+`myceliumPackOverlays --declaration=pack.json --output=build/pack-overlays.json` reads an explicit declaration:
+
+```json
+{"schema":1,"description":"Sample resources and data","targets":["1.20.6","1.21.11","26.3"]}
+```
+
+This opt-in task works without the Java plugin. The era table supplies separate exact data/resource formats,
+including minor versions. The output contains `pack_mcmeta`, target formats and per-kind overlay directories.
+Mixed-era plans include the old `pack_format`/`supported_formats` and overlay `formats` fields alongside
+`min_format`/`max_format`; modern-only plans omit the forbidden old fields. Targets before overlays existed,
+empty selections, duplicate targets and unknown declaration fields are refused.
+
+The consumer puts each target's `data/` or `assets/` tree under the planned directory, and may share byte-identical
+assets at the archive root. Data and resource formats occupy different number spaces: a selected data overlay
+contains no assets, and vice versa. The same resulting ZIP can be installed in both locations. Targets with an
+equal format share a directory: the consumer must reject differing effective content for those targets, and
+check that resolving the archive gives each target exactly its original bytes. Keep version-dependent functions
+out of the common root so unselected schemas cannot leak. A declared metadata range includes intervening numbers;
+only the listed targets are claimed. The plan does not translate files, migrate saved state, package the ZIP or
+establish game compatibility. Run the final archive in each claimed game.
+
+Non-Gradle consumers can use `PackOverlayPlan.main` with compiler root, declaration path and output path;
+only that class, `Eras`, the pinned era table and the plugin's existing Gson dependency are required.
 
 ## Proven by fixtures
 

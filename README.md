@@ -109,7 +109,7 @@ The [plugin reference](docs/plugin.md#tasks) describes each task and its inputs.
 |---|---|
 | Select and import | `myceliumDeriveContracts`, `myceliumImport`, `myceliumBridgeImport` |
 | Check a mod | `myceliumVerify`, `myceliumBridges`, `myceliumUsage`, `myceliumIsolation`, `myceliumPurity`, `myceliumPureCompile`, `myceliumEraJava<N>`, `myceliumEras`, `myceliumSurface`, `myceliumRange`, `myceliumLinkage`, `myceliumCapsule`, `myceliumBehavior` (opt-in experimental linter) |
-| Generate and package | `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta`, `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumEvidence`, `myceliumVerificationEvidence` |
+| Generate and package | `myceliumPresentation`, `myceliumPresentationLock`, `myceliumPackMeta`, `myceliumPackOverlays`, `myceliumPureShip`, `myceliumDowngradeJar`, `myceliumEvidence`, `myceliumVerificationEvidence` |
 | Maintain this repository | `myceliumRepository`, `myceliumBridgeLinkage`, `myceliumRecordProofs`, `myceliumRefreshVersions`, `myceliumRefreshNames` |
 
 </details>

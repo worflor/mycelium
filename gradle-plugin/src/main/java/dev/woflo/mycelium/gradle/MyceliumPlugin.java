@@ -98,6 +98,13 @@ public final class MyceliumPlugin implements Plugin<Project> {
         MyceliumExtension defaults = project == rootProject ? null
                 : rootProject.getExtensions().findByType(MyceliumDefaultsPlugin.Defaults.class);
         conventions(project, ext, defaults);
+        project.getTasks().register("myceliumPackOverlays", PackOverlayPlanTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Plans exact-format data/resource overlays from the era table; no content translation or game certification.");
+            t.getRoot().set(ext.getRoot());
+            t.getEraTable().set(ext.getRoot().map(dir -> dir.file("eras/minecraft.json")));
+            t.getOutputFile().convention(project.getLayout().getBuildDirectory().file("mycelium/pack-overlays.json"));
+        });
         // The pure compiler follows the pure layer's release, which may be newer than the JVM running Gradle.
         project.getPluginManager().apply(JvmToolchainsPlugin.class);
         JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);

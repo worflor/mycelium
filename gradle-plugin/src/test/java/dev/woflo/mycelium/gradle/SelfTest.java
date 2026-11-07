@@ -55,6 +55,7 @@ public final class SelfTest {
         Path root = Path.of(args.length > 0 ? args[0] : "..").toAbsolutePath().normalize();
         repositoryMatrixCounts = repositoryMatrixCounts(root);
         eras(root);
+        packOverlayPlans(root);
         copyPrunesIgnoredTrees();
         repositoryPathClassification();
         registry();
@@ -97,6 +98,32 @@ public final class SelfTest {
         if (!ok) {
             FAILURES.add(label);
         }
+    }
+
+    static void packOverlayPlans(Path root) {
+        Eras eras = Eras.load(root.toFile());
+        String declaration = "{\"schema\":1,\"description\":\"Sample\",\"targets\":[\"26.3\",\"1.20.6\",\"1.21.11\"]}";
+        JsonObject plan = PackOverlayPlan.compile(eras, JsonParser.parseString(declaration).getAsJsonObject());
+        JsonObject metadata = plan.getAsJsonObject("pack_mcmeta");
+        that(metadata.getAsJsonObject("pack").has("supported_formats"), "pack overlays: mixed-era metadata retains old fields");
+        that(plan.getAsJsonArray("overlays").size() == 6, "pack overlays: separate data/resource format spaces");
+        that(plan.getAsJsonArray("targets").get(1).getAsJsonObject().get("data").toString().equals("[94,1]"), "pack overlays: exact minor retained");
+        that(metadata.getAsJsonObject("overlays").getAsJsonArray("entries").asList().stream()
+                .allMatch(e -> e.getAsJsonObject().has("formats") && e.getAsJsonObject().has("min_format")), "pack overlays: every mixed-era entry has both schemas");
+        JsonObject modern = PackOverlayPlan.compile(eras, JsonParser.parseString(declaration.replace("\"1.20.6\",", "")).getAsJsonObject());
+        that(!modern.getAsJsonObject("pack_mcmeta").getAsJsonObject("pack").has("supported_formats"), "pack overlays: modern-only excludes forbidden legacy fields");
+        for (String broken : List.of(declaration.replace("\"1.20.6\"", "\"1.20.1\""),
+                declaration.replace("\"1.20.6\"", "\"26.3\""), declaration.replace("\"schema\":1", "\"schema\":2"),
+                declaration.replace("\"targets\":", "\"typo\":true,\"targets\":"),
+                "{\"schema\":1,\"description\":\"Sample\",\"targets\":[]}")) {
+            boolean refused = false;
+            try { PackOverlayPlan.compile(eras, JsonParser.parseString(broken).getAsJsonObject()); }
+            catch (IllegalArgumentException | IllegalStateException expected) { refused = true; }
+            that(refused, "pack overlays: malformed/unsupported declaration refused: " + broken);
+        }
+        JsonObject shared = PackOverlayPlan.compile(eras, JsonParser.parseString(
+                "{\"schema\":1,\"description\":\"Sample\",\"targets\":[\"1.21\",\"1.21.1\"]}").getAsJsonObject());
+        that(shared.getAsJsonArray("overlays").size() == 2, "pack overlays: indistinguishable formats grouped for consumer content-equality gate");
     }
 
     static void artifactJars() {

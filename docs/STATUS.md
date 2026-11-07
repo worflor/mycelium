@@ -27,8 +27,8 @@ rationale belongs in [decisions](decisions/). This board does not define the ful
   that runs the check on a consumer's declarations is not implemented.
 - **Presentation fixture automation:** `gradle-plugin/src/test/fixtures/presentation-consumer` checks task wiring and
   packaging when run separately. The plugin self-test exercises the compiler but does not build this fixture.
-- **Overlays inside one jar:** `overlays { }` selects a resource directory for a target. Generation of `pack.mcmeta`
-  overlays for a jar spanning resource schemas is not implemented.
+- **Overlays inside one archive:** the explicit `myceliumPackOverlays` task generates metadata and a per-kind
+  exact-format plan. Content translation and archive assembly remain consumer responsibilities; see [the planner](plugin.md#multi-version-pack-overlay-plans).
 - **Range evidence from test runs:** keystones are declared by the consumer. The plugin cannot infer which game tests
   ran; ranges without keystones warn and remain `interpolated`.
 - **Behavioural analysis:** the experimental linter diagnoses callback initialization dependencies. Unknown callback
