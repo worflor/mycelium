@@ -105,6 +105,14 @@ public final class MyceliumPlugin implements Plugin<Project> {
             t.getEraTable().set(ext.getRoot().map(dir -> dir.file("eras/minecraft.json")));
             t.getOutputFile().convention(project.getLayout().getBuildDirectory().file("mycelium/pack-overlays.json"));
         });
+        project.getTasks().register("myceliumDatapackTargets", DatapackTargetPlanTask.class, t -> {
+            t.setGroup("mycelium");
+            t.setDescription("Plans exact-target datapack dialect facts from the era table; no payload translation or game certification.");
+            t.getRoot().set(ext.getRoot());
+            t.getEraTable().set(ext.getRoot().map(dir -> dir.file("eras/minecraft.json")));
+            t.getVersionTable().set(ext.getRoot().map(dir -> dir.file("eras/versions.json")));
+            t.getOutputFile().convention(project.getLayout().getBuildDirectory().file("mycelium/datapack-targets.json"));
+        });
         // The pure compiler follows the pure layer's release, which may be newer than the JVM running Gradle.
         project.getPluginManager().apply(JvmToolchainsPlugin.class);
         JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);

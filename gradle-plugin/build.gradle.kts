@@ -65,6 +65,13 @@ val selfTest = tasks.register<JavaExec>("selfTest") {
         .map { "--add-opens=java.base/$it=ALL-UNNAMED" } + "--add-opens=java.prefs/java.util.prefs=ALL-UNNAMED")
     args(layout.projectDirectory.dir("..").asFile.absolutePath)
 }
+tasks.register<JavaExec>("datapackTargetPlanSelfTest") {
+    group = "verification"
+    description = "Runs the datapack target compiler's focused realization and rejection tests."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "dev.woflo.mycelium.gradle.SelfTest"
+    args(layout.projectDirectory.dir("..").asFile.absolutePath, "datapack-targets")
+}
 tasks.named("check") { dependsOn(selfTest, ":source-wrapper:check") }
 tasks.register<JavaExec>("evidenceSelfTest") {
     group = "verification"

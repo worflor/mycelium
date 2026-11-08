@@ -108,14 +108,35 @@ public final class Eras {
     /** The divide whose realization table says how a version draws a block's state from its block entity (docs/decisions/0019). */
     public static final String BLOCK_PRESENTATION = "block.presentation";
 
+    /** Datapack dialect vocabularies read by the standalone target-plan compiler. */
+    public static final java.util.Map<String, java.util.Set<String>> DATAPACK_TARGET_VOCABULARY = java.util.Map.ofEntries(
+            java.util.Map.entry("text_components", java.util.Set.of("json-string", "native")),
+            java.util.Map.entry("registry_paths", java.util.Set.of("singular", "plural")),
+            java.util.Map.entry("recipe_ingredients", java.util.Set.of("object", "id")),
+            java.util.Map.entry("offhand_path", java.util.Set.of("inventory", "equipment")),
+            java.util.Map.entry("command_budget", java.util.Set.of("legacy", "namespaced")),
+            java.util.Map.entry("nested_item_count", java.util.Set.of("explicit", "implicit")),
+            java.util.Map.entry("function_macros", java.util.Set.of("none", "native")),
+            java.util.Map.entry("recipe_result", java.util.Set.of("plain", "components")),
+            java.util.Map.entry("component_removal", java.util.Set.of("none", "native")),
+            java.util.Map.entry("loot_functions", java.util.Set.of("function-list", "single-modifier")),
+            java.util.Map.entry("entity_predicates", java.util.Set.of("legacy", "components")),
+            java.util.Map.entry("predicate_type_key", java.util.Set.of("condition", "type")));
+
     /**
      * The realizations a divide's table may name, for a divide the compiler (not a bridge) owns. A bridge's divide takes its
      * vocabulary from the bridge's own variants ({@code bridge.json}), which the repository check holds the table to; "none"
      * is always allowed and means the game cannot do it there.
      */
-    public static final java.util.Map<String, java.util.Set<String>> VOCABULARY = java.util.Map.of(
-            ITEM_PRESENTATION, java.util.Set.of("item-definition", "model-overrides", "none"),
-            BLOCK_PRESENTATION, java.util.Set.of("dynamic-model", "none"));
+    public static final java.util.Map<String, java.util.Set<String>> VOCABULARY = vocabularies();
+
+    private static java.util.Map<String, java.util.Set<String>> vocabularies() {
+        java.util.Map<String, java.util.Set<String>> out = new java.util.LinkedHashMap<>();
+        out.put(ITEM_PRESENTATION, java.util.Set.of("item-definition", "model-overrides", "none"));
+        out.put(BLOCK_PRESENTATION, java.util.Set.of("dynamic-model", "none"));
+        DATAPACK_TARGET_VOCABULARY.forEach((key, values) -> out.put(key, values));
+        return java.util.Map.copyOf(out);
+    }
 
     /**
      * A range of versions and the realization a divide takes on them (decisions 0012 and 0016): one table per divide,
@@ -123,7 +144,7 @@ public final class Eras {
      * era's are. A realization is a name the divide's compiler or bridge defines; {@code none} says the game cannot do it,
      * and {@code what} says why or how.
      */
-    public record Realization(String from, String to, String realization, String what) {
+    public record Realization(String from, String to, String realization, String what, String value) {
         public boolean covers(String minecraft) {
             return atLeast(minecraft, from) && atMost(minecraft, to);
         }
@@ -298,7 +319,7 @@ public final class Eras {
             for (JsonElement e : table.getValue().getAsJsonArray()) {
                 JsonObject o = e.isJsonObject() ? e.getAsJsonObject() : new JsonObject();
                 for (String key : o.keySet()) {
-                    if (!List.of("from", "to", "realization", "what").contains(key)) {
+                    if (!List.of("from", "to", "realization", "what", "value").contains(key)) {
                         throw new IllegalStateException(where + ": a " + divide + " row has from, to, realization and what, not '" + key + "'");
                     }
                 }
@@ -310,8 +331,18 @@ public final class Eras {
                 if (vocabulary != null && !vocabulary.contains(realization)) {
                     throw new IllegalStateException(where + ": " + divide + " realization '" + realization + "' is not one of " + new TreeSet<>(vocabulary));
                 }
+                String value = o.has("value") ? o.get("value").getAsString() : null;
+                if (value != null && value.isBlank()) {
+                    throw new IllegalStateException(where + ": " + divide + " realization value must not be blank");
+                }
+                if (o.has("value") && (!o.get("value").isJsonPrimitive() || !o.getAsJsonPrimitive("value").isString())) {
+                    throw new IllegalStateException(where + ": " + divide + " realization value must be a string");
+                }
+                if (value != null && !java.util.Set.of("command_budget", "offhand_path").contains(divide)) {
+                    throw new IllegalStateException(where + ": " + divide + " does not define exact native values");
+                }
                 rows.add(new Realization(o.get("from").getAsString(), o.get("to").getAsString(), realization,
-                        o.has("what") ? o.get("what").getAsString() : ""));
+                        o.has("what") ? o.get("what").getAsString() : "", value));
             }
             out.put(divide, List.copyOf(rows));
         }

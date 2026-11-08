@@ -275,6 +275,54 @@
   }
  ],
  "realizations": {
+  "text_components": [
+    {"from": "1.21.5", "to": "26.x", "realization": "native", "what": "item text is written as native text component objects"},
+    {"from": "c0.0.11a", "to": "1.21.4", "realization": "json-string", "what": "item text uses JSON text component strings"}
+  ],
+  "registry_paths": [
+    {"from": "1.21", "to": "26.x", "realization": "singular", "what": "datapack registry directories use singular names"},
+    {"from": "c0.0.11a", "to": "1.20.6", "realization": "plural", "what": "datapack registry directories use plural names"}
+  ],
+  "recipe_ingredients": [
+    {"from": "1.21.2", "to": "26.x", "realization": "id", "what": "recipe ingredients use an item id string"},
+    {"from": "c0.0.11a", "to": "1.21.1", "realization": "object", "what": "recipe ingredients use an object with an item id"}
+  ],
+  "offhand_path": [
+    {"from": "1.21.5", "to": "26.x", "realization": "equipment", "value": "equipment.offhand.components", "what": "the offhand item's components are read from equipment.offhand.components"},
+    {"from": "c0.0.11a", "to": "1.21.4", "realization": "inventory", "value": "Inventory[{Slot:-106b}].components", "what": "the offhand item's components are read from the inventory slot"}
+  ],
+  "command_budget": [
+    {"from": "1.21.11", "to": "26.x", "realization": "namespaced", "value": "minecraft:max_command_sequence_length", "what": "the command budget gamerule is namespaced"},
+    {"from": "c0.0.11a", "to": "1.21.10", "realization": "legacy", "value": "maxCommandChainLength", "what": "the command budget gamerule uses its legacy name"}
+  ],
+  "nested_item_count": [
+    {"from": "26.1", "to": "26.x", "realization": "implicit", "what": "nested item counts are implicit"},
+    {"from": "c0.0.11a", "to": "1.21.11", "realization": "explicit", "what": "nested item counts are written explicitly"}
+  ],
+  "function_macros": [
+    {"from": "1.20.2", "to": "26.x", "realization": "native", "what": "function macros are supported natively"},
+    {"from": "c0.0.11a", "to": "1.20.1", "realization": "none", "what": "function macros are unavailable"}
+  ],
+  "recipe_result": [
+    {"from": "1.20.5", "to": "26.x", "realization": "components", "what": "recipe results use the components field"},
+    {"from": "c0.0.11a", "to": "1.20.4", "realization": "plain", "what": "recipe results use the legacy item result form"}
+  ],
+  "component_removal": [
+    {"from": "1.20.5", "to": "26.x", "realization": "native", "what": "item components support explicit removal"},
+    {"from": "c0.0.11a", "to": "1.20.4", "realization": "none", "what": "item component removal is unavailable"}
+  ],
+  "loot_functions": [
+    {"from": "26.3", "to": "26.x", "realization": "single-modifier", "what": "item loot entries use one modifier object"},
+    {"from": "c0.0.11a", "to": "26.2", "realization": "function-list", "what": "item loot entries use a functions array"}
+  ],
+  "entity_predicates": [
+    {"from": "26.2", "to": "26.x", "realization": "components", "what": "entity property predicates use the component-era inner map and namespaced flags key"},
+    {"from": "c0.0.11a", "to": "26.1.2", "realization": "legacy", "what": "entity property predicates use the legacy inner map and flags key"}
+  ],
+  "predicate_type_key": [
+    {"from": "26.3", "to": "26.x", "realization": "type", "what": "entity property predicates use the type discriminator"},
+    {"from": "c0.0.11a", "to": "26.2", "realization": "condition", "what": "entity property predicates use the condition discriminator"}
+  ],
   "item.presentation": [
     {"from": "1.21.4", "to": "26.x", "realization": "item-definition", "what": "an item definition (items/<id>.json) selects a model, here on the custom_model_data strings"},
     {"from": "1.14", "to": "1.21.3", "realization": "model-overrides", "what": "one item model with overrides on the custom_model_data predicate, a float that must be written in ascending order"},

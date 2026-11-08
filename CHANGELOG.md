@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-08 - exact datapack target facts
+
+`myceliumDatapackTargets` and its standalone compiler entrance generate per-release Java, data/resource format values,
+and independently versioned datapack/item realization facts. The plan carries exact offhand component paths and command
+budget gamerule names; it rejects unknown releases, malformed declarations, and missing or overlapping realization rows.
+26.2 keeps its entity predicate inner-map change separate from the 26.3 discriminator and loot-function changes. The
+compiler emits facts only; consumers still generate and verify their payloads and archives.
+
+Validation: `gradlew -p gradle-plugin datapackTargetPlanSelfTest` passed (15 assertions), and `gradlew myceliumRepository`
+passed the repository gate. An earlier full plugin self-test run predates the final test and vocabulary corrections and
+was not repeated; no game or native compatibility test was run for this compiler-only change.
+
 ## 2026-11-07 - shared metadata across the two typed readers
 
 Combined modern-only packs with a shared minimum in 65..81 previously satisfied neither reader consistently: data

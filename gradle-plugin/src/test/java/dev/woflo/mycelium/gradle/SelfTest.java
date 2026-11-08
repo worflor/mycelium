@@ -53,9 +53,15 @@ public final class SelfTest {
 
     private static void run(String[] args) throws Exception {
         Path root = Path.of(args.length > 0 ? args[0] : "..").toAbsolutePath().normalize();
+        if (args.length > 1 && args[1].equals("datapack-targets")) {
+            datapackTargetPlans(root);
+            finish("Datapack target plan self-test");
+            return;
+        }
         repositoryMatrixCounts = repositoryMatrixCounts(root);
         eras(root);
         packOverlayPlans(root);
+        datapackTargetPlans(root);
         copyPrunesIgnoredTrees();
         repositoryPathClassification();
         registry();
@@ -130,6 +136,87 @@ public final class SelfTest {
         JsonObject shared = PackOverlayPlan.compile(eras, JsonParser.parseString(
                 "{\"schema\":1,\"description\":\"Sample\",\"targets\":[\"1.21\",\"1.21.1\"]}").getAsJsonObject());
         that(shared.getAsJsonArray("overlays").size() == 2, "pack overlays: indistinguishable formats grouped for consumer content-equality gate");
+    }
+
+    static void datapackTargetPlans(Path root) throws Exception {
+        Eras eras = Eras.load(root.toFile());
+        List<String> knownVersions = Versions.load(root.toFile());
+        JsonObject plan = DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"26.3\",\"26.2\",\"1.20.6\"]}").getAsJsonObject());
+        that(plan.get("schema").getAsInt() == 1 && plan.getAsJsonArray("targets").size() == 3,
+                "datapack targets: exact releases sorted into schema 1 plan");
+        JsonObject legacy = plan.getAsJsonArray("targets").get(0).getAsJsonObject();
+        that(legacy.get("minecraft").getAsString().equals("1.20.6")
+                        && legacy.get("java").getAsInt() == 21
+                        && legacy.get("data").getAsInt() == 41
+                        && legacy.get("resource").getAsInt() == 32,
+                "datapack targets: 1.20.6 uses era Java and exact pack formats");
+        that(legacy.getAsJsonObject("realizations").getAsJsonObject("registry_paths").get("realization").getAsString().equals("plural")
+                        && legacy.getAsJsonObject("realizations").getAsJsonObject("recipe_ingredients").get("realization").getAsString().equals("object")
+                        && legacy.getAsJsonObject("realizations").getAsJsonObject("item.carrier").get("realization").getAsString().equals("custom-data")
+                        && legacy.getAsJsonObject("realizations").getAsJsonObject("item.presentation").get("realization").getAsString().equals("model-overrides")
+                        && legacy.getAsJsonObject("realizations").getAsJsonObject("offhand_path").get("value").getAsString().equals("Inventory[{Slot:-106b}].components"),
+                "datapack targets: legacy dialect includes independent facts and existing item realizations");
+        JsonObject modern = plan.getAsJsonArray("targets").get(1).getAsJsonObject();
+        that(modern.get("minecraft").getAsString().equals("26.2") && modern.get("java").getAsInt() == 25
+                        && modern.getAsJsonArray("data").toString().equals("[107,1]")
+                        && modern.getAsJsonArray("resource").toString().equals("[88,0]"),
+                "datapack targets: 26.2 facts come from the era and pack-format tables");
+        that(modern.getAsJsonObject("realizations").getAsJsonObject("nested_item_count").get("realization").getAsString().equals("implicit")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("text_components").get("realization").getAsString().equals("native")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("command_budget").get("realization").getAsString().equals("namespaced")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("command_budget").get("value").getAsString().equals("minecraft:max_command_sequence_length")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("registry_paths").get("realization").getAsString().equals("singular")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("offhand_path").get("value").getAsString().equals("equipment.offhand.components")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("component_removal").get("realization").getAsString().equals("native")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("entity_predicates").get("realization").getAsString().equals("components")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("predicate_type_key").get("realization").getAsString().equals("condition")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("loot_functions").get("realization").getAsString().equals("function-list"),
+                "datapack targets: 26.2 selects independently versioned item and datapack realizations");
+        JsonObject newest = plan.getAsJsonArray("targets").get(2).getAsJsonObject();
+        that(newest.get("minecraft").getAsString().equals("26.3")
+                        && newest.getAsJsonObject("realizations").getAsJsonObject("entity_predicates").get("realization").getAsString().equals("components")
+                        && newest.getAsJsonObject("realizations").getAsJsonObject("predicate_type_key").get("realization").getAsString().equals("type")
+                        && newest.getAsJsonObject("realizations").getAsJsonObject("loot_functions").get("realization").getAsString().equals("single-modifier"),
+                "datapack targets: 26.3 changes loot and predicate discriminator without changing entity components");
+
+        that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[]}").getAsJsonObject()), "At least one"),
+                "datapack targets: empty declaration is refused by name");
+        that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"26.2\",\"26.2\"]}").getAsJsonObject()), "Duplicate"),
+                "datapack targets: duplicate target is refused by name");
+        that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"26w01a\"]}").getAsJsonObject()), "non-release"),
+                "datapack targets: snapshot target is refused by name");
+        that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"typo\":true,\"targets\":[\"26.2\"]}").getAsJsonObject()), "Unknown declaration"),
+                "datapack targets: unknown declaration field is refused by name");
+        that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1.5,\"targets\":[\"26.2\"]}").getAsJsonObject()), "schema must be 1"),
+                "datapack targets: non-integral schema version is refused");
+        that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"1.12.2\"]}").getAsJsonObject()), "data-pack format"),
+                "datapack targets: target without a data-pack format is refused");
+        that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"1.21.0\"]}").getAsJsonObject()), "Unknown release target"),
+                "datapack targets: numeric version absent from release table is refused");
+
+        String source = Files.readString(root.resolve("eras/minecraft.json"), StandardCharsets.UTF_8);
+        JsonObject missing = JsonParser.parseString(source).getAsJsonObject();
+        missing.getAsJsonObject("realizations").getAsJsonArray("text_components").get(0).getAsJsonObject().addProperty("from", "1.21.6");
+        Eras missingRow = Eras.parse(missing.toString(), "missing realization fixture");
+        that(refuses(() -> DatapackTargetPlan.compile(missingRow, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"1.21.5\"]}").getAsJsonObject()), "has 0 rows"),
+                "datapack targets: missing selected realization is refused");
+
+        JsonObject overlap = JsonParser.parseString(source).getAsJsonObject();
+        JsonObject duplicate = overlap.getAsJsonObject("realizations").getAsJsonArray("command_budget").get(0).getAsJsonObject().deepCopy();
+        overlap.getAsJsonObject("realizations").getAsJsonArray("command_budget").add(duplicate);
+        Eras overlappingRows = Eras.parse(overlap.toString(), "overlapping realization fixture");
+        that(refuses(() -> DatapackTargetPlan.compile(overlappingRows, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"26.2\"]}").getAsJsonObject()), "has 2 rows"),
+                "datapack targets: overlapping selected realization is refused");
     }
 
     static void artifactJars() {

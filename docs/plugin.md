@@ -112,6 +112,7 @@ text can name it. An explicit `contracts(...)` passes through the task unchanged
 | `myceliumIsolation` | An optional integration's API is mentioned only in its home package (I1), and its home only from its gates (I2). In `check`; never before `compileJava`. |
 | `myceliumPurity` | The pure layer mentions no platform package (P1, warns), shares no package with the platform (P1.split, fails), and reads no clock, environment or unseeded chance (P3, warns). In `check`; never before `compileJava`. |
 | `myceliumPackMeta` | Writes the target's `pack.mcmeta` from the era table's `packFormat` rows, in the schema the version reads. Joins the resources when `packMeta { }` is declared. |
+| `myceliumDatapackTargets` | Compiles exact release targets into Java level, data/resource pack formats and the era table's datapack and item realization facts. It is opt-in and does not translate payloads or certify game behaviour. |
 | `myceliumPureCompile` | Compiles the pure layer alone with a compiler at least as new as Java 17, `pure.release`, and the Gradle JVM. It reuses the Gradle JVM when capable and requests a newer toolchain only when the declared release requires one. If it compiles there, it is pure in fact. |
 | `myceliumEraJava<N>` | One era's gate: every bundle on that Java's JVM (stubs, linkage P2, behaviour). `myceliumEras` runs every declared era. |
 | `myceliumPureShip` | Puts the pure layer's classes into this target's jar, downgraded and shaded from the era gate's own output when the era needs it, a no-op when it does not (below). |
@@ -299,6 +300,26 @@ establish game compatibility. Run the final archive in each claimed game.
 
 Non-Gradle consumers can use `PackOverlayPlan.main` with compiler root, declaration path and output path;
 only that class, `Eras`, the pinned era table and the plugin's existing Gson dependency are required.
+
+### Exact datapack target plans
+
+`myceliumDatapackTargets --declaration=targets.json --output=build/datapack-targets.json` compiles a closed declaration:
+
+```json
+{"schema":1,"targets":["1.20.6","26.2"]}
+```
+
+The schema 1 result lists each exact release with its Minecraft version, Java feature level, data/resource format
+values (an integer for legacy metadata, otherwise a `[major, minor]` pair),
+and `realizations`. Each realization is an object with a `realization` name; selected dialects that carry an exact native
+path or gamerule also include `value`. The plan includes text component encoding, registry paths, recipe ingredients,
+offhand path, command budget, nested item count, function macros, recipe result, component removal, and the existing
+loot functions, entity predicates, `item.carrier`, and `item.presentation` divides. The era table is the source for these facts; targets with missing or
+overlapping rows, unsupported vocabulary, missing data-pack formats, duplicate or non-release versions, and unknown
+declaration fields are refused. Exact targets must also exist in `eras/versions.json`. The standalone entry point is
+`DatapackTargetPlan.main`, with compiler root, declaration path and output path; it requires `DatapackTargetPlan`,
+`Eras`, `Versions`, both pinned era tables and the plugin's existing Gson dependency. A consumer still generates and
+verifies its own payloads and archive.
 
 ## Proven by fixtures
 

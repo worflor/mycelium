@@ -109,7 +109,7 @@ the tasks do is `docs/plugin.md`.
   (`range { linkage { } }`), `CapsuleSpec.java` (the capsule's ceilings, nested jars and mapping profile).
 - **Check levels.** `Checks.java` (every check, its default level, allowances and findings; decision 0017),
   `ChecksSpec.java` (`checks { }`).
-- **Generated from the era table.** `PackOverlayPlan.java` (exact-format data/resource metadata and standalone entrance), `PackOverlayPlanTask.java` (`myceliumPackOverlays`), `PackMetaSpec.java` (`packMeta { }`), `PackMetaTask.java` (`myceliumPackMeta`),
+- **Generated from the era table.** `PackOverlayPlan.java` (exact-format data/resource metadata and standalone entrance), `PackOverlayPlanTask.java` (`myceliumPackOverlays`), `DatapackTargetPlan.java` (exact-target Java, pack formats, and datapack dialect facts with a standalone entrance), `DatapackTargetPlanTask.java` (`myceliumDatapackTargets`), `PackMetaSpec.java` (`packMeta { }`), `PackMetaTask.java` (`myceliumPackMeta`),
   `OverlaySpec.java` (`overlays { }`: a resource directory per schema era).
 - **Proofs a mod takes from Mycelium.** `Proofs.java` (`contracts/proofs.json`: fingerprints of what Mycelium's own
   check proved), `ProofRecordTask.java` (`myceliumRecordProofs`, this repository only).

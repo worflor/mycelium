@@ -74,6 +74,9 @@ For a reproducible consumer checkout, use the maintained [source wrapper](docs/s
 contract and compiler work, checks the selected source before plugin loading, and prepares updates in a separate Git
 checkout. The consumer chooses whether completion requires the captured source.
 
+Non-Gradle datapack generators can use `myceliumDatapackTargets` (or its standalone compiler entrance) to read exact
+target Java, pack-format and dialect facts from the same era tables; the plan does not translate pack content.
+
 ## Build and verify Mycelium
 
 Use Gradle 8.3 or newer and a compatible JDK 17 or newer to run it. The repository wrapper selects its Gradle version.
