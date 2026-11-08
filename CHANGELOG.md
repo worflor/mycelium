@@ -8,7 +8,9 @@ consumers compose `.tag` or `.components` from the independent `item.carrier` re
 root-tag era.
 
 Validation: `gradlew -p gradle-plugin datapackTargetPlanSelfTest` passed (19 assertions), and `gradlew myceliumRepository`
-passed the repository gate.
+passed the repository gate. The complete plugin `selfTest` then passed 1,593 assertions, including the flexible
+consumer fixtures; its source-wrapper self-test passed another 55 assertions. These are compiler/model checks,
+not native game certification.
 
 ## 2026-11-08 - exact datapack target facts
 
