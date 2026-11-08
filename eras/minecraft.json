@@ -288,8 +288,8 @@
     {"from": "c0.0.11a", "to": "1.21.1", "realization": "object", "what": "recipe ingredients use an object with an item id"}
   ],
   "offhand_path": [
-    {"from": "1.21.5", "to": "26.x", "realization": "equipment", "value": "equipment.offhand.components", "what": "the offhand item's components are read from equipment.offhand.components"},
-    {"from": "c0.0.11a", "to": "1.21.4", "realization": "inventory", "value": "Inventory[{Slot:-106b}].components", "what": "the offhand item's components are read from the inventory slot"}
+    {"from": "1.21.5", "to": "26.x", "realization": "equipment", "value": "equipment.offhand", "what": "the offhand stack is read from equipment.offhand"},
+    {"from": "c0.0.11a", "to": "1.21.4", "realization": "inventory", "value": "Inventory[{Slot:-106b}]", "what": "the offhand stack is read from its inventory slot"}
   ],
   "command_budget": [
     {"from": "1.21.11", "to": "26.x", "realization": "namespaced", "value": "minecraft:max_command_sequence_length", "what": "the command budget gamerule is namespaced"},

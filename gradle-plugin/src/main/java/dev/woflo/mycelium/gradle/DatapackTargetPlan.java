@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Emits the version facts a datapack generator needs; it does not translate payloads or certify game behaviour. */
@@ -18,6 +19,9 @@ public final class DatapackTargetPlan {
             "text_components", "registry_paths", "recipe_ingredients", "offhand_path", "command_budget",
             "nested_item_count", "function_macros", "recipe_result", "component_removal", "loot_functions",
             "entity_predicates", "predicate_type_key", "item.carrier", "item.presentation");
+    private static final Map<String, Map<String, String>> NATIVE_VALUES = Map.of(
+            "command_budget", Map.of("legacy", "maxCommandChainLength", "namespaced", "minecraft:max_command_sequence_length"),
+            "offhand_path", Map.of("inventory", "Inventory[{Slot:-106b}]", "equipment", "equipment.offhand"));
 
     private DatapackTargetPlan() { }
 
@@ -79,8 +83,10 @@ public final class DatapackTargetPlan {
                 if (vocabulary == null || !vocabulary.contains(realization)) {
                     fail("Minecraft " + version + " has unsupported realization '" + realization + "' for '" + divide + "'");
                 }
-                if ((divide.equals("command_budget") || divide.equals("offhand_path")) && row.value() == null) {
-                    fail("Minecraft " + version + " has no native value for realization '" + divide + "'");
+                Map<String, String> nativeValues = NATIVE_VALUES.get(divide);
+                if (nativeValues != null && !nativeValues.get(realization).equals(row.value())) {
+                    fail("Minecraft " + version + " has native value '" + row.value() + "' for '" + divide
+                            + "' realization '" + realization + "', expected '" + nativeValues.get(realization) + "'");
                 }
                 JsonObject fact = new JsonObject();
                 fact.addProperty("realization", realization);

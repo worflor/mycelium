@@ -141,6 +141,8 @@ public final class SelfTest {
     static void datapackTargetPlans(Path root) throws Exception {
         Eras eras = Eras.load(root.toFile());
         List<String> knownVersions = Versions.load(root.toFile());
+        Eras.Realization originalConstructor = new Eras.Realization("1.0", "1.0", "legacy", "old API");
+        that(originalConstructor.value() == null, "datapack targets: original four-argument realization constructor remains available");
         JsonObject plan = DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
                 "{\"schema\":1,\"targets\":[\"26.3\",\"26.2\",\"1.20.6\"]}").getAsJsonObject());
         that(plan.get("schema").getAsInt() == 1 && plan.getAsJsonArray("targets").size() == 3,
@@ -155,7 +157,7 @@ public final class SelfTest {
                         && legacy.getAsJsonObject("realizations").getAsJsonObject("recipe_ingredients").get("realization").getAsString().equals("object")
                         && legacy.getAsJsonObject("realizations").getAsJsonObject("item.carrier").get("realization").getAsString().equals("custom-data")
                         && legacy.getAsJsonObject("realizations").getAsJsonObject("item.presentation").get("realization").getAsString().equals("model-overrides")
-                        && legacy.getAsJsonObject("realizations").getAsJsonObject("offhand_path").get("value").getAsString().equals("Inventory[{Slot:-106b}].components"),
+                        && legacy.getAsJsonObject("realizations").getAsJsonObject("offhand_path").get("value").getAsString().equals("Inventory[{Slot:-106b}]"),
                 "datapack targets: legacy dialect includes independent facts and existing item realizations");
         JsonObject modern = plan.getAsJsonArray("targets").get(1).getAsJsonObject();
         that(modern.get("minecraft").getAsString().equals("26.2") && modern.get("java").getAsInt() == 25
@@ -167,7 +169,7 @@ public final class SelfTest {
                         && modern.getAsJsonObject("realizations").getAsJsonObject("command_budget").get("realization").getAsString().equals("namespaced")
                         && modern.getAsJsonObject("realizations").getAsJsonObject("command_budget").get("value").getAsString().equals("minecraft:max_command_sequence_length")
                         && modern.getAsJsonObject("realizations").getAsJsonObject("registry_paths").get("realization").getAsString().equals("singular")
-                        && modern.getAsJsonObject("realizations").getAsJsonObject("offhand_path").get("value").getAsString().equals("equipment.offhand.components")
+                        && modern.getAsJsonObject("realizations").getAsJsonObject("offhand_path").get("value").getAsString().equals("equipment.offhand")
                         && modern.getAsJsonObject("realizations").getAsJsonObject("component_removal").get("realization").getAsString().equals("native")
                         && modern.getAsJsonObject("realizations").getAsJsonObject("entity_predicates").get("realization").getAsString().equals("components")
                         && modern.getAsJsonObject("realizations").getAsJsonObject("predicate_type_key").get("realization").getAsString().equals("condition")
@@ -179,6 +181,11 @@ public final class SelfTest {
                         && newest.getAsJsonObject("realizations").getAsJsonObject("predicate_type_key").get("realization").getAsString().equals("type")
                         && newest.getAsJsonObject("realizations").getAsJsonObject("loot_functions").get("realization").getAsString().equals("single-modifier"),
                 "datapack targets: 26.3 changes loot and predicate discriminator without changing entity components");
+        JsonObject oldestComponentsEra = DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"1.20.4\"]}").getAsJsonObject()).getAsJsonArray("targets").get(0).getAsJsonObject();
+        that(oldestComponentsEra.getAsJsonObject("realizations").getAsJsonObject("offhand_path").get("value").getAsString().equals("Inventory[{Slot:-106b}]" )
+                        && oldestComponentsEra.getAsJsonObject("realizations").getAsJsonObject("item.carrier").get("realization").getAsString().equals("root-tag"),
+                "datapack targets: 1.20.4 keeps the root stack path separate from its legacy tag carrier");
 
         that(refuses(() -> DatapackTargetPlan.compile(eras, knownVersions, JsonParser.parseString(
                 "{\"schema\":1,\"targets\":[]}").getAsJsonObject()), "At least one"),
@@ -203,6 +210,27 @@ public final class SelfTest {
                 "datapack targets: numeric version absent from release table is refused");
 
         String source = Files.readString(root.resolve("eras/minecraft.json"), StandardCharsets.UTF_8);
+        JsonObject wrongCommandValue = JsonParser.parseString(source).getAsJsonObject();
+        for (var row : wrongCommandValue.getAsJsonObject("realizations").getAsJsonArray("command_budget")) {
+            if (row.getAsJsonObject().get("realization").getAsString().equals("legacy")) {
+                row.getAsJsonObject().addProperty("value", "minecraft:max_command_sequence_length");
+            }
+        }
+        Eras mismatchedCommand = Eras.parse(wrongCommandValue.toString(), "command value mismatch fixture");
+        that(refuses(() -> DatapackTargetPlan.compile(mismatchedCommand, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"1.20.6\"]}").getAsJsonObject()), "expected 'maxCommandChainLength'"),
+                "datapack targets: command-budget realization cannot use another era's native gamerule");
+        JsonObject wrongOffhandValue = JsonParser.parseString(source).getAsJsonObject();
+        for (var row : wrongOffhandValue.getAsJsonObject("realizations").getAsJsonArray("offhand_path")) {
+            if (row.getAsJsonObject().get("realization").getAsString().equals("inventory")) {
+                row.getAsJsonObject().addProperty("value", "equipment.offhand");
+            }
+        }
+        Eras mismatchedOffhand = Eras.parse(wrongOffhandValue.toString(), "offhand value mismatch fixture");
+        that(refuses(() -> DatapackTargetPlan.compile(mismatchedOffhand, knownVersions, JsonParser.parseString(
+                "{\"schema\":1,\"targets\":[\"1.20.6\"]}").getAsJsonObject()), "expected 'Inventory[{Slot:-106b}]'"),
+                "datapack targets: inventory realization cannot use equipment's native path");
+
         JsonObject missing = JsonParser.parseString(source).getAsJsonObject();
         missing.getAsJsonObject("realizations").getAsJsonArray("text_components").get(0).getAsJsonObject().addProperty("from", "1.21.6");
         Eras missingRow = Eras.parse(missing.toString(), "missing realization fixture");

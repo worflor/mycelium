@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-08 - preserve datapack value compatibility
+
+`Eras.Realization` retains its original four-argument constructor alongside the optional exact value. Target-plan checks
+hold each command-budget and offhand-path realization to its native value. The offhand fact is the whole stack path;
+consumers compose `.tag` or `.components` from the independent `item.carrier` realization, including the pre-1.20.5
+root-tag era.
+
+Validation: `gradlew -p gradle-plugin datapackTargetPlanSelfTest` passed (19 assertions), and `gradlew myceliumRepository`
+passed the repository gate.
+
 ## 2026-11-08 - exact datapack target facts
 
 `myceliumDatapackTargets` and its standalone compiler entrance generate per-release Java, data/resource format values,

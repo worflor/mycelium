@@ -145,6 +145,11 @@ public final class Eras {
      * and {@code what} says why or how.
      */
     public record Realization(String from, String to, String realization, String what, String value) {
+        /** Keeps the original public constructor for divides that have no exact native value. */
+        public Realization(String from, String to, String realization, String what) {
+            this(from, to, realization, what, null);
+        }
+
         public boolean covers(String minecraft) {
             return atLeast(minecraft, from) && atMost(minecraft, to);
         }
